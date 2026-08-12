@@ -1,0 +1,17 @@
+-- Adicionar colunas que estão faltando na tabela empreendimentos
+ALTER TABLE public.empreendimentos 
+ADD COLUMN IF NOT EXISTS tipologia TEXT,
+ADD COLUMN IF NOT EXISTS construtora TEXT,
+ADD COLUMN IF NOT EXISTS bairro TEXT,
+ADD COLUMN IF NOT EXISTS cep TEXT,
+ADD COLUMN IF NOT EXISTS unidades INTEGER,
+ADD COLUMN IF NOT EXISTS vendidas INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS dormitorios TEXT,
+ADD COLUMN IF NOT EXISTS banheiros TEXT,
+ADD COLUMN IF NOT EXISTS vagas TEXT,
+ADD COLUMN IF NOT EXISTS area_privativa TEXT,
+ADD COLUMN IF NOT EXISTS area_comum TEXT,
+ADD COLUMN IF NOT EXISTS comodidades JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS diferenciais JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS financiamento JSONB DEFAULT '[]'::jsonb,
+ADD COLUMN IF NOT EXISTS precos_por_tipologia JSONB DEFAULT '[]'::jsonb;

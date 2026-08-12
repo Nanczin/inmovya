@@ -1,0 +1,14 @@
+[
+    {
+        "relation": [
+            "delegate_permission/common.handle_all_urls"
+        ],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "br.com.elyondigital.inmovya.twa",
+            "sha256_cert_fingerprints": [
+                "77:68:B4:C6:64:3F:C5:4D:19:52:64:07:6A:EE:36:1B:EB:ED:26:F7:0F:81:C4:68:94:6A:86:AB:FC:75:31:39"
+            ]
+        }
+    }
+]

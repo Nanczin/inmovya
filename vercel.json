@@ -1,0 +1,16 @@
+{
+    "rewrites": [
+        {
+            "source": "/llamalab/:path*",
+            "destination": "https://llamalab.com/:path*"
+        },
+        {
+            "source": "/api/:path*",
+            "destination": "https://fee553a8-f73a-4cb6-9687-972f4b5f7e7c.supabase.co/functions/v1/:path*"
+        },
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
+        }
+    ]
+}
