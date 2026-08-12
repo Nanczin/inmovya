@@ -121,14 +121,26 @@ export function ImportarListaDialog({ children, onListaImportada }: ImportarList
         // Estratégia de Fallback Inteligente
         if (idxNome === -1) idxNome = 0; // Se não achar nome, assume primeira coluna
 
-        // Se não achou email no cabeçalho, procura por @ na segunda linha (dados)
+        // Se não achou email, tentamos achar na primeira linha de dados
         if (idxEmail === -1 && linhasData.length > 1) {
           idxEmail = linhasData[1].findIndex(c => String(c).includes('@'));
         }
-        if (idxEmail === -1) idxEmail = 1; // Fallback para segunda coluna se não achou nada
 
-        if (idxTelefone === -1) idxTelefone = 2; // Fallback para terceira coluna
+        // Se não achou telefone, tentamos achar na primeira linha de dados (apenas números)
+        if (idxTelefone === -1 && linhasData.length > 1) {
+          idxTelefone = linhasData[1].findIndex(c => {
+             const str = String(c).replace(/\D/g, '');
+             return str.length >= 8 && str.length <= 13;
+          });
+        }
 
+        // Fallbacks finais se tudo falhar e assumindo a ordem: 0=Nome, 1=Telefone, 2=Email (Opcional)
+        if (idxTelefone === -1) {
+           idxTelefone = idxEmail === 1 ? 2 : 1;
+        }
+
+        // Se o email continuar não encontrado, deixamos como undefined (-1) ao invés de forçar coluna 1
+        
         console.log(`Colunas detectadas: Nome=${idxNome}, Email=${idxEmail}, Tel=${idxTelefone}`);
 
         setDados(prev => ({
@@ -333,16 +345,16 @@ export function ImportarListaDialog({ children, onListaImportada }: ImportarList
             {/* Instruções de Formatação */}
             <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-md text-sm text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800/30">
               <h5 className="font-semibold mb-2 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" /> Instruções para Formatação da Planilha
+                <AlertCircle className="w-4 h-4" /> Importante para a Oferta Ativa (Ligações)
               </h5>
-              <p className="mb-2">Certifique-se de que sua planilha contenha as seguintes colunas (na primeira linha):</p>
+              <p className="mb-2">Para que os contatos apareçam perfeitamente na tela de <strong>Oferta Ativa</strong>, sua planilha deve ter cabeçalhos na 1ª linha contendo:</p>
               <ul className="list-disc list-inside space-y-1 text-xs font-medium opacity-90 mb-2">
-                <li><strong>Nome</strong> (Obrigatório)</li>
-                <li><strong>Telefone</strong>, <strong>Celular</strong> ou <strong>WhatsApp</strong> (Obrigatório)</li>
-                <li><strong>Email</strong> (Opcional)</li>
+                <li><strong>Nome</strong> (Obrigatório) - Nome do lead/cliente.</li>
+                <li><strong>Telefone</strong>, <strong>Celular</strong> ou <strong>WhatsApp</strong> (Obrigatório) - O sistema formata os números automaticamente.</li>
+                <li><strong>Email</strong> (Opcional).</li>
               </ul>
               <p className="text-xs opacity-80 mt-2">
-                <strong>Dica:</strong> O sistema tentará detectar as colunas automaticamente. Se não encontrar, você poderá mapeá-las manualmente no próximo passo.
+                <strong>Dica de Ouro:</strong> O sistema tentará detectar essas 3 colunas automaticamente. Colunas extras na planilha (como Endereço ou Cidade) serão ignoradas na hora da ligação.
               </p>
             </div>
 
