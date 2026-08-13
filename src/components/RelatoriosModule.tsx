@@ -255,12 +255,15 @@ export function RelatoriosModule() {
     }, {}) || {};
     setClassificacoesOferta(classificacoes);
 
+    const metaLigacoesSalva = localStorage.getItem('meta_ligacoes_diarias');
+    const metaLigacoes = metaLigacoesSalva ? parseInt(metaLigacoesSalva, 10) : 200;
+
     setMetricas(prev => ({
       ...prev,
       ligacoes: {
         hoje: ligacoesHoje,
         ontem: ligacoesOntem,
-        meta: prev.ligacoes.meta
+        meta: metaLigacoes
       }
     }));
   };

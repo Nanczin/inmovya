@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -32,7 +33,8 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
-  RotateCcw
+  RotateCcw,
+  Target
 } from "lucide-react";
 
 interface Lista {
@@ -225,13 +227,42 @@ export function LigacoesModule() {
   const [gmailAccounts, setGmailAccounts] = useState<any[]>([]);
   const [selectedGmailAccount, setSelectedGmailAccount] = useState<string>("");
   const [isRequestingOffer, setIsRequestingOffer] = useState(false);
+  const [showMetasDialog, setShowMetasDialog] = useState(false);
+  const [metaLigacoes, setMetaLigacoes] = useState(200);
+  const [ligacoesHoje, setLigacoesHoje] = useState(0);
 
   useEffect(() => {
     // Carregar preferências salvas
     const savedWhatsappTemplate = localStorage.getItem('default_template_whatsapp');
     const savedEmailTemplate = localStorage.getItem('default_template_email');
+    const savedMetaLigacoes = localStorage.getItem('meta_ligacoes_diarias');
+    
     if (savedWhatsappTemplate) setTemplateWhatsappId(savedWhatsappTemplate);
     if (savedEmailTemplate) setTemplateEmailId(savedEmailTemplate);
+    if (savedMetaLigacoes) setMetaLigacoes(parseInt(savedMetaLigacoes, 10));
+
+    const carregarProgressoDiario = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        
+        const { count, error } = await supabase
+          .from('ligacoes')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('data_ligacao', hoje.toISOString());
+          
+        if (!error && count !== null) {
+          setLigacoesHoje(count);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar progresso:", err);
+      }
+    };
+    carregarProgressoDiario();
 
     // Carregar templates com fallback robusto
     const fetchTemplates = async () => {
@@ -326,6 +357,15 @@ export function LigacoesModule() {
   const getProcessedSubject = (templateId: string) => {
     const template = templatesDisponiveis.find(t => t.id === templateId);
     return template?.assunto ? encodeURIComponent(template.assunto) : '';
+  };
+
+  const salvarMetas = () => {
+    localStorage.setItem('meta_ligacoes_diarias', metaLigacoes.toString());
+    setShowMetasDialog(false);
+    toast({
+      title: "Metas salvas",
+      description: "Suas metas diárias foram atualizadas."
+    });
   };
 
   useEffect(() => {
@@ -617,6 +657,8 @@ export function LigacoesModule() {
           duracao: 0,
           data_ligacao: new Date().toISOString()
         } as any);
+        
+        setLigacoesHoje(prev => prev + 1);
       } catch (err) {
         console.error("Erro ao registrar estatística de ligação:", err);
       }
@@ -1008,12 +1050,51 @@ export function LigacoesModule() {
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Gestão de Contatos por Mailing</h2>
           <p className="text-muted-foreground">Visualize e classifique seus contatos organizados por campanhas de mailing</p>
         </div>
+        <div className="flex items-center gap-4 bg-card p-3 rounded-lg shadow-sm border min-w-[250px]">
+          <div className="flex-1">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground font-medium">Meta Diária</span>
+              <span className="font-bold">{ligacoesHoje} / {metaLigacoes}</span>
+            </div>
+            <Progress value={Math.min((ligacoesHoje / metaLigacoes) * 100, 100)} className="h-2" />
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowMetasDialog(true)} className="flex-shrink-0" title="Definir Metas">
+            <Target className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
+
+      {/* Metas Dialog */}
+      <Dialog open={showMetasDialog} onOpenChange={setShowMetasDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Definir Metas Diárias</DialogTitle>
+            <DialogDescription>
+              Configure suas metas para acompanhar seu desempenho.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Meta de Ligações (Diária)</Label>
+              <Input 
+                type="number" 
+                value={metaLigacoes} 
+                onChange={(e) => setMetaLigacoes(Number(e.target.value) || 0)} 
+                min={1} 
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowMetasDialog(false)}>Cancelar</Button>
+            <Button onClick={salvarMetas}>Salvar Metas</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Lista Selection */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
@@ -1086,11 +1167,20 @@ export function LigacoesModule() {
           </DialogHeader>
           {contatoSelecionado && (
             <div className="space-y-3 sm:space-y-6 animate-fade-in">
-              {/* Header with Campaign Name */}
-              <div className="text-center border-b border-border pb-4">
+              {/* Header with Campaign Name and Progress */}
+              <div className="flex flex-col sm:flex-row justify-between items-center border-b border-border pb-4 gap-4">
                 <h2 className="text-base sm:text-lg font-semibold text-muted-foreground uppercase tracking-wider">
                   {listas.find(l => l.id === mailingSelecionado)?.nome || 'CAMPANHA OFICIAL'}
                 </h2>
+                
+                {/* Progresso de Metas no Modal */}
+                <div className="flex flex-col gap-1 w-full sm:w-48 bg-muted/30 p-2 rounded-md">
+                  <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                    <span>Meta Diária</span>
+                    <span>{ligacoesHoje} / {metaLigacoes}</span>
+                  </div>
+                  <Progress value={Math.min((ligacoesHoje / metaLigacoes) * 100, 100)} className="h-1.5" />
+                </div>
               </div>
 
               {/* Customer Name and Classification Row */}
