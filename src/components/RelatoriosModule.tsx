@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -25,6 +26,9 @@ import {
 
 export function RelatoriosModule() {
   const [periodoSelecionado, setPeriodoSelecionado] = useState("7dias");
+  const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState<string>("");
+  const [dataFimPersonalizada, setDataFimPersonalizada] = useState<string>("");
+  const [classificacoesOferta, setClassificacoesOferta] = useState<Record<string, number>>({});
   const [metricas, setMetricas] = useState({
     conversao: {
       atual: 0,
@@ -58,8 +62,10 @@ export function RelatoriosModule() {
   const { toast } = useToast();
 
   useEffect(() => {
-    carregarMetricas();
-  }, [periodoSelecionado]);
+    if (periodoSelecionado !== "personalizado" || (dataInicioPersonalizada && dataFimPersonalizada)) {
+      carregarMetricas();
+    }
+  }, [periodoSelecionado, dataInicioPersonalizada, dataFimPersonalizada]);
 
   const carregarMetricas = async () => {
     setIsLoading(true);
@@ -85,8 +91,8 @@ export function RelatoriosModule() {
 
   const getPeriodoDatas = () => {
     const hoje = new Date();
-    const dataInicio = new Date();
-    const dataFim = new Date(); // Default: agora
+    let dataInicio = new Date();
+    let dataFim = new Date(); // Default: agora
 
     switch (periodoSelecionado) {
       case "hoje":
@@ -109,6 +115,14 @@ export function RelatoriosModule() {
         break;
       case "ano":
         dataInicio.setMonth(0, 1);
+        break;
+      case "personalizado":
+        if (dataInicioPersonalizada) {
+          dataInicio = new Date(dataInicioPersonalizada + "T00:00:00");
+        }
+        if (dataFimPersonalizada) {
+          dataFim = new Date(dataFimPersonalizada + "T23:59:59");
+        }
         break;
       default:
         dataInicio.setDate(hoje.getDate() - 7);
@@ -232,6 +246,14 @@ export function RelatoriosModule() {
       ligacoesHoje = ligacoesPeriodo?.length || 0;
       ligacoesOntem = ligacoesAnteriores?.length || 0;
     }
+
+    // Calcular classificacoes da oferta ativa (resultado)
+    const classificacoes = ligacoesPeriodo?.reduce((acc: Record<string, number>, ligacao) => {
+      const resultado = ligacao.resultado || 'Sem Classificação';
+      acc[resultado] = (acc[resultado] || 0) + 1;
+      return acc;
+    }, {}) || {};
+    setClassificacoesOferta(classificacoes);
 
     setMetricas(prev => ({
       ...prev,
@@ -788,6 +810,22 @@ export function RelatoriosModule() {
               <SelectItem value="personalizado">Período personalizado</SelectItem>
             </SelectContent>
           </Select>
+          {periodoSelecionado === "personalizado" && (
+            <div className="flex gap-2">
+              <Input 
+                type="date" 
+                value={dataInicioPersonalizada} 
+                onChange={(e) => setDataInicioPersonalizada(e.target.value)}
+                className="w-[140px]"
+              />
+              <Input 
+                type="date" 
+                value={dataFimPersonalizada} 
+                onChange={(e) => setDataFimPersonalizada(e.target.value)}
+                className="w-[140px]"
+              />
+            </div>
+          )}
           <Button variant="success" onClick={exportarRelatorio} disabled={isLoading}>
             <Download className="w-4 h-4 mr-2" />
             Exportar
@@ -943,6 +981,32 @@ export function RelatoriosModule() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Classificações Oferta Ativa */}
+      <Card className="shadow-card mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Phone className="w-5 h-5" />
+            Classificações da Oferta Ativa
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {Object.keys(classificacoesOferta).length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {Object.entries(classificacoesOferta).sort((a, b) => b[1] - a[1]).map(([classificacao, quantidade]) => (
+                <div key={classificacao} className="flex justify-between items-center p-3 rounded-lg bg-muted/50 border">
+                  <span className="text-sm font-medium truncate" title={classificacao}>{classificacao}</span>
+                  <Badge variant="secondary" className="text-sm px-2 py-1 ml-2">{quantidade}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground">
+              Nenhuma classificação encontrada neste período.
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -65,7 +65,8 @@ interface Empreendimento {
 const classificacoes = [
   "Cliente Interessado",
   "Deny List",
-  "Caixa Postal/Cliente Não Atendeu"
+  "Caixa Postal/Cliente Não Atendeu",
+  "Número não existe"
 ];
 
 const interessesCliente = [
@@ -564,7 +565,7 @@ export function LigacoesModule() {
         if (empreendimentoSelecionado) {
           dadosExtrasAtualizados.empreendimento_interesse = empreendimentoSelecionado;
         }
-      } else if (classificacaoSelecionada === "Deny List") {
+      } else if (classificacaoSelecionada === "Deny List" || classificacaoSelecionada === "Número não existe") {
         interesseAutomatico = "Não Quer Mais Contato";
       } else if (classificacaoSelecionada === "Caixa Postal/Cliente Não Atendeu") {
         interesseAutomatico = ""; // Não define interesse para permitir retorno à oferta ativa
@@ -590,7 +591,7 @@ export function LigacoesModule() {
 
       // Se formos deletar o contato (Deny List ou Cliente Interessado), não precisamos atualizar antes
       // Isso evita chamadas redundantes e possíveis conflitos
-      const vaiDeletar = finalClassificacao === "Deny List" || finalClassificacao === "Cliente Interessado";
+      const vaiDeletar = finalClassificacao === "Deny List" || finalClassificacao === "Cliente Interessado" || finalClassificacao === "Número não existe";
 
       if (!vaiDeletar) {
         const { error } = await supabase
@@ -732,8 +733,8 @@ export function LigacoesModule() {
 
           toast({
             title: "Contato Processado",
-            description: finalClassificacao === "Deny List"
-              ? "Contato removido da lista permanentemente (Deny List)."
+            description: (finalClassificacao === "Deny List" || finalClassificacao === "Número não existe")
+              ? "Contato removido da lista permanentemente."
               : "Contato promovido a LEAD e removido desta lista de mailing."
           });
         }
