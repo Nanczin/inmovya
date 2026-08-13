@@ -655,7 +655,8 @@ export function LigacoesModule() {
           status: 'realizada',
           resultado: finalClassificacao || 'Processado',
           duracao: 0,
-          data_ligacao: new Date().toISOString()
+          data_ligacao: new Date().toISOString(),
+          user_id: user?.id
         } as any);
         
         setLigacoesHoje(prev => prev + 1);
