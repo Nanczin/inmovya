@@ -961,21 +961,7 @@ export function LigacoesModule() {
       // Se classificacaoFinal for undefined, a função salvarInteresseEClassificacao usará o state classificacaoSelecionada
       await salvarInteresseEClassificacao(true, classificacaoFinal);
 
-      // Só criamos registro de "sem_resposta" na tabela de ligações se foi classificado como Caixa Postal
-      // Se foi "Cliente Interessado" ou "Deny List", subentende-se que houve contato ou decisão definitiva
-      if (usarCaixaPostalDefault || classificacaoSelecionada === "Caixa Postal/Cliente Não Atendeu") {
-        const { error } = await supabase
-          .from('ligacoes')
-          .insert({
-            numero_telefone: telefone,
-            lead_id: null,
-            status: 'sem_resposta',
-            resultado: 'Cliente não atendeu - reagendar ligação',
-            user_id: (await supabase.auth.getUser()).data.user?.id
-          });
 
-        if (error) throw error;
-      }
 
       toast({
         title: "Sucesso",
