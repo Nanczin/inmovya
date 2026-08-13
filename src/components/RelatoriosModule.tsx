@@ -250,7 +250,9 @@ export function RelatoriosModule() {
     // Calcular classificacoes da oferta ativa (resultado)
     const classificacoes = ligacoesPeriodo?.reduce((acc: Record<string, number>, ligacao) => {
       const resultado = ligacao.resultado || 'Sem Classificação';
-      acc[resultado] = (acc[resultado] || 0) + 1;
+      if (resultado !== 'Cliente não atendeu - reagendar ligação') {
+        acc[resultado] = (acc[resultado] || 0) + 1;
+      }
       return acc;
     }, {}) || {};
     setClassificacoesOferta(classificacoes);
@@ -511,7 +513,9 @@ export function RelatoriosModule() {
             Math.round(ligacoesData?.reduce((acc, l) => acc + (l.duracao || 0), 0) / ligacoesData?.length) : 0,
           porResultado: ligacoesData?.reduce((acc: any, ligacao) => {
             const resultado = ligacao.resultado || 'Não informado';
-            acc[resultado] = (acc[resultado] || 0) + 1;
+            if (resultado !== 'Cliente não atendeu - reagendar ligação') {
+              acc[resultado] = (acc[resultado] || 0) + 1;
+            }
             return acc;
           }, {}) || {}
         },
