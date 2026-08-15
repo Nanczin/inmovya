@@ -175,7 +175,7 @@ export function AgendaModule() {
 
     const content = (
       <div 
-        className={`text-xs p-1.5 rounded border flex ${isLarge ? 'flex-row p-4' : 'items-start'} justify-between gap-1 group/item ${
+        className={`text-xs p-1.5 rounded border flex ${isLarge ? 'flex-row p-4' : 'items-start'} justify-between gap-1 group/item cursor-pointer hover:brightness-95 transition-all ${
           isCompleted 
             ? "bg-muted border-transparent text-muted-foreground" 
             : task.lead_id 
@@ -184,7 +184,8 @@ export function AgendaModule() {
         }`}
         onClick={(e) => {
           e.stopPropagation();
-          // Could open view/edit modal here
+          setTaskToEdit(task);
+          setIsDialogOpen(true);
         }}
       >
         <div className="flex-1 truncate">
