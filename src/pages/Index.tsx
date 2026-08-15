@@ -16,6 +16,7 @@ import { LigacoesModule } from "@/components/LigacoesModule";
 import { TemplatesModule } from "@/components/TemplatesModule";
 import { RelatoriosModule } from "@/components/RelatoriosModule";
 import { SettingsModule } from "@/components/SettingsModule";
+import { AgendaModule } from "@/components/AgendaModule";
 import { FunilModule } from "@/components/FunilModule";
 
 const Index = () => {
@@ -69,6 +70,8 @@ const Index = () => {
     switch (activeModule) {
       case "dashboard":
         return <Dashboard onModuleChange={setActiveModule} />;
+      case "agenda":
+        return <AgendaModule />;
       case "leads":
         return <LeadsModule initialLeadId={navigationParams?.id} />;
       case "email-marketing":

@@ -1,5 +1,5 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
-import { Home, Users, Building2, FileText, Mail, Settings, BarChart3, Phone, AtSign, Filter } from "lucide-react";
+import { Home, Users, Building2, FileText, Mail, Settings, BarChart3, Phone, AtSign, Filter, Calendar as CalendarIcon } from "lucide-react";
 interface AppSidebarProps {
   activeModule: string;
   onModuleChange: (module: string) => void;
@@ -8,6 +8,10 @@ const menuItems = [{
   id: "dashboard",
   label: "Dashboard",
   icon: Home
+}, {
+  id: "agenda",
+  label: "Agenda",
+  icon: CalendarIcon
 }, {
   id: "leads",
   label: "Leads",
