@@ -1919,7 +1919,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
             </div>
 
             <div className="space-y-2">
-            <div className="space-y-2">
               <Label htmlFor="edit-status">Etapa do Funil</Label>
               <Select value={editLead.status} onValueChange={(value) => setEditLead({ ...editLead, status: value })}>
                 <SelectTrigger>
