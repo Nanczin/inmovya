@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, parseISO, addDays, startOfDay, endOfDay, addWeeks, subWeeks, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, CheckCircle2, Clock, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, CheckCircle2, Clock, Trash2, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +38,7 @@ export function AgendaModule() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
   const [view, setView] = useState<'month' | 'week' | 'day'>('month');
   
   const { toast } = useToast();
@@ -206,6 +206,19 @@ export function AgendaModule() {
           )}
         </div>
         <div className={`flex items-center ${!isLarge ? 'opacity-0 group-hover/item:opacity-100' : ''} transition-opacity gap-1`}>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className={`${isLarge ? 'h-8 w-8' : 'h-5 w-5'} hover:bg-background/50 text-blue-500 hover:text-blue-600`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setTaskToEdit(task);
+              setIsDialogOpen(true);
+            }}
+            title="Editar"
+          >
+            <Pencil className={`${isLarge ? 'h-5 w-5' : 'h-3.5 w-3.5'}`} />
+          </Button>
           <Button 
             variant="ghost" 
             size="icon" 
@@ -549,9 +562,10 @@ export function AgendaModule() {
 
       <AgendaTaskDialog 
         isOpen={isDialogOpen} 
-        onClose={() => setIsDialogOpen(false)} 
+        onClose={() => { setIsDialogOpen(false); setTaskToEdit(null); }} 
         onSuccess={fetchTasks}
         selectedDate={selectedDate}
+        taskToEdit={taskToEdit}
       />
 
       <AlertDialog open={!!taskToDelete} onOpenChange={(open) => !open && setTaskToDelete(null)}>

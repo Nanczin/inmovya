@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,9 +20,17 @@ interface AgendaTaskDialogProps {
     onClose: () => void;
     onSuccess?: () => void;
     selectedDate?: Date;
+    taskToEdit?: {
+        id: string;
+        title: string;
+        description: string;
+        due_date: string;
+        lead_id: string | null;
+        status: string;
+    } | null;
 }
 
-export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate }: AgendaTaskDialogProps) {
+export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, taskToEdit }: AgendaTaskDialogProps) {
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [date, setDate] = useState<Date | undefined>(selectedDate || new Date());
@@ -32,6 +40,25 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate }: A
     
     const { toast } = useToast();
     const { leads } = useLeads();
+
+    useEffect(() => {
+        if (isOpen) {
+            if (taskToEdit) {
+                setTitle(taskToEdit.title);
+                setDescription(taskToEdit.description || "");
+                const taskDate = new Date(taskToEdit.due_date);
+                setDate(taskDate);
+                setTime(format(taskDate, "HH:mm"));
+                setSelectedLeadId(taskToEdit.lead_id || "none");
+            } else {
+                setTitle("");
+                setDescription("");
+                setDate(selectedDate || new Date());
+                setTime("09:00");
+                setSelectedLeadId("none");
+            }
+        }
+    }, [isOpen, taskToEdit, selectedDate]);
 
     const handleSave = async () => {
         if (!title || !date || !time) {
@@ -59,42 +86,61 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate }: A
 
             const leadIdToSave = selectedLeadId === "none" ? null : selectedLeadId;
 
-            const { data: taskData, error } = await supabase
-                .from('tasks')
-                .insert({
-                    user_id: user.id,
-                    lead_id: leadIdToSave,
-                    title,
-                    description,
-                    due_date: dateTime.toISOString(),
-                    status: 'pending'
-                })
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            // Add to Lead Timeline if a lead was selected
-            if (leadIdToSave) {
-                await supabase
-                    .from('lead_timeline')
-                    .insert({
+            if (taskToEdit) {
+                const { error } = await supabase
+                    .from('tasks')
+                    .update({
                         lead_id: leadIdToSave,
-                        type: 'note',
-                        title: `Lembrete Agendado: ${title}`,
-                        description: `Para ${format(dateTime, "dd/MM 'às' HH:mm", { locale: ptBR })}.${description ? ' ' + description : ''}`,
-                        author: 'Usuário',
-                        metadata: {
-                            task_date: dateTime.toISOString(),
-                            task_id: taskData.id
-                        }
-                    });
-            }
+                        title,
+                        description,
+                        due_date: dateTime.toISOString(),
+                    })
+                    .eq('id', taskToEdit.id);
 
-            toast({
-                title: "Compromisso criado",
-                description: `Agendado para ${format(dateTime, "dd/MM 'às' HH:mm", { locale: ptBR })}`
-            });
+                if (error) throw error;
+                
+                toast({
+                    title: "Compromisso atualizado",
+                    description: `Agendado para ${format(dateTime, "dd/MM 'às' HH:mm", { locale: ptBR })}`
+                });
+            } else {
+                const { data: taskData, error } = await supabase
+                    .from('tasks')
+                    .insert({
+                        user_id: user.id,
+                        lead_id: leadIdToSave,
+                        title,
+                        description,
+                        due_date: dateTime.toISOString(),
+                        status: 'pending'
+                    })
+                    .select()
+                    .single();
+
+                if (error) throw error;
+
+                // Add to Lead Timeline if a lead was selected
+                if (leadIdToSave) {
+                    await supabase
+                        .from('lead_timeline')
+                        .insert({
+                            lead_id: leadIdToSave,
+                            type: 'note',
+                            title: `Lembrete Agendado: ${title}`,
+                            description: `Para ${format(dateTime, "dd/MM 'às' HH:mm", { locale: ptBR })}.${description ? ' ' + description : ''}`,
+                            author: 'Usuário',
+                            metadata: {
+                                task_date: dateTime.toISOString(),
+                                task_id: taskData.id
+                            }
+                        });
+                }
+
+                toast({
+                    title: "Compromisso criado",
+                    description: `Agendado para ${format(dateTime, "dd/MM 'às' HH:mm", { locale: ptBR })}`
+                });
+            }
 
             if (onSuccess) onSuccess();
             handleClose();
@@ -128,7 +174,7 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate }: A
         <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose() }}>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
-                    <DialogTitle>Novo Compromisso</DialogTitle>
+                    <DialogTitle>{taskToEdit ? "Editar Compromisso" : "Novo Compromisso"}</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                     <div className="space-y-2">
