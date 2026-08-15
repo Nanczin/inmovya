@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { LeadTimeline } from "./LeadTimeline";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   Phone,
   Mail,
@@ -66,7 +68,7 @@ export function LeadDetailDialog({ lead, isOpen, onClose, onSave, onDelete }: Le
     onClose();
   };
 
-  const makeCall = () => {
+  const makeCall = async () => {
     if (!editedLead) return;
 
     toast({
@@ -74,6 +76,25 @@ export function LeadDetailDialog({ lead, isOpen, onClose, onSave, onDelete }: Le
       description: `Discando para ${editedLead.telefone}...`,
       variant: "default",
     });
+
+    // Registrar a ligação na timeline
+    try {
+      const { error } = await supabase
+        .from('lead_timeline')
+        .insert({
+          lead_id: editedLead.id,
+          type: 'call',
+          title: 'Ligação Realizada',
+          description: `Ligação iniciada para o número ${editedLead.telefone}`,
+          author: 'Usuário'
+        });
+
+      if (error) {
+        console.error('Erro ao registrar ligação na timeline:', error);
+      }
+    } catch (err) {
+      console.error('Erro inesperado ao registrar ligação:', err);
+    }
 
     // Simular integração com Tasker
     console.log('Iniciando ligação via Tasker:', editedLead.telefone);

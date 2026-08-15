@@ -195,7 +195,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       const { data, error } = await supabase
         .from('empreendimentos')
         .select('id, nome, status')
-        // .eq('status', 'Ativo') // Descomentar se quiser filtrar por Ativo apenas
+        .not('status', 'in', '("Entregue","Inativo")')
         .order('nome');
 
       if (error) {
@@ -562,7 +562,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         .from('lead_timeline')
         .insert({
           lead_id: lead.id,
-          type: 'contact',
+          type: 'call',
           title: 'Contato Realizado',
           description: 'Contato registrado manualmente através da lista de leads.',
           author: 'Usuário'
