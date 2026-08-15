@@ -17,11 +17,13 @@ export function TaskNotificationPoller() {
                 const now = new Date();
                 console.log('🔍 [GLOBAL POLLING] Checking for due tasks at:', now.toLocaleTimeString('pt-BR'));
 
+                const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
                 const { data: dueTasks, error } = await supabase
                     .from('tasks')
                     .select('*')
                     .eq('status', 'pending')
-                    .lte('due_date', now.toISOString());
+                    .lte('due_date', now.toISOString())
+                    .gte('due_date', yesterday.toISOString());
 
                 if (error) {
                     console.error("❌ [GLOBAL POLLING] Error checking tasks:", error);

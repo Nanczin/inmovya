@@ -34,8 +34,18 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       const saved = localStorage.getItem('user_notifications');
       if (saved) {
         const parsed = JSON.parse(saved);
+        // Only keep notifications from the last 7 days to avoid unbounded growth
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const filtered = parsed.filter((n: any) => new Date(n.timestamp) > sevenDaysAgo);
+
+        // Update localStorage with filtered list if any were removed
+        if (filtered.length !== parsed.length) {
+           setTimeout(() => localStorage.setItem('user_notifications', JSON.stringify(filtered)), 0);
+        }
+
         // Rehydrating Date objects
-        return parsed.map((n: any) => ({
+        return filtered.map((n: any) => ({
           ...n,
           timestamp: new Date(n.timestamp)
         }));
@@ -114,7 +124,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     setNotifications(prev => prev.filter(notification => notification.id !== id));
   };
 
-  const addNotification = (notificationData: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
+  const addNotification = React.useCallback((notificationData: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: Notification = {
       ...notificationData,
       id: Math.random().toString(36).substr(2, 9),
@@ -150,7 +160,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         console.error("Failed to show system notification", err);
       }
     }
-  };
+  }, []);
 
   // --- NEW: PUSH SUBSCRIPTION LOGIC ---
   const VAPID_PUBLIC_KEY = 'BK92_w8EsZQ_6sJApDMTLotu-iToHzgjcuVttmgl0AVprNy2eMxiAdyXf-ZgyvmJ40DMM3SHvbqDtVIOwo3IIFc';
