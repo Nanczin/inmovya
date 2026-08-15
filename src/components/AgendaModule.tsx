@@ -207,7 +207,7 @@ export function AgendaModule() {
             </div>
           )}
         </div>
-        <div className={`flex items-center ${!isLarge ? 'opacity-0 group-hover/item:opacity-100' : ''} transition-opacity gap-1`}>
+        <div className="flex items-center opacity-100 transition-opacity gap-1">
           <Button 
             variant="ghost" 
             size="icon" 
@@ -251,19 +251,25 @@ export function AgendaModule() {
     }
 
     return (
-      <Tooltip key={task.id}>
-        <TooltipTrigger asChild>
-          {content}
-        </TooltipTrigger>
-        <TooltipContent>
-          <div className="text-sm">
-            <p className="font-semibold">{task.title}</p>
-            <p className="text-muted-foreground">{format(parseISO(task.due_date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
-            {leadName && <p className="text-xs mt-1 text-blue-500">Lead: {leadName}</p>}
-            {task.description && <p className="text-xs mt-2 italic max-w-[200px] break-words">{task.description}</p>}
-          </div>
-        </TooltipContent>
-      </Tooltip>
+      <div key={task.id} className="cursor-pointer" onClick={(e) => {
+        e.stopPropagation();
+        setTaskToEdit(task);
+        setIsDialogOpen(true);
+      }}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {content}
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="text-sm">
+              <p className="font-semibold">{task.title}</p>
+              <p className="text-muted-foreground">{format(parseISO(task.due_date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
+              {leadName && <p className="text-xs mt-1 text-blue-500">Lead: {leadName}</p>}
+              {task.description && <p className="text-xs mt-2 italic max-w-[200px] break-words">{task.description}</p>}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
     );
   };
 
@@ -377,22 +383,26 @@ export function AgendaModule() {
                     const taskTime = format(parseISO(task.due_date), "HH:mm");
                     
                     return (
-                      <Tooltip key={task.id}>
-                        <TooltipTrigger asChild>
-                          <div 
-                            className={`text-xs p-1.5 rounded border flex items-start justify-between gap-1 group/item cursor-pointer hover:brightness-95 transition-all ${
-                              isCompleted 
-                                ? "bg-muted border-transparent text-muted-foreground" 
-                                : task.lead_id 
-                                  ? "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-950 dark:border-blue-900 dark:text-blue-300" 
-                                  : "bg-orange-50 border-orange-100 text-orange-700 dark:bg-orange-950 dark:border-orange-900 dark:text-orange-300"
-                            }`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTaskToEdit(task);
-                              setIsDialogOpen(true);
-                            }}
-                          >
+                      <div 
+                        key={task.id} 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTaskToEdit(task);
+                          setIsDialogOpen(true);
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div 
+                              className={`text-xs p-1.5 rounded border flex items-start justify-between gap-1 group/item hover:brightness-95 transition-all ${
+                                isCompleted 
+                                  ? "bg-muted border-transparent text-muted-foreground" 
+                                  : task.lead_id 
+                                    ? "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-950 dark:border-blue-900 dark:text-blue-300" 
+                                    : "bg-orange-50 border-orange-100 text-orange-700 dark:bg-orange-950 dark:border-orange-900 dark:text-orange-300"
+                              }`}
+                            >
                             <div className="flex-1 truncate">
                               <span className="font-semibold mr-1">{taskTime}</span>
                               <span className={isCompleted ? "line-through" : ""}>
@@ -404,7 +414,7 @@ export function AgendaModule() {
                                 </div>
                               )}
                             </div>
-                            <div className="flex items-center opacity-0 group-hover/item:opacity-100 transition-opacity gap-1">
+                              <div className="flex items-center opacity-100 transition-opacity gap-1">
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
@@ -449,6 +459,7 @@ export function AgendaModule() {
                           </div>
                         </TooltipContent>
                       </Tooltip>
+                    </div>
                     );
                   })}
                 </TooltipProvider>
