@@ -292,7 +292,24 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     return [...new Set(allTags)].sort();
   };
 
-  const filteredLeads = (leads && Array.isArray(leads) ? leads : []).filter(lead => {
+  const filteredLeads = (leads && Array.isArray(leads) ? leads : [])
+    .map(lead => {
+      // Remover tags de empreendimentos que não existem mais
+      const validTags = (lead.tags || []).filter((t: string) => {
+        if (t.startsWith("Interesse: ")) {
+          const nomeInteresse = t.replace("Interesse: ", "").trim();
+          return empreendimentos.some(emp => emp.nome.trim() === nomeInteresse);
+        }
+        return true;
+      });
+
+      // Diferenciar homônimos adicionando telefone ou email ao nome de exibição
+      const extraInfo = lead.telefone ? ` - ${lead.telefone}` : (lead.email ? ` - ${lead.email}` : '');
+      const displayNome = `${lead.nome}${extraInfo}`;
+
+      return { ...lead, tags: validTags, displayNome };
+    })
+    .filter(lead => {
     // Filtro por busca textual
     const matchesSearch = lead.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -1541,7 +1558,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                             className="mt-1 h-4 w-4 min-w-[16px] min-h-[16px] shrink-0 rounded-sm"
                           />
                           <div className="min-w-0 flex-1">
-                            <h4 className="font-medium text-foreground truncate">{lead.nome}</h4>
+                            <h4 className="font-medium text-foreground truncate" title={lead.nome}>{lead.displayNome}</h4>
                             <Badge className={`${getStatusColor(lead.status)} text-xs mt-1`}>
                               {lead.status}
                             </Badge>
@@ -1687,7 +1704,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                         </div>
                       </td>
                       <td className="p-3">
-                        <div className="font-medium text-foreground">{lead.nome}</div>
+                        <div className="font-medium text-foreground" title={lead.nome}>{lead.displayNome}</div>
                       </td>
                       <td className="p-3">
                         <div className="space-y-1">
