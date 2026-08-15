@@ -380,7 +380,7 @@ export function AgendaModule() {
                       <Tooltip key={task.id}>
                         <TooltipTrigger asChild>
                           <div 
-                            className={`text-xs p-1.5 rounded border flex items-start justify-between gap-1 group/item ${
+                            className={`text-xs p-1.5 rounded border flex items-start justify-between gap-1 group/item cursor-pointer hover:brightness-95 transition-all ${
                               isCompleted 
                                 ? "bg-muted border-transparent text-muted-foreground" 
                                 : task.lead_id 
@@ -389,7 +389,8 @@ export function AgendaModule() {
                             }`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              // Could open view/edit modal here
+                              setTaskToEdit(task);
+                              setIsDialogOpen(true);
                             }}
                           >
                             <div className="flex-1 truncate">
@@ -404,6 +405,19 @@ export function AgendaModule() {
                               )}
                             </div>
                             <div className="flex items-center opacity-0 group-hover/item:opacity-100 transition-opacity gap-1">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-5 w-5 hover:bg-background/50 text-blue-500 hover:text-blue-600"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTaskToEdit(task);
+                                  setIsDialogOpen(true);
+                                }}
+                                title="Editar"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
