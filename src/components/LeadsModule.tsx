@@ -106,7 +106,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     possuiEntrada: "",
     valorEntrada: "",
     status: "",
-    temperatura: "sem-classificacao" as "quente" | "morno" | "frio" | "sem-classificacao"
+    tagsRaw: undefined as string | undefined
   });
   const [activeFilters, setActiveFilters] = useState({
     status: [] as string[],
@@ -114,7 +114,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     etapa: [] as string[],
     interesse: [] as string[],
     tags: [] as string[],
-    temperatura: [] as string[],
     dataInicio: "",
     dataFim: ""
   });
@@ -131,7 +130,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     possuiEntrada: "",
     valorEntrada: "",
     status: "Novo",
-    temperatura: "frio" as "quente" | "morno" | "frio"
+    tagsRaw: undefined as string | undefined
   });
 
   // Estados para dados reais
@@ -263,31 +262,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     }
   }
 
-  const getTemperaturaIcon = (temp: string) => {
-    switch (temp) {
-      case 'quente': return <Flame className="w-4 h-4 text-orange-500" />;
-      case 'morno': return <ThermometerSun className="w-4 h-4 text-yellow-500" />;
-      case 'frio': return <Snowflake className="w-4 h-4 text-blue-500" />;
-      case 'sem-classificacao': return <HelpCircle className="w-4 h-4 text-gray-300" />;
-      default: return <HelpCircle className="w-4 h-4 text-gray-300" />;
-    }
-  };
 
-  const checkAlert = (lead: any) => {
-    if (!lead.temperatura) return null;
-    const lastContact = lead.ultimo_contato ? new Date(lead.ultimo_contato) : new Date(lead.created_at);
-    // If invalid date, fallback to created_at or now
-    if (isNaN(lastContact.getTime())) return null;
-
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - lastContact.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (lead.temperatura === 'quente' && diffDays > 7) return { level: 'critical', days: diffDays };
-    if (lead.temperatura === 'morno' && diffDays > 15) return { level: 'warning', days: diffDays };
-    if (lead.temperatura === 'frio' && diffDays > 180) return { level: 'info', days: diffDays };
-    return null;
-  };
 
   const applyFilters = (filters: any) => {
     setActiveFilters(filters);
@@ -306,7 +281,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       activeFilters.etapa.length +
       activeFilters.interesse.length +
       activeFilters.tags.length +
-      activeFilters.temperatura.length +
       (activeFilters.dataInicio ? 1 : 0) +
       (activeFilters.dataFim ? 1 : 0);
   };
@@ -347,11 +321,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       if (!hasMatchingTag) return false;
     }
 
-    // Filtro por temperatura
-    if (activeFilters.temperatura.length > 0) {
-      const leadTemp = lead.temperatura || 'sem-classificacao';
-      if (!activeFilters.temperatura.includes(leadTemp)) return false;
-    }
+
 
     // Filtro por data de cadastro
     if (activeFilters.dataInicio) {
@@ -402,7 +372,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           email: newLead.email,
           origem: newLead.origem || null,
           observacoes: newLead.observacoes || null,
-          temperatura: newLead.temperatura === 'sem-classificacao' ? null : newLead.temperatura,
           ultimo_contato: new Date().toISOString(),
           empreendimento_id: newLead.interesse.length > 0 ? newLead.interesse[0] : null,
           status: newLead.status || 'Novo',
@@ -438,6 +407,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         interesse: [],
         observacoes: "",
         tags: [],
+        tagsRaw: "",
         renda: "",
         profissao: "",
         possuiEntrada: "",
@@ -534,7 +504,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       possuiEntrada: entradaTag ? (entradaTag.includes("Sim") ? "sim" : "nao") : "",
       valorEntrada: entradaTag && entradaTag.includes("(") ? entradaTag.split("(")[1].replace(")", "") : "",
       status: lead.status || "Novo",
-      temperatura: (lead.temperatura as "quente" | "morno" | "frio" | "sem-classificacao") || "sem-classificacao"
+      tagsRaw: tagsNormais.join(', ')
     });
     setIsEditDialogOpen(true);
   };
@@ -626,7 +596,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       console.log('Observações alteradas:', observacoesAlteradas);
       console.log('Observações antigas:', selectedLead.observacoes);
       console.log('Observações novas:', editLead.observacoes);
-      console.log('Temperatura a salvar:', editLead.temperatura);
       console.log('Lead ID:', selectedLead.id);
 
       // Atualizar no banco de dados Supabase
@@ -639,7 +608,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           origem: editLead.origem || null,
           observacoes: editLead.observacoes || null,
           status: editLead.status || 'Novo',
-          temperatura: editLead.temperatura === 'sem-classificacao' ? null : editLead.temperatura,
           // Se tiver empreendimentos selecionados, salvar o primeiro como empreendimento_id
           empreendimento_id: editLead.interesse.length > 0 ? editLead.interesse[0] : null,
           // Salvar interesses como tags para persistir múltiplos
@@ -1322,21 +1290,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="temperatura">Classificação (Temperatura)</Label>
-                  <Select value={newLead.temperatura} onValueChange={(value: "quente" | "morno" | "frio" | "sem-classificacao") => setNewLead({ ...newLead, temperatura: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione a temperatura" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="quente">🔥 Quente (Contato semanal)</SelectItem>
-                      <SelectItem value="morno">⛅ Morno (Quinzenal)</SelectItem>
-                      <SelectItem value="frio">❄️ Frio (Semestral)</SelectItem>
-                      <SelectItem value="sem-classificacao">❔ Sem Classificação</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
                   <Label htmlFor="status">Etapa do Funil</Label>
                   <Select value={newLead.status} onValueChange={(value) => setNewLead({ ...newLead, status: value })}>
                     <SelectTrigger>
@@ -1436,10 +1389,11 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   <Label htmlFor="tags">Tags/Etiquetas</Label>
                   <Input
                     id="tags"
-                    value={newLead.tags.join(', ')}
+                    value={newLead.tagsRaw !== undefined ? newLead.tagsRaw : newLead.tags.join(', ')}
                     onChange={(e) => {
-                      const tagsArray = e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag);
-                      setNewLead({ ...newLead, tags: tagsArray });
+                      const val = e.target.value;
+                      const tagsArray = val.split(',').map(tag => tag.trim()).filter(tag => tag);
+                      setNewLead({ ...newLead, tags: tagsArray, tagsRaw: val });
                     }}
                     placeholder="Digite as tags separadas por vírgula"
                   />
@@ -1700,7 +1654,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   <th className="text-left p-3 font-medium text-muted-foreground">Contato</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Origem</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
-                  <th className="text-left p-3 font-medium text-muted-foreground">Temp.</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Tags</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Interesse</th>
                   <th className="text-left p-3 font-medium text-muted-foreground">Cadastro</th>
@@ -1750,29 +1703,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                           {lead.status}
                         </Badge>
                       </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-2" title={`Último contato: ${lead.ultimo_contato ? new Date(lead.ultimo_contato).toLocaleDateString() : 'N/A'}`}>
-                          {getTemperaturaIcon(lead.temperatura || 'sem-classificacao')}
-                          {(() => {
-                            const alert = checkAlert(lead);
-                            if (alert) {
-                              return (
-                                <div
-                                  className="relative group cursor-pointer hover:scale-110 transition-transform"
-                                  onClick={() => handleRegisterContact(lead)}
-                                  title="Clique para registrar contato"
-                                >
-                                  <AlertTriangle className={`w-4 h-4 ${alert.level === 'critical' ? 'text-red-500 animate-pulse' : 'text-yellow-500'}`} />
-                                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-xs px-2 py-1 rounded shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none mb-1">
-                                    {alert.days} dias sem contato - Clique para registrar
-                                  </span>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                      </td>
+
                       <td className="p-3">
                         <div className="flex flex-wrap gap-1 max-w-[120px]">
                           {lead.tags && lead.tags.length > 0 ? (
@@ -1988,20 +1919,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-temperatura">Classificação (Temperatura)</Label>
-              <Select value={editLead.temperatura} onValueChange={(value: "quente" | "morno" | "frio" | "sem-classificacao") => setEditLead({ ...editLead, temperatura: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a temperatura" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="quente">🔥 Quente (Contato semanal)</SelectItem>
-                  <SelectItem value="morno">⛅ Morno (Quinzenal)</SelectItem>
-                  <SelectItem value="frio">❄️ Frio (Semestral)</SelectItem>
-                  <SelectItem value="sem-classificacao">❔ Sem Classificação</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="edit-status">Etapa do Funil</Label>
               <Select value={editLead.status} onValueChange={(value) => setEditLead({ ...editLead, status: value })}>
@@ -2104,10 +2021,11 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
               <Label htmlFor="edit-tags">Tags/Etiquetas</Label>
               <Input
                 id="edit-tags"
-                value={editLead.tags.join(', ')}
+                value={editLead.tagsRaw !== undefined ? editLead.tagsRaw : editLead.tags.join(', ')}
                 onChange={(e) => {
-                  const tagsArray = e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag);
-                  setEditLead({ ...editLead, tags: tagsArray });
+                  const val = e.target.value;
+                  const tagsArray = val.split(',').map(tag => tag.trim()).filter(tag => tag);
+                  setEditLead({ ...editLead, tags: tagsArray, tagsRaw: val });
                 }}
                 placeholder="Digite as tags separadas por vírgula"
               />

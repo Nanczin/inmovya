@@ -12,76 +12,6 @@ export function TaskNotificationPoller() {
     const { leads } = useLeads();
 
     useEffect(() => {
-        const checkTemperatureAlerts = () => {
-            if (!leads || leads.length === 0) return;
-
-            try {
-                const notifiedTempAlerts = JSON.parse(localStorage.getItem('notified_temp_alerts') || '{}');
-                let updatedStorage = false;
-
-                leads.forEach(lead => {
-                    if (!lead.temperatura || lead.temperatura === 'sem-classificacao') return;
-
-                    const lastContactStr = lead.ultimo_contato || lead.created_at;
-                    if (!lastContactStr) return;
-
-                    const lastContact = new Date(lastContactStr);
-                    if (isNaN(lastContact.getTime())) return;
-
-                    const now = new Date();
-                    const diffTime = Math.abs(now.getTime() - lastContact.getTime());
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                    let targetDays: number | null = null;
-
-                    // Rules: quente 7 days, morno 15 days, frio 180 days
-                    if (lead.temperatura === 'quente') targetDays = 7;
-                    else if (lead.temperatura === 'morno') targetDays = 15;
-                    else if (lead.temperatura === 'frio') targetDays = 180;
-
-                    if (targetDays !== null) {
-                        // Create a unique key based on lead id, their last contact time, and the threshold
-                        // If they are contacted again, a new lastContactStr will be generated
-                        const alertKey = `${lead.id}_${lastContactStr}_${targetDays}`;
-                        if (!notifiedTempAlerts[alertKey]) {
-                            console.log(`🔔 [GLOBAL POLLING] Scheduling temp follow-up TASK for lead: ${lead.nome}`);
-
-                            // Immediately mark as scheduled locally to prevent duplicate spawn
-                            notifiedTempAlerts[alertKey] = true;
-                            updatedStorage = true;
-
-                            supabase.auth.getUser().then(({ data: { user } }) => {
-                                if (user) {
-                                    const dueDate = new Date(lastContact.getTime() + targetDays * 24 * 60 * 60 * 1000);
-
-                                    supabase.from('tasks').insert({
-                                        user_id: user.id,
-                                        lead_id: lead.id,
-                                        title: `Lembrete de Follow-up (Temperatura ${lead.temperatura})`,
-                                        description: `O lead "${lead.nome}" precisa de follow-up (a cada ${targetDays} dias).`,
-                                        due_date: dueDate.toISOString(),
-                                        status: 'pending'
-                                    }).then(({ error }) => {
-                                        if (error) {
-                                            console.error("❌ Error scheduling temp follow-up task:", error);
-                                        } else {
-                                            console.log("✅ Temperature remind task scheduled successfully.");
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                    }
-                });
-
-                if (updatedStorage) {
-                    localStorage.setItem('notified_temp_alerts', JSON.stringify(notifiedTempAlerts));
-                }
-            } catch (err) {
-                console.error("❌ [GLOBAL POLLING] Temperature polling error:", err);
-            }
-        };
-
         const checkDueTasks = async () => {
             try {
                 const now = new Date();
@@ -137,12 +67,10 @@ export function TaskNotificationPoller() {
 
         // Check immediately on mount
         checkDueTasks();
-        checkTemperatureAlerts();
 
         // Then check every 5 seconds
         const intervalId = setInterval(() => {
             checkDueTasks();
-            checkTemperatureAlerts();
         }, 5000);
 
         return () => clearInterval(intervalId);

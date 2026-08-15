@@ -18,7 +18,6 @@ interface FilterState {
   etapa: string[];
   interesse: string[];
   tags: string[];
-  temperatura: string[];
   dataInicio: string;
   dataFim: string;
 }
@@ -62,7 +61,6 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, em
       etapa: [],
       interesse: [],
       tags: [],
-      temperatura: [],
       dataInicio: "",
       dataFim: ""
     });
@@ -79,7 +77,6 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, em
       filters.etapa.length +
       filters.interesse.length +
       filters.tags.length +
-      filters.temperatura.length +
       (filters.dataInicio ? 1 : 0) +
       (filters.dataFim ? 1 : 0);
   };
@@ -181,29 +178,7 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, em
             </div>
           </div>
 
-          {/* Temperatura */}
-          <div>
-            <Label className="text-base font-medium">Temperatura (Classificação)</Label>
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              {['quente', 'morno', 'frio', 'sem-classificacao'].map((temp) => (
-                <div key={temp} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`temperatura-${temp}`}
-                    checked={filters.temperatura.includes(temp)}
-                    onCheckedChange={(checked) =>
-                      handleCheckboxChange('temperatura', temp, checked as boolean)
-                    }
-                  />
-                  <Label htmlFor={`temperatura-${temp}`} className="text-sm flex items-center gap-1">
-                    {temp === 'quente' && '🔥 Quente'}
-                    {temp === 'morno' && '⛅ Morno'}
-                    {temp === 'frio' && '❄️ Frio'}
-                    {temp === 'sem-classificacao' && '❔ Sem Classificação'}
-                  </Label>
-                </div>
-              ))}
-            </div>
-          </div>
+
 
           {/* Período de Cadastro */}
           <div>

@@ -935,40 +935,63 @@ export function EmpreendimentosModule() {
       // PASSO 1: Desvincular leads vinculados a este empreendimento
       console.log('🔗 Buscando leads vinculados ao empreendimento...');
 
-      const { data: leadsVinculados, error: searchError } = await supabase
+      const tagSearch = `Interesse: ${selectedEmpreendimento.nome}`;
+
+      // Busca leads pelo ID
+      const { data: leadsById, error: searchError1 } = await supabase
         .from('leads')
         .select('id, tags, empreendimento_id')
         .eq('empreendimento_id', selectedEmpreendimento.id);
 
-      if (searchError) {
-        console.error('Erro ao buscar leads vinculados:', searchError);
-      } else if (leadsVinculados && leadsVinculados.length > 0) {
-        console.log(`📋 Encontrados ${leadsVinculados.length} leads vinculados. Desvinculando...`);
+      // Busca leads pela Tag
+      const { data: leadsByTag, error: searchError2 } = await supabase
+        .from('leads')
+        .select('id, tags, empreendimento_id')
+        .contains('tags', [tagSearch]);
 
-        // Desvincular cada lead
-        for (const lead of leadsVinculados) {
-          // Remover a tag de interesse deste empreendimento
-          const tagsAtualizadas = (lead.tags || []).filter(
-            (tag: string) => !tag.startsWith(`Interesse: ${selectedEmpreendimento.nome}`)
-          );
-
-          // Atualizar o lead removendo a vinculação
-          const { error: updateError } = await supabase
-            .from('leads')
-            .update({
-              empreendimento_id: null,
-              tags: tagsAtualizadas
-            })
-            .eq('id', lead.id);
-
-          if (updateError) {
-            console.error(`Erro ao desvincular lead ${lead.id}:`, updateError);
-          }
-        }
-
-        console.log('✅ Leads desvinculados com sucesso');
+      if (searchError1 || searchError2) {
+        console.error('Erro ao buscar leads vinculados:', searchError1 || searchError2);
       } else {
-        console.log('ℹ️ Nenhum lead vinculado encontrado');
+        const allLinkedLeads: any[] = [];
+        const seenIds = new Set();
+
+        [...(leadsById || []), ...(leadsByTag || [])].forEach(lead => {
+          if (!seenIds.has(lead.id)) {
+            seenIds.add(lead.id);
+            allLinkedLeads.push(lead);
+          }
+        });
+
+        if (allLinkedLeads.length > 0) {
+          console.log(`📋 Encontrados ${allLinkedLeads.length} leads vinculados. Desvinculando...`);
+
+          // Desvincular cada lead
+          for (const lead of allLinkedLeads) {
+            // Remover a tag de interesse deste empreendimento
+            const tagsAtualizadas = (lead.tags || []).filter(
+              (tag: string) => !tag.startsWith(`Interesse: ${selectedEmpreendimento.nome}`)
+            );
+
+            const updates: any = { tags: tagsAtualizadas };
+            if (lead.empreendimento_id === selectedEmpreendimento.id) {
+              updates.empreendimento_id = null;
+            }
+
+            // Atualizar o lead removendo a vinculação
+            const { error: updateError } = await supabase
+              .from('leads')
+              .update(updates)
+              .eq('id', lead.id);
+
+            if (updateError) {
+              console.error(`Erro ao desvincular lead ${lead.id}:`, updateError);
+            }
+          }
+
+          console.log('✅ Leads desvinculados com sucesso');
+        } else {
+          console.log('ℹ️ Nenhum lead vinculado encontrado');
+        }
       }
 
       // PASSO 2: Agora podemos excluir o empreendimento

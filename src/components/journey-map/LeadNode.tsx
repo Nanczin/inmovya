@@ -6,33 +6,11 @@ import { cn } from '@/lib/utils';
 interface LeadNodeData {
   label: string;
   status: string;
-  temperature: 'hot' | 'warm' | 'cold';
   phone?: string;
   email?: string;
 }
 
 function LeadNode({ data, selected }: NodeProps<LeadNodeData>) {
-  const getTemperatureIcon = () => {
-    switch (data.temperature) {
-      case 'hot':
-        return <Flame className="w-4 h-4 text-red-500" />;
-      case 'warm':
-        return <ThermometerSun className="w-4 h-4 text-orange-500" />;
-      case 'cold':
-        return <Snowflake className="w-4 h-4 text-blue-500" />;
-    }
-  };
-
-  const getTemperatureColor = () => {
-    switch (data.temperature) {
-      case 'hot':
-        return 'from-red-500/20 to-orange-500/20 border-red-500/50';
-      case 'warm':
-        return 'from-orange-500/20 to-yellow-500/20 border-orange-500/50';
-      case 'cold':
-        return 'from-blue-500/20 to-cyan-500/20 border-blue-500/50';
-    }
-  };
 
   const getStatusColor = () => {
     switch (data.status.toLowerCase()) {
@@ -55,8 +33,7 @@ function LeadNode({ data, selected }: NodeProps<LeadNodeData>) {
   return (
     <div
       className={cn(
-        'px-6 py-4 rounded-2xl border-2 bg-gradient-to-br shadow-xl cursor-pointer transition-all duration-200',
-        getTemperatureColor(),
+        'px-6 py-4 rounded-2xl border-2 bg-background shadow-xl cursor-pointer transition-all duration-200',
         selected && 'ring-2 ring-primary ring-offset-2 ring-offset-background scale-105'
       )}
     >
@@ -85,10 +62,9 @@ function LeadNode({ data, selected }: NodeProps<LeadNodeData>) {
           <User className="w-8 h-8 text-primary" />
         </div>
 
-        {/* Nome e temperatura */}
+        {/* Nome */}
         <div className="flex items-center gap-2">
           <span className="font-bold text-foreground text-lg">{data.label}</span>
-          {getTemperatureIcon()}
         </div>
 
         {/* Status badge */}
