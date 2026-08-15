@@ -464,19 +464,28 @@ export function FunilModule() {
                                         ) : (
                                             <>
                                                 <div className="flex items-center gap-2">
-                                                    <label className="cursor-pointer flex items-center shrink-0 relative w-5 h-5">
-                                                        <input
-                                                            type="color"
-                                                            value={stage.color || "#94a3b8"}
-                                                            onChange={(e) => handleColorChange(stage.id, e.target.value)}
-                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                                        />
-                                                        <div
-                                                            className="absolute inset-0 w-full h-full rounded-full border border-slate-200 shadow-sm transition-transform hover:scale-110"
-                                                            style={{ backgroundColor: stage.color || "#94a3b8" }}
-                                                            title="Clique para mudar a cor"
-                                                        />
-                                                    </label>
+                                                    <div 
+                                                        className="flex items-center shrink-0 relative w-6 h-6"
+                                                        draggable
+                                                        onDragStart={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                        }}
+                                                    >
+                                                        <label className="cursor-pointer w-full h-full relative block">
+                                                            <input
+                                                                type="color"
+                                                                value={stage.color || "#94a3b8"}
+                                                                onChange={(e) => handleColorChange(stage.id, e.target.value)}
+                                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                            />
+                                                            <div
+                                                                className="absolute inset-0 w-full h-full rounded-full border border-slate-200 shadow-sm transition-transform hover:scale-110"
+                                                                style={{ backgroundColor: stage.color || "#94a3b8" }}
+                                                                title="Clique para mudar a cor"
+                                                            />
+                                                        </label>
+                                                    </div>
                                                     <span className="font-medium text-slate-700">{stage.name}</span>
                                                 </div>
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
