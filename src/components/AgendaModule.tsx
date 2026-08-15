@@ -11,6 +11,16 @@ import { AgendaTaskDialog } from "@/components/dialogs/AgendaTaskDialog";
 import { useLeads } from "@/context/LeadsContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Task {
   id: string;
@@ -27,6 +37,7 @@ export function AgendaModule() {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   
   const { toast } = useToast();
   const { leads } = useLeads();
@@ -96,19 +107,18 @@ export function AgendaModule() {
     }
   };
 
-  const deleteTask = async (taskId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!window.confirm("Deseja realmente excluir este compromisso?")) return;
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete) return;
 
     try {
       const { error } = await supabase
         .from('tasks')
         .delete()
-        .eq('id', taskId);
+        .eq('id', taskToDelete);
 
       if (error) throw error;
 
-      setTasks(prev => prev.filter(t => t.id !== taskId));
+      setTasks(prev => prev.filter(t => t.id !== taskToDelete));
       toast({
         title: "Excluído",
         description: "Compromisso excluído com sucesso."
@@ -119,6 +129,8 @@ export function AgendaModule() {
         description: "Não foi possível excluir.",
         variant: "destructive"
       });
+    } finally {
+      setTaskToDelete(null);
     }
   };
 
@@ -273,7 +285,10 @@ export function AgendaModule() {
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-5 w-5 hover:bg-destructive/10 hover:text-destructive"
-                                onClick={(e) => deleteTask(task.id, e)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTaskToDelete(task.id);
+                                }}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -347,6 +362,23 @@ export function AgendaModule() {
         onSuccess={fetchTasks}
         selectedDate={selectedDate}
       />
+
+      <AlertDialog open={!!taskToDelete} onOpenChange={(open) => !open && setTaskToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir compromisso?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este compromisso? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteTask} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
