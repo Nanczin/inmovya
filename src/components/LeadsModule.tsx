@@ -288,8 +288,34 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   // Função para obter todas as tags disponíveis dos leads
   const getAvailableTags = () => {
     if (!leads || !Array.isArray(leads)) return [];
-    const allTags = leads.flatMap(lead => lead.tags || []);
+    const allTags = leads.flatMap(lead => lead.tags || []).filter((t: string) => {
+      if (t.startsWith("Interesse: ")) {
+        const nomeInteresse = t.replace("Interesse: ", "").trim();
+        return empreendimentos.some(emp => emp.nome.trim() === nomeInteresse);
+      }
+      return true;
+    });
     return [...new Set(allTags)].sort();
+  };
+
+  // Função para obter origens únicas, normalizando letras minúsculas/maiúsculas
+  const getAvailableOrigins = () => {
+    if (!leads || !Array.isArray(leads)) return [];
+    const originMap = new Map<string, string>();
+    leads.forEach(l => {
+      if (l.origem) {
+        const key = l.origem.trim().toLowerCase();
+        if (!originMap.has(key)) {
+          originMap.set(key, l.origem.trim());
+        } else {
+          const existing = originMap.get(key)!;
+          if (existing === existing.toLowerCase() && l.origem.trim() !== existing) {
+            originMap.set(key, l.origem.trim()); // Prefere versão com letras maiúsculas
+          }
+        }
+      }
+    });
+    return Array.from(originMap.values()).sort();
   };
 
   const filteredLeads = (leads && Array.isArray(leads) ? leads : [])
@@ -322,8 +348,11 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       return false;
     }
 
-    if (activeFilters.origem.length > 0 && lead.origem && !activeFilters.origem.includes(lead.origem)) {
-      return false;
+    if (activeFilters.origem.length > 0) {
+      if (!lead.origem) return false;
+      const normalizedLeadOrigem = lead.origem.trim().toLowerCase();
+      const match = activeFilters.origem.some(o => o.trim().toLowerCase() === normalizedLeadOrigem);
+      if (!match) return false;
     }
 
     // Filtro por empreendimento
@@ -1858,7 +1887,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         activeFilters={activeFilters}
         empreendimentos={empreendimentos}
         availableTags={getAvailableTags()}
-        availableOrigins={Array.from(new Set(leads.map(l => l.origem).filter(Boolean))) as string[]}
+        availableOrigins={getAvailableOrigins()}
       />
 
       {/* Edit Lead Dialog */}
