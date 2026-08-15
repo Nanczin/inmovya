@@ -320,7 +320,7 @@ export function AgendaModule() {
     for (let i = 0; i < 7; i++) {
       days.push(
         <div key={i} className="text-center font-medium text-sm py-2 text-muted-foreground uppercase">
-          {format(addMonths(startDate, i), "EEEE", { locale: ptBR }).split('-')[0]}
+          {format(addDays(startDate, i), "EEEE", { locale: ptBR }).split('-')[0]}
         </div>
       );
     }
