@@ -90,6 +90,7 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
                 const { error } = await supabase
                     .from('tasks')
                     .update({
+                        user_id: user.id,
                         lead_id: leadIdToSave,
                         title,
                         description,
@@ -145,11 +146,11 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
             if (onSuccess) onSuccess();
             handleClose();
 
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
             toast({
-                title: "Erro",
-                description: "Não foi possível criar o compromisso.",
+                title: "Erro ao salvar",
+                description: error?.message || "Não foi possível salvar o compromisso.",
                 variant: "destructive"
             });
         } finally {
