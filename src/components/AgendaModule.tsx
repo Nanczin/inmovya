@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, parseISO, addDays } from "date-fns";
+import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, parseISO, addDays, startOfDay, endOfDay, addWeeks, subWeeks, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, CheckCircle2, Clock, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { AgendaTaskDialog } from "@/components/dialogs/AgendaTaskDialog";
 import { useLeads } from "@/context/LeadsContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,6 +39,7 @@ export function AgendaModule() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+  const [view, setView] = useState<'month' | 'week' | 'day'>('month');
   
   const { toast } = useToast();
   const { leads } = useLeads();
@@ -48,11 +50,20 @@ export function AgendaModule() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Obter o primeiro e último dia que aparecem no calendário atual para otimizar a query
-      const monthStart = startOfMonth(currentDate);
-      const monthEnd = endOfMonth(currentDate);
-      const startDate = startOfWeek(monthStart);
-      const endDate = endOfWeek(monthEnd);
+      let startDate, endDate;
+      
+      if (view === 'month') {
+        const monthStart = startOfMonth(currentDate);
+        const monthEnd = endOfMonth(currentDate);
+        startDate = startOfWeek(monthStart);
+        endDate = endOfWeek(monthEnd);
+      } else if (view === 'week') {
+        startDate = startOfWeek(currentDate, { locale: ptBR });
+        endDate = endOfWeek(currentDate, { locale: ptBR });
+      } else {
+        startDate = startOfDay(currentDate);
+        endDate = endOfDay(currentDate);
+      }
 
       const { data, error } = await supabase
         .from('tasks')
@@ -78,7 +89,7 @@ export function AgendaModule() {
 
   useEffect(() => {
     fetchTasks();
-  }, [currentDate]);
+  }, [currentDate, view]);
 
   const toggleTaskStatus = async (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -134,8 +145,16 @@ export function AgendaModule() {
     }
   };
 
-  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const nextDate = () => {
+    if (view === 'month') setCurrentDate(addMonths(currentDate, 1));
+    else if (view === 'week') setCurrentDate(addWeeks(currentDate, 1));
+    else setCurrentDate(addDays(currentDate, 1));
+  };
+  const prevDate = () => {
+    if (view === 'month') setCurrentDate(subMonths(currentDate, 1));
+    else if (view === 'week') setCurrentDate(subWeeks(currentDate, 1));
+    else setCurrentDate(subDays(currentDate, 1));
+  };
   const today = () => setCurrentDate(new Date());
 
   const handleDayClick = (day: Date) => {
@@ -149,29 +168,126 @@ export function AgendaModule() {
     return lead ? lead.nome : "Lead Desconhecido";
   };
 
+  const renderTaskItem = (task: Task, isLarge = false) => {
+    const isCompleted = task.status === 'completed';
+    const leadName = getLeadName(task.lead_id);
+    const taskTime = format(parseISO(task.due_date), "HH:mm");
+
+    const content = (
+      <div 
+        className={`text-xs p-1.5 rounded border flex ${isLarge ? 'flex-row p-4' : 'items-start'} justify-between gap-1 group/item ${
+          isCompleted 
+            ? "bg-muted border-transparent text-muted-foreground" 
+            : task.lead_id 
+              ? "bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-950 dark:border-blue-900 dark:text-blue-300" 
+              : "bg-orange-50 border-orange-100 text-orange-700 dark:bg-orange-950 dark:border-orange-900 dark:text-orange-300"
+        }`}
+        onClick={(e) => {
+          e.stopPropagation();
+          // Could open view/edit modal here
+        }}
+      >
+        <div className="flex-1 truncate">
+          <div className={`flex items-center gap-2 ${isLarge ? 'mb-1 text-sm' : ''}`}>
+             <span className="font-semibold">{taskTime}</span>
+             <span className={`${isCompleted ? "line-through" : ""} font-medium truncate`}>
+               {task.title}
+             </span>
+          </div>
+          {leadName && (
+            <div className={`${isLarge ? 'text-xs mt-1' : 'text-[10px]'} opacity-80 truncate`}>
+              {leadName}
+            </div>
+          )}
+          {isLarge && task.description && (
+            <div className="text-xs mt-2 opacity-70 whitespace-pre-wrap">
+              {task.description}
+            </div>
+          )}
+        </div>
+        <div className={`flex items-center ${!isLarge ? 'opacity-0 group-hover/item:opacity-100' : ''} transition-opacity gap-1`}>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className={`${isLarge ? 'h-8 w-8' : 'h-5 w-5'} hover:bg-background/50`}
+            onClick={(e) => toggleTaskStatus(task, e)}
+            title={isCompleted ? "Reabrir" : "Concluir"}
+          >
+            <CheckCircle2 className={`${isLarge ? 'h-5 w-5' : 'h-3.5 w-3.5'} ${isCompleted ? 'text-green-500' : ''}`} />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className={`${isLarge ? 'h-8 w-8' : 'h-5 w-5'} hover:bg-destructive/10 hover:text-destructive`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setTaskToDelete(task.id);
+            }}
+            title="Excluir"
+          >
+            <Trash2 className={`${isLarge ? 'h-5 w-5' : 'h-3.5 w-3.5'}`} />
+          </Button>
+        </div>
+      </div>
+    );
+
+    if (isLarge) {
+      return <div key={task.id}>{content}</div>;
+    }
+
+    return (
+      <Tooltip key={task.id}>
+        <TooltipTrigger asChild>
+          {content}
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="text-sm">
+            <p className="font-semibold">{task.title}</p>
+            <p className="text-muted-foreground">{format(parseISO(task.due_date), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
+            {leadName && <p className="text-xs mt-1 text-blue-500">Lead: {leadName}</p>}
+            {task.description && <p className="text-xs mt-2 italic max-w-[200px] break-words">{task.description}</p>}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  };
+
   const renderHeader = () => {
     return (
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-4">
           <h2 className="text-2xl font-bold capitalize">
-            {format(currentDate, "MMMM yyyy", { locale: ptBR })}
+            {view === 'day' 
+              ? format(currentDate, "dd 'de' MMMM yyyy", { locale: ptBR })
+              : view === 'week'
+                ? `Semana de ${format(startOfWeek(currentDate, { locale: ptBR }), "dd/MM")} a ${format(endOfWeek(currentDate, { locale: ptBR }), "dd/MM")}`
+                : format(currentDate, "MMMM yyyy", { locale: ptBR })}
           </h2>
           <div className="flex gap-1">
-            <Button variant="outline" size="icon" onClick={prevMonth}>
+            <Button variant="outline" size="icon" onClick={prevDate}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button variant="outline" onClick={today}>
               Hoje
             </Button>
-            <Button variant="outline" size="icon" onClick={nextMonth}>
+            <Button variant="outline" size="icon" onClick={nextDate}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        <Button onClick={() => handleDayClick(new Date())}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Compromisso
-        </Button>
+        <div className="flex items-center gap-4">
+          <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-[300px]">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="month">Mês</TabsTrigger>
+              <TabsTrigger value="week">Semana</TabsTrigger>
+              <TabsTrigger value="day">Dia</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button onClick={() => handleDayClick(new Date())}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo
+          </Button>
+        </div>
       </div>
     );
   };
@@ -323,6 +439,77 @@ export function AgendaModule() {
     return <div className="flex flex-col border-t">{rows}</div>;
   };
 
+  const renderWeekView = () => {
+    const startDate = startOfWeek(currentDate, { locale: ptBR });
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      days.push(addDays(startDate, i));
+    }
+
+    return (
+      <div className="flex flex-col">
+        <div className="grid grid-cols-7 border-b">
+          {days.map((day, i) => (
+            <div key={i} className="text-center font-medium text-sm py-2 text-muted-foreground uppercase border-r">
+              {format(day, "EEEE", { locale: ptBR }).split('-')[0]}
+              <div className={`text-xl mt-1 ${isSameDay(day, new Date()) ? "text-primary font-bold" : "text-foreground"}`}>
+                {format(day, "d")}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 min-h-[500px]">
+          {days.map((day, i) => {
+            const dayTasks = tasks.filter(t => isSameDay(parseISO(t.due_date), day));
+            return (
+              <div 
+                key={i} 
+                className={`p-2 border-r relative group transition-colors hover:bg-muted/30 cursor-pointer ${isSameDay(day, new Date()) ? "bg-primary/5" : "bg-background"}`}
+                onClick={() => handleDayClick(day)}
+              >
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2">
+                  <Button variant="ghost" size="icon" className="h-6 w-6">
+                    <Plus className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-2 mt-8">
+                  <TooltipProvider>
+                    {dayTasks.map(task => renderTaskItem(task))}
+                  </TooltipProvider>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderDayView = () => {
+    const dayTasks = tasks.filter(t => isSameDay(parseISO(t.due_date), currentDate));
+    return (
+      <div className="min-h-[500px] p-6 bg-background rounded-md border">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-semibold text-muted-foreground">Compromissos do dia</h3>
+          <Button variant="outline" onClick={() => handleDayClick(currentDate)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar neste dia
+          </Button>
+        </div>
+        {dayTasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+            <CalendarIcon className="h-12 w-12 mb-4 opacity-20" />
+            <p>Nenhum compromisso para este dia.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 max-w-3xl mx-auto">
+            {dayTasks.map(task => renderTaskItem(task, true))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 p-8 pt-6 h-screen overflow-y-auto w-full">
       <div className="flex justify-between items-center mb-6">
@@ -341,7 +528,7 @@ export function AgendaModule() {
         <CardContent className="p-6">
           {renderHeader()}
           <div className="rounded-md border bg-card">
-            {renderDays()}
+            {view === 'month' && renderDays()}
             {loading ? (
               <div className="min-h-[500px] flex items-center justify-center text-muted-foreground">
                 <div className="flex items-center gap-2 animate-pulse">
@@ -350,7 +537,11 @@ export function AgendaModule() {
                 </div>
               </div>
             ) : (
-              renderCells()
+              <>
+                {view === 'month' && renderCells()}
+                {view === 'week' && renderWeekView()}
+                {view === 'day' && renderDayView()}
+              </>
             )}
           </div>
         </CardContent>
