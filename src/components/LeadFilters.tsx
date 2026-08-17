@@ -30,9 +30,10 @@ interface LeadFiltersProps {
   empreendimentos: any[];
   availableTags: string[];
   availableOrigins: string[];
+  availableStages: string[];
 }
 
-export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, empreendimentos, availableTags, availableOrigins }: LeadFiltersProps) {
+export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, empreendimentos, availableTags, availableOrigins, availableStages = [] }: LeadFiltersProps) {
   const [filters, setFilters] = useState<FilterState>(activeFilters);
 
   // Usar empreendimentos do banco de dados
@@ -117,6 +118,33 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, em
                     />
                     <Label htmlFor={`origem-${origem}`} className="text-sm">
                       {origem}
+                    </Label>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Etapa do Funil */}
+          <div>
+            <Label className="text-base font-medium">Etapa do Funil</Label>
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              {availableStages.length === 0 ? (
+                <div className="col-span-2 text-sm text-muted-foreground p-2">
+                  Nenhuma etapa encontrada
+                </div>
+              ) : (
+                availableStages.map((etapa) => (
+                  <div key={etapa} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`status-${etapa}`}
+                      checked={filters.status.includes(etapa)}
+                      onCheckedChange={(checked) =>
+                        handleCheckboxChange('status', etapa, checked as boolean)
+                      }
+                    />
+                    <Label htmlFor={`status-${etapa}`} className="text-sm">
+                      {etapa}
                     </Label>
                   </div>
                 ))

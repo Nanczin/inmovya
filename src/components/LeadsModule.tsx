@@ -288,12 +288,10 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   // Função para obter todas as tags disponíveis dos leads
   const getAvailableTags = () => {
     if (!leads || !Array.isArray(leads)) return [];
+    const tagsExtrasPrefixes = ["Interesse: ", "Renda: ", "Profissão: ", "Entrada: "];
     const allTags = leads.flatMap(lead => lead.tags || []).filter((t: string) => {
-      if (t.startsWith("Interesse: ")) {
-        const nomeInteresse = t.replace("Interesse: ", "").trim();
-        return empreendimentos.some(emp => emp.nome.trim() === nomeInteresse);
-      }
-      return true;
+      // Retornar apenas tags normais, ignorando as de sistema
+      return !tagsExtrasPrefixes.some(prefix => t.startsWith(prefix));
     });
     return [...new Set(allTags)].sort();
   };
@@ -1888,6 +1886,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         empreendimentos={empreendimentos}
         availableTags={getAvailableTags()}
         availableOrigins={getAvailableOrigins()}
+        availableStages={funnelStages.map(s => s.name)}
       />
 
       {/* Edit Lead Dialog */}
