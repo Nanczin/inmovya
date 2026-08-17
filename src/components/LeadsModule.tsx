@@ -1297,6 +1297,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                       <SelectValue placeholder="Selecione a etapa do funil" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="Nenhuma">Nenhuma</SelectItem>
                       {funnelStages.map(stage => (
                         <SelectItem key={`new-${stage.id}`} value={stage.name}>
                           {stage.name}
@@ -1939,6 +1940,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   <SelectValue placeholder="Selecione a etapa" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="Nenhuma">Nenhuma</SelectItem>
                   {funnelStages.map(stage => (
                     <SelectItem key={`edit-${stage.id}`} value={stage.name}>
                       {stage.name}

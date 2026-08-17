@@ -566,6 +566,7 @@ export function LigacoesModule() {
       } else {
         console.log('Nenhum contato não processado encontrado');
         setShowContatosEsgotados(true);
+        setShowClientData(false); // Fechar a oferta ativa
         // Limpar o progresso se não há mais contatos
         localStorage.removeItem(progressKey);
       }

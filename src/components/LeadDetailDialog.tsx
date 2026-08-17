@@ -213,6 +213,7 @@ export function LeadDetailDialog({ lead, isOpen, onClose, onSave, onDelete }: Le
                 onChange={(e) => setEditedLead({...editedLead, etapa: e.target.value})}
                 className="w-full mt-1 p-2 border border-input rounded-md bg-background"
               >
+                <option value="Nenhuma">Nenhuma</option>
                 <option value="Primeiro Contato">Primeiro Contato</option>
                 <option value="Qualificação">Qualificação</option>
                 <option value="Apresentação">Apresentação</option>
