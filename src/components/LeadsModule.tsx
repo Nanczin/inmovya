@@ -1162,89 +1162,46 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
 
 
-  const handleExportCSV = () => {
-    // Cabeçalhos do CSV com formatação
-    const headers = ['Nome', 'Telefone', 'Email', 'Projeto', 'Renda', 'Profissão', 'Entrada', 'Observações'];
-
-    // Calcular largura máxima para cada coluna
-    const maxWidths = headers.map((header, index) => {
-      const columnData = filteredLeads.map(lead => {
-        const tags = lead.tags || [];
-        const renda = tags.find((t: string) => t.startsWith("Renda: "))?.replace("Renda: ", "") || '';
-        const profissao = tags.find((t: string) => t.startsWith("Profissão: "))?.replace("Profissão: ", "") || '';
-        const entrada = tags.find((t: string) => t.startsWith("Entrada: "))?.replace("Entrada: ", "") || '';
-
-        switch (index) {
-          case 0: return lead.nome || '';
-          case 1: return lead.telefone || '';
-          case 2: return lead.email || '';
-          case 3: return lead.empreendimento?.nome || 'N/A';
-          case 4: return renda;
-          case 5: return profissao;
-          case 6: return entrada;
-          case 7: return lead.observacoes || '';
-          default: return '';
-        }
-      });
-
-      const maxDataLength = Math.max(...columnData.map(data => data.length));
-      return Math.max(header.length, maxDataLength, 10);
-    });
-
-    // Função para formatar linha com espaçamento
-    const formatRow = (row: string[]) => {
-      return row.map((cell, index) => {
-        const cellStr = String(cell || '').slice(0, maxWidths[index]);
-        return cellStr.padEnd(maxWidths[index]);
-      }).join(' | ');
-    };
-
-    // Criar separador
-    const separator = maxWidths.map(width => '-'.repeat(width)).join('-+-');
-
-    // Formatar dados
-    const formattedHeaders = formatRow(headers);
-    const formattedData = filteredLeads.map(lead => {
+  const handleExport = (format: 'csv' | 'excel') => {
+    const data = filteredLeads.map(lead => {
       const tags = lead.tags || [];
       const renda = tags.find((t: string) => t.startsWith("Renda: "))?.replace("Renda: ", "") || '';
       const profissao = tags.find((t: string) => t.startsWith("Profissão: "))?.replace("Profissão: ", "") || '';
       const entrada = tags.find((t: string) => t.startsWith("Entrada: "))?.replace("Entrada: ", "") || '';
 
-      return formatRow([
-        lead.nome || '',
-        lead.telefone || '',
-        lead.email || '',
-        lead.empreendimento?.nome || 'N/A',
-        renda,
-        profissao,
-        entrada,
-        lead.observacoes || ''
-      ]);
+      return {
+        Nome: lead.nome || '',
+        Telefone: lead.telefone || '',
+        Email: lead.email || '',
+        Projeto: lead.empreendimento?.nome || 'N/A',
+        Renda: renda,
+        Profissão: profissao,
+        Entrada: entrada,
+        Observações: lead.observacoes || ''
+      };
     });
 
-    // Combinar tudo
-    const csvContent = [
-      formattedHeaders,
-      separator,
-      ...formattedData
-    ].join('\n');
-
-    // Criar e baixar o arquivo
-    const blob = new Blob([csvContent], { type: 'text/plain;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-
-    link.setAttribute('href', url);
-    link.setAttribute('download', `leads_formatado_${new Date().toISOString().split('T')[0]}.txt`);
-    link.style.visibility = 'hidden';
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (format === 'excel') {
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
+      XLSX.writeFile(workbook, `leads_export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } else {
+      const csvContent = Papa.unparse(data);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `leads_export_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
 
     toast({
       title: "Exportação concluída!",
-      description: `${filteredLeads.length} leads foram exportados formatados por coluna.`,
+      description: `${filteredLeads.length} leads foram exportados.`,
     });
   };
 
@@ -1496,10 +1453,22 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
               onChange={handleFileChange}
               className="hidden"
             />
-            <Button variant="outline" onClick={handleExportCSV} className="col-span-2 sm:col-span-1 w-full sm:w-auto">
-              <Download className="w-4 h-4 mr-2" />
-              <span className="inline">Exportar</span>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="col-span-2 sm:col-span-1 w-full sm:w-auto">
+                  <Download className="w-4 h-4 mr-2" />
+                  <span className="inline">Exportar</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => handleExport('csv')}>
+                  Exportar como CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('excel')}>
+                  Exportar como Excel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
