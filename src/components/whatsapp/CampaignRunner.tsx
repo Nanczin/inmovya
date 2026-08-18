@@ -73,10 +73,13 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
 
     // Simulate sending via API
     try {
-      // Here you would normally integrate with Evolution API, ChatPro, Z-API, etc.
-      // e.g.: await fetch('https://sua-api.com/send', { method: 'POST', body: JSON.stringify({ phone: msg.telefone, message: msg.mensagem_personalizada }) });
+      // Abre a aba do WhatsApp Web automaticamente
+      const text = encodeURIComponent(msg.mensagem_personalizada || "");
+      const phone = msg.telefone.replace(/\D/g, '');
       
-      // We simulate network delay
+      // O navegador pode bloquear este popup na primeira vez, o usuário precisará permitir
+      window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
+
       await new Promise(r => setTimeout(r, 1000));
 
       await supabase
@@ -179,7 +182,9 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
             
             <div className="text-xs text-muted-foreground text-center flex items-start gap-1 mt-2">
               <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>Não feche esta aba durante o disparo para não interromper a fila.</span>
+              <span className="text-left">
+                <strong>Importante:</strong> Permita pop-ups no seu navegador. As abas do WhatsApp Web abrirão sozinhas, mas o disparo final da mensagem dentro do WhatsApp exige que você tenha uma Extensão do Chrome instalada (ou confirme manualmente apertando ENTER), pois sites normais não conseguem clicar no botão "Enviar" de outro site por questões de segurança.
+              </span>
             </div>
           </div>
         </div>
