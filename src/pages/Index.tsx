@@ -18,6 +18,7 @@ import { RelatoriosModule } from "@/components/RelatoriosModule";
 import { SettingsModule } from "@/components/SettingsModule";
 import { AgendaModule } from "@/components/AgendaModule";
 import { FunilModule } from "@/components/FunilModule";
+import { WhatsappModule } from "@/components/WhatsappModule";
 
 const Index = () => {
   const [activeModule, setActiveModule] = useState("dashboard");
@@ -90,6 +91,8 @@ const Index = () => {
         return <FunilModule />;
       case "relatorios":
         return <RelatoriosModule />;
+      case "whatsapp":
+        return <WhatsappModule />;
       case "settings":
         return <SettingsModule />;
       default:

@@ -1,5 +1,5 @@
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
-import { Home, Users, Building2, FileText, Mail, Settings, BarChart3, Phone, AtSign, Filter, Calendar as CalendarIcon } from "lucide-react";
+import { Home, Users, Building2, FileText, Mail, Settings, BarChart3, Phone, AtSign, Filter, Calendar as CalendarIcon, MessageCircle } from "lucide-react";
 interface AppSidebarProps {
   activeModule: string;
   onModuleChange: (module: string) => void;
@@ -44,6 +44,10 @@ const menuItems = [{
   id: "funil",
   label: "Funil",
   icon: Filter
+}, {
+  id: "whatsapp",
+  label: "WhatsApp",
+  icon: MessageCircle
 }, {
   id: "relatorios",
   label: "Relatórios",
