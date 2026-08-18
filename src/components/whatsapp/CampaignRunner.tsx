@@ -93,8 +93,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       }
       
       // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
-      // Usa uma aba nomeada para reaproveitar a mesma janela e evitar o erro "O WhatsApp está aberto em outra aba"
-      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, 'whatsapp_inmovya');
+      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
 
       try {
         if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {

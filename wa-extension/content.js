@@ -42,6 +42,12 @@ function trySend() {
     console.log("Inmovya WA Sender: Botao encontrado! Clicando...");
     hasSent = true;
     sendButton.click();
+    
+    // Aguarda um pouco para a mensagem ser enviada e fecha a aba
+    setTimeout(() => {
+      console.log("Inmovya WA Sender: Fechando aba...");
+      chrome.runtime.sendMessage({ action: "closeTab" });
+    }, 3000);
   } else {
     // Se o botão de enviar não estiver lá, tenta disparar um Enter na caixa de texto
     const inputBox = mainPanel.querySelector('div[contenteditable="true"]');
@@ -57,6 +63,12 @@ function trySend() {
         cancelable: true
       });
       inputBox.dispatchEvent(enterEvent);
+      
+      // Aguarda um pouco para a mensagem ser enviada e fecha a aba
+      setTimeout(() => {
+        console.log("Inmovya WA Sender: Fechando aba...");
+        chrome.runtime.sendMessage({ action: "closeTab" });
+      }, 3000);
     } else {
       // Se nem o botão nem o texto apareceram ainda, aguarda e tenta de novo
       scheduleRetry();
