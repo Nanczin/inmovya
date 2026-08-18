@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import { Play, Pause, ExternalLink, Clock, AlertTriangle, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { replaceVariables } from "@/utils/formatUtils";
+import { replaceVariables, parseSpintax } from "@/utils/formatUtils";
 
 export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaign: any, onFinish: () => void, onUpdateStatus: (id: string, status: string) => void }) {
   const [messages, setMessages] = useState<any[]>([]);
@@ -81,8 +81,9 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
 
     // Simulate sending via API
     try {
-      // Abre a aba do WhatsApp Web automaticamente
-      const finalMsg = replaceVariables(msg.mensagem_personalizada || "", msg.nome);
+      // Gera o texto final da mensagem
+      const fallbackMsg = replaceVariables(parseSpintax(campaign.mensagem || ""), msg.nome);
+      const finalMsg = msg.mensagem_personalizada || fallbackMsg;
       const text = encodeURIComponent(finalMsg);
       let phone = msg.telefone.replace(/\D/g, '');
       

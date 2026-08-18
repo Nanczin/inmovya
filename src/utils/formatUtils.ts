@@ -29,3 +29,19 @@ export const replaceVariables = (text: string, contactName: string | null | unde
     
     return replaced;
 };
+
+export const parseSpintax = (text: string): string => {
+    if (!text) return "";
+    let result = text;
+    // Regex para encontrar o spintax mais interno {A|B|C} (não contém { ou } dentro)
+    const regex = /\{([^{}]*\|[^{}]*)\}/;
+    
+    let match;
+    while ((match = regex.exec(result)) !== null) {
+        const options = match[1].split('|');
+        const randomOption = options[Math.floor(Math.random() * options.length)];
+        result = result.substring(0, match.index) + randomOption + result.substring(match.index + match[0].length);
+    }
+    
+    return result;
+};

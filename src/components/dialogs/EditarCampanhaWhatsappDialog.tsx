@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Edit, Plus, Trash2 } from "lucide-react";
-import { replaceVariables } from "@/utils/formatUtils";
+import { replaceVariables, parseSpintax } from "@/utils/formatUtils";
 
 interface EditarCampanhaWhatsappDialogProps {
   children: React.ReactNode;
@@ -20,7 +20,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
   const [loading, setLoading] = useState(false);
   
   const [nome, setNome] = useState("");
-  const [mensagens, setMensagens] = useState<string[]>([""]);
+  const [mensagem, setMensagem] = useState<string>("");
   const [cadencia, setCadencia] = useState({
     intervaloMinimo: 10,
     intervaloMaximo: 30,
@@ -35,10 +35,10 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
       setNome(campaign.nome || "");
       
       // Attempt to load messages from variaveis JSON or fallback to main message
-      if (campaign.variaveis && campaign.variaveis.mensagens && Array.isArray(campaign.variaveis.mensagens)) {
-        setMensagens(campaign.variaveis.mensagens);
+      if (campaign.variaveis && campaign.variaveis.mensagens && Array.isArray(campaign.variaveis.mensagens) && campaign.variaveis.mensagens.length > 0) {
+        setMensagem(campaign.variaveis.mensagens[0]);
       } else {
-        setMensagens([campaign.mensagem || ""]);
+        setMensagem(campaign.mensagem || "");
       }
 
       setCadencia({
@@ -51,23 +51,22 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
   }, [open, campaign]);
 
   const handleSalvar = async () => {
-    const validMessages = mensagens.filter(m => m.trim() !== "");
-    if (!nome.trim() || validMessages.length === 0) {
-      toast({ title: "Campos obrigatórios", description: "Preencha o nome e pelo menos uma mensagem.", variant: "destructive" });
+    if (!nome.trim() || !mensagem.trim()) {
+      toast({ title: "Campos obrigatórios", description: "Preencha o nome e a mensagem.", variant: "destructive" });
       return;
     }
 
     try {
       setLoading(true);
       
-      const variaveis = { ...(campaign.variaveis || {}), mensagens: validMessages };
+      const variaveis = { ...(campaign.variaveis || {}), mensagens: [mensagem] };
 
       // Update the campaign
       const { error } = await supabase
         .from('whatsapp_campaigns')
         .update({
           nome: nome,
-          mensagem: validMessages[0], // fallback
+          mensagem: mensagem, // fallback
           variaveis: variaveis,
           configuracao_cadencia: cadencia,
           updated_at: new Date().toISOString()
@@ -88,8 +87,9 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
       if (pendingMessages && pendingMessages.length > 0) {
         // Prepare updates for each pending message (selecting a new random variation)
         const updates = pendingMessages.map(msg => {
-          const randomMsg = validMessages[Math.floor(Math.random() * validMessages.length)];
-          const personalized = replaceVariables(randomMsg, msg.nome);
+          // Parse spintax and variables for each contact
+          const spintaxMsg = parseSpintax(mensagem);
+          const personalized = replaceVariables(spintaxMsg, msg.nome);
           
           return {
             id: msg.id,
@@ -142,50 +142,21 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <Label>Variações de Mensagem (Spintax)</Label>
-              <Button 
-                type="button" 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setMensagens([...mensagens, ""])}
-              >
-                <Plus className="w-4 h-4 mr-2" /> Adicionar
-              </Button>
+              <Label>Mensagem da Campanha (Suporta Spintax)</Label>
             </div>
             
-            {mensagens.map((msg, index) => (
-              <div key={index} className="space-y-2 border p-4 rounded-md relative bg-muted/20">
-                <div className="flex justify-between items-center mb-2">
-                  <Label className="text-sm font-medium text-primary">Variação {index + 1}</Label>
-                  {mensagens.length > 1 && (
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-destructive h-8 px-2"
-                      onClick={() => {
-                        const newMsg = [...mensagens];
-                        newMsg.splice(index, 1);
-                        setMensagens(newMsg);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-                <Textarea 
-                  placeholder="Olá {{nome}}! Tudo bem?" 
-                  rows={4}
-                  value={msg}
-                  onChange={(e) => {
-                    const newMsg = [...mensagens];
-                    newMsg[index] = e.target.value;
-                    setMensagens(newMsg);
-                  }}
-                />
+            <div className="space-y-2 border p-4 rounded-md relative bg-muted/20">
+              <Textarea 
+                placeholder="{Olá|Oi} {{nome}}! Tudo bem?" 
+                rows={6}
+                value={mensagem}
+                onChange={(e) => setMensagem(e.target.value)}
+              />
+              <div className="text-xs text-muted-foreground bg-white dark:bg-zinc-800 p-2 rounded border mt-2">
+                <strong>Exemplo de Prévia:</strong> {mensagem ? replaceVariables(parseSpintax(mensagem), "João") : "Sua mensagem aparecerá aqui..."}
               </div>
-            ))}
-            <p className="text-xs text-muted-foreground mt-2">As mensagens pendentes serão atualizadas com as novas variações de forma aleatória.</p>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Use {'{Olá|Oi}'} para spintax. As mensagens pendentes serão atualizadas com as novas variações de forma aleatória.</p>
           </div>
 
           <div className="space-y-4 pt-4 border-t">

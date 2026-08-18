@@ -15,7 +15,7 @@ import { ImportarListaDialog } from "@/components/dialogs/ImportarListaDialog";
 import { CampaignReportDialog } from "@/components/dialogs/CampaignReportDialog";
 import { CampaignRunner } from "@/components/whatsapp/CampaignRunner";
 import { EditarCampanhaWhatsappDialog } from "@/components/dialogs/EditarCampanhaWhatsappDialog";
-import { replaceVariables } from "@/utils/formatUtils";
+import { replaceVariables, parseSpintax } from "@/utils/formatUtils";
 
 export function WhatsappModule() {
   const { toast } = useToast();
@@ -28,7 +28,7 @@ export function WhatsappModule() {
   const [newCampaign, setNewCampaign] = useState({
     nome: "",
     listaId: "",
-    mensagens: [""],
+    mensagem: "",
     cadencia: {
       intervaloMinimo: 10,
       intervaloMaximo: 30,
@@ -90,10 +90,8 @@ export function WhatsappModule() {
   };
 
   const handleCreateCampaign = async () => {
-    const validMessages = newCampaign.mensagens.filter(m => m.trim() !== "");
-    
-    if (!newCampaign.nome || !newCampaign.listaId || validMessages.length === 0) {
-      toast({ title: "Campos obrigatórios", description: "Preencha nome, lista e pelo menos uma variação de mensagem.", variant: "destructive" });
+    if (!newCampaign.nome || !newCampaign.listaId || !newCampaign.mensagem.trim()) {
+      toast({ title: "Campos obrigatórios", description: "Preencha nome, lista e a mensagem.", variant: "destructive" });
       return;
     }
 
@@ -109,8 +107,8 @@ export function WhatsappModule() {
           user_id: user.id,
           nome: newCampaign.nome,
           lista_id: newCampaign.listaId,
-          mensagem: validMessages[0], // backward compatibility
-          variaveis: { mensagens: validMessages },
+          mensagem: newCampaign.mensagem,
+          variaveis: { mensagens: [newCampaign.mensagem] }, // mantendo compatibilidade
           configuracao_cadencia: newCampaign.cadencia,
           status: 'Rascunho'
         })
@@ -130,14 +128,14 @@ export function WhatsappModule() {
 
       if (contacts && contacts.length > 0) {
         const messagesToInsert = contacts.map(c => {
-          const randomMsg = validMessages[Math.floor(Math.random() * validMessages.length)];
+          const spintaxMsg = parseSpintax(newCampaign.mensagem);
           return {
             user_id: user.id,
             campaign_id: campaign.id,
             contato_id: c.id,
             nome: c.nome,
             telefone: c.telefone,
-            mensagem_personalizada: replaceVariables(randomMsg, c.nome),
+            mensagem_personalizada: replaceVariables(spintaxMsg, c.nome),
             status: 'Pendente'
           };
         });
@@ -151,7 +149,7 @@ export function WhatsappModule() {
 
       toast({ title: "Sucesso", description: "Campanha criada com sucesso!" });
       setNewCampaign({
-        nome: "", listaId: "", mensagens: [""],
+        nome: "", listaId: "", mensagem: "",
         cadencia: { intervaloMinimo: 10, intervaloMaximo: 30, limiteDiario: 100, pausaAposMensagens: 50, tempoDescanso: 60 }
       });
       setActiveTab("historico");
@@ -367,53 +365,21 @@ export function WhatsappModule() {
 
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <Label>Variações de Mensagem</Label>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => setNewCampaign({...newCampaign, mensagens: [...newCampaign.mensagens, ""]})}
-                  >
-                    <Plus className="w-4 h-4 mr-2" /> Adicionar Variação
-                  </Button>
+                  <Label>Mensagem da Campanha (Suporta Spintax)</Label>
                 </div>
-                <p className="text-xs text-muted-foreground">O sistema escolherá aleatoriamente uma destas mensagens para cada contato. Use {'{{nome}}'} para inserir o nome do contato dinamicamente.</p>
+                <p className="text-xs text-muted-foreground">Use variações de Spintax como {'{Olá|Oi|E aí}'} para variar o cumprimento. Use {'{{nome}}'} para inserir o nome do contato dinamicamente.</p>
                 
-                {newCampaign.mensagens.map((msg, index) => (
-                  <div key={index} className="space-y-2 border p-4 rounded-md relative bg-muted/20">
-                    <div className="flex justify-between items-center mb-2">
-                      <Label className="text-sm font-medium text-primary">Variação {index + 1}</Label>
-                      {newCampaign.mensagens.length > 1 && (
-                        <Button 
-                          type="button" 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-destructive h-8 px-2"
-                          onClick={() => {
-                            const newMensagens = [...newCampaign.mensagens];
-                            newMensagens.splice(index, 1);
-                            setNewCampaign({...newCampaign, mensagens: newMensagens});
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                    <Textarea 
-                      placeholder="Olá {{nome}}! Tudo bem?" 
-                      rows={4}
-                      value={msg}
-                      onChange={(e) => {
-                        const newMensagens = [...newCampaign.mensagens];
-                        newMensagens[index] = e.target.value;
-                        setNewCampaign({...newCampaign, mensagens: newMensagens});
-                      }}
-                    />
-                    <div className="text-xs text-muted-foreground bg-white dark:bg-zinc-800 p-2 rounded border mt-2">
-                      <strong>Prévia:</strong> {msg ? replaceVariables(msg, "João") : "Sua mensagem aparecerá aqui..."}
-                    </div>
+                <div className="space-y-2 border p-4 rounded-md relative bg-muted/20">
+                  <Textarea 
+                    placeholder="{Olá|Oi} {{nome}}! Tudo bem?" 
+                    rows={6}
+                    value={newCampaign.mensagem}
+                    onChange={(e) => setNewCampaign({...newCampaign, mensagem: e.target.value})}
+                  />
+                  <div className="text-xs text-muted-foreground bg-white dark:bg-zinc-800 p-2 rounded border mt-2">
+                    <strong>Exemplo de Prévia Aleatória:</strong> {newCampaign.mensagem ? replaceVariables(parseSpintax(newCampaign.mensagem), "João") : "Sua mensagem aparecerá aqui..."}
                   </div>
-                ))}
+                </div>
               </div>
             </CardContent>
           </Card>
