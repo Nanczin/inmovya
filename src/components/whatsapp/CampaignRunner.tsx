@@ -77,10 +77,21 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       // Abre a aba do WhatsApp Web automaticamente
       const finalMsg = replaceVariables(msg.mensagem_personalizada || "", msg.nome);
       const text = encodeURIComponent(finalMsg);
-      const phone = msg.telefone.replace(/\D/g, '');
+      let phone = msg.telefone.replace(/\D/g, '');
       
-      // O navegador pode bloquear este popup na primeira vez, o usuário precisará permitir
-      window.open(`https://api.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
+      // Adiciona DDI do Brasil caso o número venha apenas com DDD e telefone
+      if (phone.length === 10 || phone.length === 11) {
+        phone = '55' + phone;
+      }
+      
+      // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
+      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
+
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+        toast({ title: "Pop-up Bloqueado!", description: "Por favor, permita pop-ups para este site para que o WhatsApp Web possa abrir automaticamente.", variant: "destructive" });
+        onUpdateStatus(campaign.id, 'Pausada');
+        return;
+      }
 
       await new Promise(r => setTimeout(r, 1000));
 
