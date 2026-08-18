@@ -296,84 +296,8 @@ export function MailingModule({ onModuleChange }: MailingModuleProps = {}) {
   };
 
   const handleNovaLista = async (novaLista: any) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({ title: "Erro de autenticação", description: "Faça login para criar listas.", variant: "destructive" });
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('listas_contatos')
-        .insert({
-          user_id: user.id,
-          nome: novaLista.nome,
-          descricao: novaLista.descricao,
-          origem: novaLista.origem,
-          total_contatos: novaLista.total_contatos || novaLista.totalContatos || 0,
-          validados: novaLista.validados || 0,
-          duplicados: novaLista.duplicados || 0,
-          invalidos: novaLista.invalidos || 0,
-          campanhas_ativas: novaLista.campanhas_ativas || novaLista.campanhasAtivas || 0,
-          taxa_entrega: novaLista.taxa_entrega || 0,
-          status: novaLista.status || 'Ativa',
-          configuracoes: novaLista.configuracoes,
-          metadados: novaLista.metadados
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Se temos contatos para inserir, salvá-los na tabela contatos
-      if (novaLista.metadados?.contatos && novaLista.metadados.contatos.length > 0) {
-        const contatosParaInserir = novaLista.metadados.contatos.map((contato: any) => ({
-          user_id: user.id,
-          nome: contato.nome,
-          telefone: contato.telefone,
-          email: contato.email || null,
-          lista_id: data.id,
-          status: 'ativo',
-          dados_extras: {
-            linha_original: contato.linha,
-            dados_originais: contato.dadosOriginais
-          }
-        }));
-
-        const { error: contatosError } = await supabase
-          .from('contatos')
-          .insert(contatosParaInserir);
-
-        if (contatosError) {
-          console.error('Erro ao inserir contatos:', contatosError);
-          toast({
-            title: "Aviso",
-            description: "Lista criada, mas alguns contatos podem não ter sido salvos",
-            variant: "destructive",
-          });
-        } else {
-          toast({
-            title: "Lista criada com sucesso!",
-            description: `A lista "${data.nome}" foi criada com ${contatosParaInserir.length} contatos`,
-          });
-        }
-      } else {
-        toast({
-          title: "Lista criada com sucesso!",
-          description: `A lista "${data.nome}" foi criada`,
-        });
-      }
-
-      setListas(prev => [data, ...prev]);
-
-    } catch (error) {
-      console.error('Erro ao criar lista:', error);
-      toast({
-        title: "Erro",
-        description: "Não foi possível criar a lista",
-        variant: "destructive",
-      });
-    }
+    // A inser��o no banco agora � feita pelo ImportarListaDialog
+    setListas(prev => [novaLista, ...prev]);
   };
 
   const handleListaAtualizada = async (listaAtualizada: any) => {

@@ -1,3 +1,4 @@
+import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -244,61 +245,114 @@ export function ImportarListaDialog({ children, onListaImportada }: ImportarList
   };
 
   const finalizarImportacao = async () => {
-    const novaLista = {
-      nome: dados.nome,
-      descricao: `Lista importada do arquivo: ${file?.name}`,
-      origem: "Importação CSV",
-      total_contatos: importStats.total,
-      validados: importStats.validos,
-      duplicados: importStats.duplicados,
-      invalidos: importStats.invalidos,
-      campanhas_ativas: 0,
-      taxa_entrega: importStats.total > 0 ? Math.floor((importStats.validos / importStats.total) * 100) : 0,
-      status: "Ativa",
-      configuracoes: {
-        tipo: dados.tipo,
-        separador: dados.separador,
-        temCabecalho: dados.temCabecalho,
-        mapeamento: dados.mapeamento
-      },
-      metadados: {
-        arquivoOriginal: file?.name,
-        dataImportacao: new Date().toISOString(),
-        tamanhoArquivo: file?.size || 0,
-        contatos: importStats.amostraContatos // Incluir os contatos processados
+    try {
+      setImporting(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Erro de autentica��o", description: "Fa�a login para importar listas.", variant: "destructive" });
+        setImporting(false);
+        return;
       }
-    };
 
-    onListaImportada(novaLista);
+      const novaLista = {
+        user_id: user.id,
+        nome: dados.nome,
+        descricao: `Lista importada do arquivo: ${file?.name}`,
+        origem: "Importa��o CSV",
+        total_contatos: importStats.total,
+        validados: importStats.validos,
+        duplicados: importStats.duplicados,
+        invalidos: importStats.invalidos,
+        campanhas_ativas: 0,
+        taxa_entrega: importStats.total > 0 ? Math.floor((importStats.validos / importStats.total) * 100) : 0,
+        status: "Ativa",
+        configuracoes: {
+          tipo: dados.tipo,
+          separador: dados.separador,
+          temCabecalho: dados.temCabecalho,
+          mapeamento: dados.mapeamento
+        },
+        metadados: {
+          arquivoOriginal: file?.name,
+          dataImportacao: new Date().toISOString(),
+          tamanhoArquivo: file?.size || 0
+        }
+      };
 
-    // Toast específico sobre duplicados removidos
-    if (importStats.duplicados > 0) {
-      toast({
-        title: "Lista importada com sucesso!",
-        description: `${importStats.validos} contatos válidos salvos. ${importStats.duplicados} duplicados foram automaticamente removidos.`,
-        variant: "default",
+      const { data: listaSalva, error } = await supabase
+        .from('listas_contatos')
+        .insert(novaLista)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (importStats.amostraContatos && importStats.amostraContatos.length > 0) {
+        const contatosParaInserir = importStats.amostraContatos.map((contato) => ({
+          user_id: user.id,
+          nome: contato.nome,
+          telefone: contato.telefone,
+          email: contato.email || null,
+          lista_id: listaSalva.id,
+          status: 'ativo',
+          dados_extras: {
+            linha_original: contato.linha,
+            dados_originais: contato.dadosOriginais
+          }
+        }));
+
+        const { error: contatosError } = await supabase
+          .from('contatos')
+          .insert(contatosParaInserir);
+
+        if (contatosError) {
+          console.error('Erro ao inserir contatos:', contatosError);
+          toast({
+            title: "Aviso",
+            description: "Lista criada, mas alguns contatos podem n�o ter sido salvos",
+            variant: "destructive",
+          });
+        }
+      }
+
+      onListaImportada(listaSalva);
+
+      if (importStats.duplicados > 0) {
+        toast({
+          title: "Lista importada com sucesso!",
+          description: `${importStats.validos} contatos v�lidos salvos. ${importStats.duplicados} duplicados removidos.`,
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Lista importada com sucesso!",
+          description: `${importStats.validos} contatos v�lidos salvos no banco.`,
+          variant: "default",
+        });
+      }
+
+      setOpen(false);
+      setStep(1);
+      setFile(null);
+      setProgress(0);
+      setImportStats({ total: 0, validos: 0, duplicados: 0, invalidos: 0, amostraContatos: [] });
+      setDados({
+        nome: "",
+        tipo: "csv",
+        separador: ",",
+        temCabecalho: true,
+        mapeamento: { nome: 0, email: 1, telefone: 2 }
       });
-    } else {
+    } catch (error) {
+      console.error('Erro ao salvar lista:', error);
       toast({
-        title: "Lista importada com sucesso!",
-        description: `${importStats.validos} contatos válidos salvos sem duplicados.`,
-        variant: "default",
+        title: "Erro",
+        description: "N�o foi poss�vel salvar a lista no banco de dados.",
+        variant: "destructive",
       });
+    } finally {
+      setImporting(false);
     }
-
-    // Reset do estado
-    setOpen(false);
-    setStep(1);
-    setFile(null);
-    setProgress(0);
-    setImportStats({ total: 0, validos: 0, duplicados: 0, invalidos: 0, amostraContatos: [] });
-    setDados({
-      nome: "",
-      tipo: "csv",
-      separador: ",",
-      temCabecalho: true,
-      mapeamento: { nome: 0, email: 1, telefone: 2 }
-    });
   };
 
   const cancelarImportacao = () => {
