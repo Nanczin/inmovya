@@ -26,7 +26,7 @@ export function WhatsappModule() {
   const [newCampaign, setNewCampaign] = useState({
     nome: "",
     listaId: "",
-    mensagem: "",
+    mensagens: [""],
     cadencia: {
       intervaloMinimo: 10,
       intervaloMaximo: 30,
@@ -88,8 +88,10 @@ export function WhatsappModule() {
   };
 
   const handleCreateCampaign = async () => {
-    if (!newCampaign.nome || !newCampaign.listaId || !newCampaign.mensagem) {
-      toast({ title: "Campos obrigatórios", description: "Preencha nome, lista e mensagem.", variant: "destructive" });
+    const validMessages = newCampaign.mensagens.filter(m => m.trim() !== "");
+    
+    if (!newCampaign.nome || !newCampaign.listaId || validMessages.length === 0) {
+      toast({ title: "Campos obrigatórios", description: "Preencha nome, lista e pelo menos uma variação de mensagem.", variant: "destructive" });
       return;
     }
 
@@ -105,7 +107,7 @@ export function WhatsappModule() {
           user_id: user.id,
           nome: newCampaign.nome,
           lista_id: newCampaign.listaId,
-          mensagem: newCampaign.mensagem,
+          mensagem: validMessages[0], // backward compatibility
           configuracao_cadencia: newCampaign.cadencia,
           status: 'Rascunho'
         })
@@ -124,15 +126,18 @@ export function WhatsappModule() {
       if (contactsError) throw contactsError;
 
       if (contacts && contacts.length > 0) {
-        const messagesToInsert = contacts.map(c => ({
-          user_id: user.id,
-          campaign_id: campaign.id,
-          contato_id: c.id,
-          nome: c.nome,
-          telefone: c.telefone,
-          mensagem_personalizada: newCampaign.mensagem.replace(/\{\{nome\}\}/g, c.nome || "Cliente"),
-          status: 'Pendente'
-        }));
+        const messagesToInsert = contacts.map(c => {
+          const randomMsg = validMessages[Math.floor(Math.random() * validMessages.length)];
+          return {
+            user_id: user.id,
+            campaign_id: campaign.id,
+            contato_id: c.id,
+            nome: c.nome,
+            telefone: c.telefone,
+            mensagem_personalizada: randomMsg.replace(/\{\{nome\}\}/g, c.nome || "Cliente"),
+            status: 'Pendente'
+          };
+        });
 
         const { error: msgError } = await supabase
           .from('whatsapp_campaign_messages')
@@ -143,7 +148,7 @@ export function WhatsappModule() {
 
       toast({ title: "Sucesso", description: "Campanha criada com sucesso!" });
       setNewCampaign({
-        nome: "", listaId: "", mensagem: "",
+        nome: "", listaId: "", mensagens: [""],
         cadencia: { intervaloMinimo: 10, intervaloMaximo: 30, limiteDiario: 100, pausaAposMensagens: 50, tempoDescanso: 60 }
       });
       setActiveTab("historico");
@@ -345,22 +350,55 @@ export function WhatsappModule() {
                 <p className="text-xs text-muted-foreground">Você pode criar novas listas no módulo de Mailing.</p>
               </div>
 
-              <div className="space-y-2">
-                <Label>Mensagem</Label>
-                <Textarea 
-                  placeholder="Olá {{nome}}! Tudo bem?" 
-                  rows={5}
-                  value={newCampaign.mensagem}
-                  onChange={(e) => setNewCampaign({...newCampaign, mensagem: e.target.value})}
-                />
-                <p className="text-xs text-muted-foreground">Use {'{{nome}}'} para inserir o nome do contato dinamicamente.</p>
-              </div>
-              
-              <div className="bg-muted/50 p-4 rounded-lg">
-                <Label className="mb-2 block">Prévia da Mensagem</Label>
-                <div className="p-3 bg-white dark:bg-zinc-800 rounded-md border text-sm">
-                  {newCampaign.mensagem ? newCampaign.mensagem.replace(/\{\{nome\}\}/g, "João") : "Sua mensagem aparecerá aqui..."}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <Label>Variações de Mensagem</Label>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setNewCampaign({...newCampaign, mensagens: [...newCampaign.mensagens, ""]})}
+                  >
+                    <Plus className="w-4 h-4 mr-2" /> Adicionar Variação
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">O sistema escolherá aleatoriamente uma destas mensagens para cada contato. Use {'{{nome}}'} para inserir o nome do contato dinamicamente.</p>
+                
+                {newCampaign.mensagens.map((msg, index) => (
+                  <div key={index} className="space-y-2 border p-4 rounded-md relative bg-muted/20">
+                    <div className="flex justify-between items-center mb-2">
+                      <Label className="text-sm font-medium text-primary">Variação {index + 1}</Label>
+                      {newCampaign.mensagens.length > 1 && (
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-destructive h-8 px-2"
+                          onClick={() => {
+                            const newMensagens = [...newCampaign.mensagens];
+                            newMensagens.splice(index, 1);
+                            setNewCampaign({...newCampaign, mensagens: newMensagens});
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <Textarea 
+                      placeholder="Olá {{nome}}! Tudo bem?" 
+                      rows={4}
+                      value={msg}
+                      onChange={(e) => {
+                        const newMensagens = [...newCampaign.mensagens];
+                        newMensagens[index] = e.target.value;
+                        setNewCampaign({...newCampaign, mensagens: newMensagens});
+                      }}
+                    />
+                    <div className="text-xs text-muted-foreground bg-white dark:bg-zinc-800 p-2 rounded border mt-2">
+                      <strong>Prévia:</strong> {msg ? msg.replace(/\{\{nome\}\}/g, "João") : "Sua mensagem aparecerá aqui..."}
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
