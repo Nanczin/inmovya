@@ -93,12 +93,17 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       
       // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
       // Usa uma aba nomeada para reaproveitar a mesma janela e evitar o erro "O WhatsApp está aberto em outra aba"
-      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, 'whatsapp_inmovya');
+      // Usa inmovya_msg em vez de text para que a extensão injete o texto e evite modais nativos do WhatsApp
+      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&inmovya_msg=${text}&inmovya_auto=1`, 'whatsapp_inmovya');
 
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-        toast({ title: "Pop-up Bloqueado!", description: "Por favor, permita pop-ups para este site para que o WhatsApp Web possa abrir automaticamente.", variant: "destructive" });
-        onUpdateStatus(campaign.id, 'Pausada');
-        return;
+      try {
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+          toast({ title: "Pop-up Bloqueado!", description: "Por favor, permita pop-ups para este site para que o WhatsApp Web possa abrir automaticamente.", variant: "destructive" });
+          onUpdateStatus(campaign.id, 'Pausada');
+          return;
+        }
+      } catch (e) {
+        // Ignora erro de cross-origin caso ocorra ao tentar ler propriedades da janela
       }
 
       await new Promise(r => setTimeout(r, 1000));

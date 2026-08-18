@@ -22,39 +22,56 @@ function handleInterstitial() {
 
 let checkCount = 0;
 
-function clickSendButton() {
-  // Só executa no web.whatsapp.com
+function trySend() {
   if (!window.location.hostname.includes('web.whatsapp.com')) return;
-  
   if (hasSent) return;
 
-  console.log("Inmovya WA Sender: Procurando botao de enviar...");
+  console.log("Inmovya WA Sender: Tentando enviar...");
 
-  // O botao de enviar costuma ter o ícone "send" dentro do whatsapp web
-  // O painel principal do chat aberto tem id "main"
-  const sendButton = document.querySelector('span[data-icon="send"]')?.closest('button') || 
-                     document.querySelector('button[aria-label="Enviar"]');
-  const chatPanel = document.getElementById('main');
+  const mainPanel = document.getElementById('main');
+  if (!mainPanel) {
+    scheduleRetry();
+    return;
+  }
 
-  if (sendButton && chatPanel) {
-    console.log("Inmovya WA Sender: Botao encontrado! Enviando em 2 segundos...");
-    hasSent = true;
+  // 1. Procurar a caixa de texto
+  const inputBox = mainPanel.querySelector('div[contenteditable="true"]');
+  if (!inputBox) {
+    scheduleRetry();
+    return;
+  }
+
+  // 2. Inserir o texto (lido da URL como inmovya_msg)
+  const urlParams = new URLSearchParams(window.location.search);
+  const customMsg = urlParams.get('inmovya_msg');
+  
+  if (customMsg) {
+    // Focar e inserir texto
+    inputBox.focus();
+    // Tenta usar execCommand que é o método mais robusto para disparar os eventos corretos do React no WhatsApp
+    document.execCommand('insertText', false, customMsg);
+  }
+
+  // 3. Aguardar o botão de enviar aparecer e clicar nele
+  setTimeout(() => {
+    const sendButton = document.querySelector('span[data-icon="send"]')?.closest('button') || 
+                       document.querySelector('button[aria-label="Enviar"]');
     
-    setTimeout(() => {
+    if (sendButton) {
+      console.log("Inmovya WA Sender: Botao encontrado! Enviando...");
+      hasSent = true;
       sendButton.click();
-      console.log("Inmovya WA Sender: Mensagem enviada. Fechando aba em 4 segundos...");
-      
-      // Não fechamos a aba aqui! Deixamos a aba aberta para ser reaproveitada
-      // pelo disparador do React (que usa window.open com o mesmo nome de janela).
-      // Isso previne que o bloqueador de pop-ups bloqueie a segunda mensagem.
-      
-    }, 2000); // Atraso de 2s para garantir que o texto foi totalmente carregado no input
-  } else {
-    // Tenta de novo apos 500ms (máximo de 60 vezes = 30 segundos)
-    checkCount++;
-    if (checkCount < 60) {
-      setTimeout(clickSendButton, 500);
+    } else {
+      // Se não encontrou o botão de enviar mesmo com o texto (ou se era só link normal), tenta novamente
+      scheduleRetry();
     }
+  }, 1000);
+}
+
+function scheduleRetry() {
+  checkCount++;
+  if (checkCount < 60) { // Tenta por até 30 segundos (60 * 500ms)
+    setTimeout(trySend, 500);
   }
 }
 
@@ -66,7 +83,7 @@ if (window.location.href.includes('inmovya_auto=1')) {
   } else if (window.location.hostname.includes('web.whatsapp.com')) {
     // Estamos na interface principal web - aguarda 8 segundos iniciais para o chat da URL carregar 
     // e não correr o risco de pegar a conversa anterior
-    setTimeout(clickSendButton, 8000);
+    setTimeout(trySend, 8000);
   }
 }
 
@@ -79,7 +96,7 @@ new MutationObserver(() => {
     if (url.includes('inmovya_auto=1') && url.includes('web.whatsapp.com')) {
        hasSent = false;
        checkCount = 0;
-       setTimeout(clickSendButton, 8000);
+       setTimeout(trySend, 8000);
     }
   }
 }).observe(document, {subtree: true, childList: true});
