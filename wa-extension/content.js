@@ -20,6 +20,8 @@ function handleInterstitial() {
   }
 }
 
+let checkCount = 0;
+
 function clickSendButton() {
   // Só executa no web.whatsapp.com
   if (!window.location.hostname.includes('web.whatsapp.com')) return;
@@ -29,27 +31,31 @@ function clickSendButton() {
   console.log("Inmovya WA Sender: Procurando botao de enviar...");
 
   // O botao de enviar costuma ter o ícone "send" dentro do whatsapp web
-  // Podemos procurar de varias formas:
+  // O painel principal do chat aberto tem id "main"
   const sendButton = document.querySelector('span[data-icon="send"]')?.closest('button') || 
                      document.querySelector('button[aria-label="Enviar"]');
+  const chatPanel = document.getElementById('main');
 
-  if (sendButton) {
-    console.log("Inmovya WA Sender: Botao encontrado! Enviando em 1 segundo...");
+  if (sendButton && chatPanel) {
+    console.log("Inmovya WA Sender: Botao encontrado! Enviando em 2 segundos...");
     hasSent = true;
     
     setTimeout(() => {
       sendButton.click();
-      console.log("Inmovya WA Sender: Mensagem enviada. Fechando aba em 2 segundos...");
+      console.log("Inmovya WA Sender: Mensagem enviada. Fechando aba em 4 segundos...");
       
-      // Fecha a aba depois de enviar
+      // Fecha a aba depois de enviar (maior delay para dar tempo do envio confirmar na rede)
       setTimeout(() => {
         chrome.runtime.sendMessage({ action: "closeTab" });
-      }, 2000);
+      }, 4000);
       
-    }, 1000); // Pequeno atraso para garantir que a interface atualizou
+    }, 2000); // Atraso de 2s para garantir que o texto foi totalmente carregado no input
   } else {
-    // Tenta de novo apos 500ms
-    setTimeout(clickSendButton, 500);
+    // Tenta de novo apos 500ms (máximo de 60 vezes = 30 segundos)
+    checkCount++;
+    if (checkCount < 60) {
+      setTimeout(clickSendButton, 500);
+    }
   }
 }
 
@@ -59,8 +65,9 @@ if (window.location.href.includes('inmovya_auto=1')) {
     // Estamos na tela de interrupcao
     handleInterstitial();
   } else if (window.location.hostname.includes('web.whatsapp.com')) {
-    // Estamos na interface principal web
-    setTimeout(clickSendButton, 2000);
+    // Estamos na interface principal web - aguarda 8 segundos iniciais para o chat da URL carregar 
+    // e não correr o risco de pegar a conversa anterior
+    setTimeout(clickSendButton, 8000);
   }
 }
 
@@ -72,7 +79,8 @@ new MutationObserver(() => {
     lastUrl = url;
     if (url.includes('inmovya_auto=1') && url.includes('web.whatsapp.com')) {
        hasSent = false;
-       setTimeout(clickSendButton, 2000);
+       checkCount = 0;
+       setTimeout(clickSendButton, 8000);
     }
   }
 }).observe(document, {subtree: true, childList: true});
