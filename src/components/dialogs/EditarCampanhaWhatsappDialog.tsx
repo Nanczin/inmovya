@@ -78,7 +78,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
       // Update all pending messages with new variations
       const { data: pendingMessages, error: pendingError } = await supabase
         .from('whatsapp_campaign_messages')
-        .select('id, nome')
+        .select('*')
         .eq('campaign_id', campaign.id)
         .eq('status', 'Pendente');
 
@@ -92,7 +92,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
           const personalized = replaceVariables(spintaxMsg, msg.nome);
           
           return {
-            id: msg.id,
+            ...msg,
             mensagem_personalizada: personalized,
             updated_at: new Date().toISOString()
           };
