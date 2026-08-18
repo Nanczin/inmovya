@@ -16,6 +16,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
   
   // Use a ref to keep track of state inside the effect without re-triggering it constantly if not needed
   const isRunningRef = useRef(campaign.status === 'Em andamento');
+  const isExecutingRef = useRef(false);
 
   useEffect(() => {
     isRunningRef.current = campaign.status === 'Em andamento';
@@ -32,7 +33,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
     if (isRunningRef.current && !loading && messages.length > 0 && currentIndex < messages.length) {
       if (cooldown > 0) {
         timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
-      } else {
+      } else if (!isExecutingRef.current) {
         // Cooldown reached 0, fire next message
         executeNextMessage();
       }
@@ -69,8 +70,14 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
   };
 
   const executeNextMessage = async () => {
+    if (isExecutingRef.current) return;
+    isExecutingRef.current = true;
+
     const msg = messages[currentIndex];
-    if (!msg) return;
+    if (!msg) {
+      isExecutingRef.current = false;
+      return;
+    }
 
     // Simulate sending via API
     try {
@@ -85,7 +92,8 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       }
       
       // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
-      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
+      // Usa uma aba nomeada para reaproveitar a mesma janela e evitar o erro "O WhatsApp está aberto em outra aba"
+      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, 'whatsapp_inmovya');
 
       if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
         toast({ title: "Pop-up Bloqueado!", description: "Por favor, permita pop-ups para este site para que o WhatsApp Web possa abrir automaticamente.", variant: "destructive" });
@@ -114,8 +122,13 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         onFinish();
       } else {
         // Apply cadence cooldown
-        const min = campaign.configuracao_cadencia?.intervaloMinimo || 10;
-        const max = campaign.configuracao_cadencia?.intervaloMaximo || 30;
+        let min = campaign.configuracao_cadencia?.intervaloMinimo || 10;
+        let max = campaign.configuracao_cadencia?.intervaloMaximo || 30;
+        
+        // Garante tempo mínimo de 15s para a extensão conseguir enviar e fechar a aba
+        if (min < 15) min = 15;
+        if (max < min) max = min;
+        
         const randomSeconds = Math.floor(Math.random() * (max - min + 1) + min);
         setCooldown(randomSeconds);
       }
@@ -134,6 +147,8 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         setCurrentIndex(currentIndex + 1);
         setCooldown(5); // shorter cooldown on fail
       } catch (e) {}
+    } finally {
+      isExecutingRef.current = false;
     }
   };
 
