@@ -26,7 +26,7 @@ function trySend() {
   if (!window.location.hostname.includes('web.whatsapp.com')) return;
   if (hasSent) return;
 
-  console.log("Inmovya WA Sender: Tentando enviar...");
+  console.log("Inmovya WA Sender: Tentando enviar via parametro nativo...");
 
   const mainPanel = document.getElementById('main');
   if (!mainPanel) {
@@ -34,55 +34,19 @@ function trySend() {
     return;
   }
 
-  // 1. Procurar a caixa de texto
-  const inputBox = mainPanel.querySelector('div[contenteditable="true"]');
-  if (!inputBox) {
-    scheduleRetry();
-    return;
-  }
-
-  // 2. Inserir o texto (lido da URL como inmovya_msg) se a caixa estiver vazia
-  const urlParams = new URLSearchParams(window.location.search);
-  const customMsg = urlParams.get('inmovya_msg');
+  // Com a URL nativa (&text=), o WhatsApp insere o texto sozinho e mostra o botão.
+  const sendButton = document.querySelector('span[data-icon="send"]')?.closest('button') || 
+                     document.querySelector('button[aria-label="Enviar"]');
   
-  // Só insere se a caixa não contiver o texto todo ainda
-  if (customMsg && !inputBox.textContent.includes(customMsg.trim())) {
-    inputBox.focus();
-    
-    // Limpa a caixa antes de colar para evitar duplicatas em retentativas
-    inputBox.innerHTML = '';
-    
-    // Tenta usar execCommand primeiro (mais suportado em contenteditable)
-    document.execCommand('insertText', false, customMsg);
-    
-    // Se execCommand falhou, tenta usar Paste Event
-    if (inputBox.textContent.length === 0) {
-      const dataTransfer = new DataTransfer();
-      dataTransfer.setData('text/plain', customMsg);
-      const pasteEvent = new ClipboardEvent('paste', {
-        clipboardData: dataTransfer,
-        bubbles: true,
-        cancelable: true
-      });
-      inputBox.dispatchEvent(pasteEvent);
-    }
-    
-    // Dispara evento de input para o React
-    inputBox.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-
-  // 3. Aguardar o botão de enviar aparecer e clicar nele
-  setTimeout(() => {
-    const sendButton = document.querySelector('span[data-icon="send"]')?.closest('button') || 
-                       document.querySelector('button[aria-label="Enviar"]');
-    
-    if (sendButton) {
-      console.log("Inmovya WA Sender: Botao encontrado! Enviando...");
-      hasSent = true;
-      sendButton.click();
-    } else if (customMsg && inputBox.textContent.length > 0) {
-      // Se inseriu o texto mas o botão não apareceu, força um Enter
-      console.log("Inmovya WA Sender: Botao nao encontrado, forçando Enter...");
+  if (sendButton) {
+    console.log("Inmovya WA Sender: Botao encontrado! Clicando...");
+    hasSent = true;
+    sendButton.click();
+  } else {
+    // Se o botão de enviar não estiver lá, tenta disparar um Enter na caixa de texto
+    const inputBox = mainPanel.querySelector('div[contenteditable="true"]');
+    if (inputBox && inputBox.textContent.length > 0) {
+      console.log("Inmovya WA Sender: Texto encontrado, forçando Enter...");
       hasSent = true;
       const enterEvent = new KeyboardEvent('keydown', {
         key: 'Enter',
@@ -94,10 +58,10 @@ function trySend() {
       });
       inputBox.dispatchEvent(enterEvent);
     } else {
-      // Se não encontrou o botão e a caixa tá vazia, tenta novamente
+      // Se nem o botão nem o texto apareceram ainda, aguarda e tenta de novo
       scheduleRetry();
     }
-  }, 1500);
+  }
 }
 
 function scheduleRetry() {
