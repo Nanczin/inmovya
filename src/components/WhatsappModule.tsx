@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportarListaDialog } from "@/components/dialogs/ImportarListaDialog";
 import { CampaignReportDialog } from "@/components/dialogs/CampaignReportDialog";
+import { CampaignRunner } from "@/components/whatsapp/CampaignRunner";
 
 export function WhatsappModule() {
   const { toast } = useToast();
@@ -223,6 +224,16 @@ export function WhatsappModule() {
         </TabsList>
 
         <TabsContent value="historico" className="space-y-4 mt-4">
+          
+          {campaigns.filter(c => c.status === 'Em andamento').map(activeCampaign => (
+            <CampaignRunner 
+              key={activeCampaign.id} 
+              campaign={activeCampaign} 
+              onUpdateStatus={updateCampaignStatus}
+              onFinish={fetchCampaigns} 
+            />
+          ))}
+
           <div className="flex items-center space-x-2">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
