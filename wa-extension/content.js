@@ -44,10 +44,9 @@ function clickSendButton() {
       sendButton.click();
       console.log("Inmovya WA Sender: Mensagem enviada. Fechando aba em 4 segundos...");
       
-      // Fecha a aba depois de enviar (maior delay para dar tempo do envio confirmar na rede)
-      setTimeout(() => {
-        chrome.runtime.sendMessage({ action: "closeTab" });
-      }, 4000);
+      // Não fechamos a aba aqui! Deixamos a aba aberta para ser reaproveitada
+      // pelo disparador do React (que usa window.open com o mesmo nome de janela).
+      // Isso previne que o bloqueador de pop-ups bloqueie a segunda mensagem.
       
     }, 2000); // Atraso de 2s para garantir que o texto foi totalmente carregado no input
   } else {
