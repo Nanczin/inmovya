@@ -78,7 +78,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       const phone = msg.telefone.replace(/\D/g, '');
       
       // O navegador pode bloquear este popup na primeira vez, o usuário precisará permitir
-      window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
+      window.open(`https://api.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
 
       await new Promise(r => setTimeout(r, 1000));
 

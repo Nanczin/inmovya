@@ -1,8 +1,30 @@
 let hasSent = false;
 
+function handleInterstitial() {
+  // Se estivermos na tela de confirmacao (api.whatsapp.com ou wa.me)
+  const actionButton = document.getElementById('action-button');
+  if (actionButton) {
+    console.log("Inmovya WA Sender: Clicando em Continuar para o chat...");
+    actionButton.click();
+    
+    // Depois de clicar no botão principal, precisamos clicar no link "usar o WhatsApp Web"
+    setTimeout(() => {
+      const fallbackLink = Array.from(document.querySelectorAll('a')).find(
+        a => a.href && a.href.includes('web.whatsapp.com')
+      );
+      if (fallbackLink) {
+        console.log("Inmovya WA Sender: Clicando em usar WhatsApp Web...");
+        fallbackLink.click();
+      }
+    }, 500);
+  }
+}
+
 function clickSendButton() {
-  // So executa se a URL tiver a tag inmovya_auto=1 e ainda nao tiver enviado nesta sessao
-  if (!window.location.href.includes('inmovya_auto=1') || hasSent) return;
+  // Só executa no web.whatsapp.com
+  if (!window.location.hostname.includes('web.whatsapp.com')) return;
+  
+  if (hasSent) return;
 
   console.log("Inmovya WA Sender: Procurando botao de enviar...");
 
@@ -31,10 +53,15 @@ function clickSendButton() {
   }
 }
 
-// Inicia se a url conter os parametros
+// Verifica se tem flag inmovya_auto (agora passamos via URL para api.whatsapp e web.whatsapp)
 if (window.location.href.includes('inmovya_auto=1')) {
-  // Espera a página estar totalmente carregada
-  setTimeout(clickSendButton, 2000);
+  if (window.location.hostname.includes('api.whatsapp.com') || window.location.hostname === 'wa.me') {
+    // Estamos na tela de interrupcao
+    handleInterstitial();
+  } else if (window.location.hostname.includes('web.whatsapp.com')) {
+    // Estamos na interface principal web
+    setTimeout(clickSendButton, 2000);
+  }
 }
 
 // Monitora mudancas de URL no modo SPA do WhatsApp
@@ -43,7 +70,7 @@ new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
-    if (url.includes('inmovya_auto=1')) {
+    if (url.includes('inmovya_auto=1') && url.includes('web.whatsapp.com')) {
        hasSent = false;
        setTimeout(clickSendButton, 2000);
     }
