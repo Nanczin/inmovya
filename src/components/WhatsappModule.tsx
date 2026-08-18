@@ -337,7 +337,12 @@ export function WhatsappModule() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <Label>Lista de Contatos</Label>
-                  <ImportarListaDialog onListaImportada={() => fetchListas()}>
+                  <ImportarListaDialog onListaImportada={(novaLista) => {
+                    fetchListas();
+                    if (novaLista && novaLista.id) {
+                      setNewCampaign(prev => ({...prev, listaId: novaLista.id}));
+                    }
+                  }}>
                     <Button variant="outline" size="sm">
                       <Upload className="w-4 h-4 mr-2" />
                       Importar Nova Lista
