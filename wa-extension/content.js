@@ -41,15 +41,34 @@ function trySend() {
     return;
   }
 
-  // 2. Inserir o texto (lido da URL como inmovya_msg)
+  // 2. Inserir o texto (lido da URL como inmovya_msg) se a caixa estiver vazia
   const urlParams = new URLSearchParams(window.location.search);
   const customMsg = urlParams.get('inmovya_msg');
   
-  if (customMsg) {
-    // Focar e inserir texto
+  // Só insere se a caixa não contiver o texto todo ainda
+  if (customMsg && !inputBox.textContent.includes(customMsg.trim())) {
     inputBox.focus();
-    // Tenta usar execCommand que é o método mais robusto para disparar os eventos corretos do React no WhatsApp
+    
+    // Limpa a caixa antes de colar para evitar duplicatas em retentativas
+    inputBox.innerHTML = '';
+    
+    // Tenta usar execCommand primeiro (mais suportado em contenteditable)
     document.execCommand('insertText', false, customMsg);
+    
+    // Se execCommand falhou, tenta usar Paste Event
+    if (inputBox.textContent.length === 0) {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.setData('text/plain', customMsg);
+      const pasteEvent = new ClipboardEvent('paste', {
+        clipboardData: dataTransfer,
+        bubbles: true,
+        cancelable: true
+      });
+      inputBox.dispatchEvent(pasteEvent);
+    }
+    
+    // Dispara evento de input para o React
+    inputBox.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   // 3. Aguardar o botão de enviar aparecer e clicar nele
@@ -61,11 +80,24 @@ function trySend() {
       console.log("Inmovya WA Sender: Botao encontrado! Enviando...");
       hasSent = true;
       sendButton.click();
+    } else if (customMsg && inputBox.textContent.length > 0) {
+      // Se inseriu o texto mas o botão não apareceu, força um Enter
+      console.log("Inmovya WA Sender: Botao nao encontrado, forçando Enter...");
+      hasSent = true;
+      const enterEvent = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+      });
+      inputBox.dispatchEvent(enterEvent);
     } else {
-      // Se não encontrou o botão de enviar mesmo com o texto (ou se era só link normal), tenta novamente
+      // Se não encontrou o botão e a caixa tá vazia, tenta novamente
       scheduleRetry();
     }
-  }, 1000);
+  }, 1500);
 }
 
 function scheduleRetry() {
