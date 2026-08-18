@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Plus, Search, Calendar, BarChart, Settings, FileText, Upload, RefreshCw, Play, Pause, Square, Trash2, Eye, Edit } from "lucide-react";
+import { MessageCircle, Plus, Search, Calendar, BarChart, Settings, FileText, Upload, RefreshCw, Play, Pause, Square, Trash2, Eye, Edit, Info } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -365,9 +365,21 @@ export function WhatsappModule() {
 
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <Label>Mensagem da Campanha (Suporta Spintax)</Label>
+                  <Label>Mensagem da Campanha</Label>
                 </div>
-                <p className="text-xs text-muted-foreground">Use variações de Spintax como {'{Olá|Oi|E aí}'} para variar o cumprimento. Use {'{{nome}}'} para inserir o nome do contato dinamicamente.</p>
+                
+                <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-md p-4">
+                  <div className="flex gap-3">
+                    <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                    <div className="space-y-1 text-sm text-blue-800 dark:text-blue-300">
+                      <p className="font-medium">Como usar o Spintax?</p>
+                      <p>O Spintax escolhe palavras diferentes aleatoriamente para cada contato, evitando que o WhatsApp bloqueie seu número por spam. Coloque as opções entre chaves <strong>{'{ }'}</strong> e separe com uma barra reta <strong>{'|'}</strong>.</p>
+                      <p className="font-mono bg-blue-100 dark:bg-blue-900/50 p-2 rounded mt-2 text-xs">
+                        {'{Olá|Oi|E aí|Bom dia}'} {'{{nome}}'}, tudo bem? {'{Como posso ajudar?|Como vai?}'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 
                 <div className="space-y-2 border p-4 rounded-md relative bg-muted/20">
                   <Textarea 

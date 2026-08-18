@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Edit, Plus, Trash2 } from "lucide-react";
+import { Edit, Plus, Trash2, Info } from "lucide-react";
 import { replaceVariables, parseSpintax } from "@/utils/formatUtils";
 
 interface EditarCampanhaWhatsappDialogProps {
@@ -142,7 +142,20 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <Label>Mensagem da Campanha (Suporta Spintax)</Label>
+              <Label>Mensagem da Campanha</Label>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-md p-4">
+              <div className="flex gap-3">
+                <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                <div className="space-y-1 text-sm text-blue-800 dark:text-blue-300">
+                  <p className="font-medium">Como usar o Spintax?</p>
+                  <p>O Spintax escolhe palavras diferentes aleatoriamente para cada contato, evitando bloqueios. Coloque as opções entre chaves <strong>{'{ }'}</strong> e separe com uma barra reta <strong>{'|'}</strong>.</p>
+                  <p className="font-mono bg-blue-100 dark:bg-blue-900/50 p-2 rounded mt-2 text-xs">
+                    {'{Olá|Oi|E aí}'} {'{{nome}}'}, tudo bem? {'{Como posso ajudar?|Como vai?}'}
+                  </p>
+                </div>
+              </div>
             </div>
             
             <div className="space-y-2 border p-4 rounded-md relative bg-muted/20">
@@ -156,7 +169,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                 <strong>Exemplo de Prévia:</strong> {mensagem ? replaceVariables(parseSpintax(mensagem), "João") : "Sua mensagem aparecerá aqui..."}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">Use {'{Olá|Oi}'} para spintax. As mensagens pendentes serão atualizadas com as novas variações de forma aleatória.</p>
+            <p className="text-xs text-muted-foreground mt-2">As mensagens pendentes serão atualizadas com as novas variações de forma aleatória ao salvar.</p>
           </div>
 
           <div className="space-y-4 pt-4 border-t">
