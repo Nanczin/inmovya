@@ -471,6 +471,52 @@ export function LigacoesModule() {
     });
   };
 
+  const handleDownloadLista = async (lista: Lista, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      toast({ title: "Preparando download", description: "Buscando contatos..." });
+      const { data: contatosData, error } = await supabase
+        .from('contatos')
+        .select('*')
+        .eq('lista_id', lista.id)
+        .order('nome');
+
+      if (error) throw error;
+      
+      if (!contatosData || contatosData.length === 0) {
+        toast({ title: "Lista vazia", description: "Não há contatos para baixar.", variant: "destructive" });
+        return;
+      }
+
+      // Convert to CSV
+      const cabecalhos = ["Nome", "Telefone", "Email", "Status", "Classificacao", "Interesse", "Observacoes"];
+      const linhasCsv = contatosData.map(c => {
+        const dados = extractDataFromImportedFormat(c, lista);
+        const classificacao = c.dados_extras?.classificacao || "";
+        const interesse = c.dados_extras?.interesse || "";
+        const observacoes = c.dados_extras?.descricao || "";
+        return `"${dados.nome}","${dados.telefone}","${dados.email || ''}","${c.status || ''}","${classificacao}","${interesse}","${observacoes.replace(/"/g, '""')}"`;
+      });
+      
+      const csvContent = [cabecalhos.join(","), ...linhasCsv].join("\n");
+      const blob = new Blob([`\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `lista_${lista.nome.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      toast({ title: "Download concluído!", description: "Sua lista foi exportada com sucesso." });
+    } catch (err) {
+      console.error("Erro ao baixar lista:", err);
+      toast({ title: "Erro", description: "Falha ao baixar os contatos.", variant: "destructive" });
+    }
+  };
+
 
   const handleSolicitarOferta = async (listaId: string) => {
     // Prevent duplicate calls
@@ -1112,7 +1158,7 @@ export function LigacoesModule() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-2">
                   <Button
                     variant="default"
                     size="sm"
@@ -1126,6 +1172,17 @@ export function LigacoesModule() {
                     <Mail className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                     {isRequestingOffer ? 'Carregando...' : 'Solicitar Oferta'}
                   </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs sm:text-sm px-2"
+                    title="Baixar lista em CSV"
+                    onClick={(e) => handleDownloadLista(lista, e)}
+                  >
+                    <Download className="w-3 h-3 sm:w-4 sm:h-4" />
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
