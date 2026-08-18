@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Inmovya WA Auto-Sender",
+  "version": "1.0",
+  "description": "Clica automaticamente no botao de enviar do WhatsApp Web para campanhas automatizadas do Inmovya.",
+  "permissions": [
+    "tabs"
+  ],
+  "host_permissions": [
+    "*://web.whatsapp.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
