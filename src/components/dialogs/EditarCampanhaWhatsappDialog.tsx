@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Edit, Plus, Trash2 } from "lucide-react";
+import { replaceVariables } from "@/utils/formatUtils";
 
 interface EditarCampanhaWhatsappDialogProps {
   children: React.ReactNode;
@@ -88,7 +89,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
         // Prepare updates for each pending message (selecting a new random variation)
         const updates = pendingMessages.map(msg => {
           const randomMsg = validMessages[Math.floor(Math.random() * validMessages.length)];
-          const personalized = randomMsg.replace(/\{\{nome\}\}/g, msg.nome || "Cliente");
+          const personalized = replaceVariables(randomMsg, msg.nome);
           
           return {
             id: msg.id,

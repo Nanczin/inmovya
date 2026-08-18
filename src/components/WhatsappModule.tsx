@@ -15,6 +15,7 @@ import { ImportarListaDialog } from "@/components/dialogs/ImportarListaDialog";
 import { CampaignReportDialog } from "@/components/dialogs/CampaignReportDialog";
 import { CampaignRunner } from "@/components/whatsapp/CampaignRunner";
 import { EditarCampanhaWhatsappDialog } from "@/components/dialogs/EditarCampanhaWhatsappDialog";
+import { replaceVariables } from "@/utils/formatUtils";
 
 export function WhatsappModule() {
   const { toast } = useToast();
@@ -136,7 +137,7 @@ export function WhatsappModule() {
             contato_id: c.id,
             nome: c.nome,
             telefone: c.telefone,
-            mensagem_personalizada: randomMsg.replace(/\{\{nome\}\}/g, c.nome || "Cliente"),
+            mensagem_personalizada: replaceVariables(randomMsg, c.nome),
             status: 'Pendente'
           };
         });
@@ -409,7 +410,7 @@ export function WhatsappModule() {
                       }}
                     />
                     <div className="text-xs text-muted-foreground bg-white dark:bg-zinc-800 p-2 rounded border mt-2">
-                      <strong>Prévia:</strong> {msg ? msg.replace(/\{\{nome\}\}/g, "João") : "Sua mensagem aparecerá aqui..."}
+                      <strong>Prévia:</strong> {msg ? replaceVariables(msg, "João") : "Sua mensagem aparecerá aqui..."}
                     </div>
                   </div>
                 ))}

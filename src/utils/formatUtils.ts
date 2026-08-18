@@ -15,3 +15,17 @@ export const formatCurrency = (value: string) => {
         currency: 'BRL'
     });
 };
+
+export const replaceVariables = (text: string, contactName: string | null | undefined) => {
+    if (!text) return "";
+    const nome = contactName || "Cliente";
+    const primeiroNome = nome.split(" ")[0];
+    
+    let replaced = text;
+    // Replace various formats of "nome"
+    replaced = replaced.replace(/(\{\{\s*nome\s*\}\}|\{\s*nome\s*\}|\[\s*nome\s*\])/gi, nome);
+    // Replace various formats of "primeiro_nome"
+    replaced = replaced.replace(/(\{\{\s*primeiro_nome\s*\}\}|\{\s*primeiro_nome\s*\}|\[\s*primeiro_nome\s*\])/gi, primeiroNome);
+    
+    return replaced;
+};
