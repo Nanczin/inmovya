@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Plus, Search, Calendar, BarChart, Settings, FileText, Upload, RefreshCw, Play, Pause, Square, Trash2, Eye } from "lucide-react";
+import { MessageCircle, Plus, Search, Calendar, BarChart, Settings, FileText, Upload, RefreshCw, Play, Pause, Square, Trash2, Eye, Edit } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ImportarListaDialog } from "@/components/dialogs/ImportarListaDialog";
 import { CampaignReportDialog } from "@/components/dialogs/CampaignReportDialog";
 import { CampaignRunner } from "@/components/whatsapp/CampaignRunner";
+import { EditarCampanhaWhatsappDialog } from "@/components/dialogs/EditarCampanhaWhatsappDialog";
 
 export function WhatsappModule() {
   const { toast } = useToast();
@@ -108,6 +109,7 @@ export function WhatsappModule() {
           nome: newCampaign.nome,
           lista_id: newCampaign.listaId,
           mensagem: validMessages[0], // backward compatibility
+          variaveis: { mensagens: validMessages },
           configuracao_cadencia: newCampaign.cadencia,
           status: 'Rascunho'
         })
@@ -287,6 +289,13 @@ export function WhatsappModule() {
                       </Button>
                     ) : null}
 
+                    
+                    <EditarCampanhaWhatsappDialog campaign={campaign} onUpdated={fetchCampaigns}>
+                      <Button size="sm" variant="outline">
+                        <Edit className="w-4 h-4 mr-1" /> Editar
+                      </Button>
+                    </EditarCampanhaWhatsappDialog>
+                    
                     <Button size="sm" variant="outline" onClick={() => deleteCampaign(campaign.id)}>
                       <Trash2 className="w-4 h-4 mr-1" /> Excluir
                     </Button>
