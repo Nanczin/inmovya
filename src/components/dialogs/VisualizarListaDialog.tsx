@@ -71,12 +71,19 @@ export function VisualizarListaDialog({ children, lista }: VisualizarListaDialog
   const carregarContatos = async () => {
     setLoadingContatos(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('contatos')
         .select('*')
-        .eq('lista_id', lista.id)
+        .eq('lista_id', lista.id);
+        
+      if (searchTerm) {
+        // Usa `or` para buscar em nome, telefone ou email
+        query = query.or(`nome.ilike.%${searchTerm}%,telefone.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`);
+      }
+      
+      const { data, error } = await query
         .order('nome')
-        .limit(200); // Limit to 200 for performance
+        .limit(200); // Limite por performance, pesquisa filtra antes
       
       if (error) throw error;
       setContatos(data || []);
@@ -90,12 +97,16 @@ export function VisualizarListaDialog({ children, lista }: VisualizarListaDialog
 
   useEffect(() => {
     if (open) {
-      carregarContatos();
+      const timeoutId = setTimeout(() => {
+        carregarContatos();
+      }, 400); // 400ms debounce
+      return () => clearTimeout(timeoutId);
     } else {
       setContatos([]);
       setEditandoId(null);
+      setSearchTerm("");
     }
-  }, [open, lista.id]);
+  }, [open, lista.id, searchTerm]);
 
   const iniciarEdicao = (contato: any) => {
     setEditandoId(contato.id);
@@ -445,11 +456,20 @@ export function VisualizarListaDialog({ children, lista }: VisualizarListaDialog
 
           <TabsContent value="contatos" className="space-y-4 overflow-y-auto max-h-[70vh]">
             <Card>
-              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <CardHeader className="pb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <CardTitle className="text-base sm:text-lg flex items-center gap-2">
                   <Users className="w-5 h-5 text-primary" />
                   Contatos da Lista
                 </CardTitle>
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar nome, tel ou email..."
+                    className="pl-8"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
               </CardHeader>
               <CardContent>
                 {loadingContatos ? (
