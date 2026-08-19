@@ -128,6 +128,28 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       return;
     }
 
+    // Check daily limit
+    const limiteDiario = campaign.configuracao_cadencia?.limiteDiario;
+    if (limiteDiario && limiteDiario > 0) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const sentToday = messages.filter(m => 
+        m.status === 'Entregue' && 
+        m.data_envio && 
+        m.data_envio.startsWith(todayStr)
+      ).length;
+
+      if (sentToday >= limiteDiario) {
+        toast({ 
+          title: "Limite Diário Atingido", 
+          description: `A campanha atingiu o limite de ${limiteDiario} mensagens hoje e foi pausada automaticamente.`, 
+          variant: "destructive" 
+        });
+        onUpdateStatus(campaign.id, 'Pausada');
+        isExecutingRef.current = false;
+        return;
+      }
+    }
+
     // Simulate sending via API
     try {
       // Gera o texto final da mensagem

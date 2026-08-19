@@ -24,6 +24,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
   const [cadencia, setCadencia] = useState({
     intervaloMinimo: 10,
     intervaloMaximo: 30,
+    limiteDiario: 100,
     pausaAposMensagens: 50,
     tempoDescanso: 60
   });
@@ -44,6 +45,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
       setCadencia({
         intervaloMinimo: campaign.configuracao_cadencia?.intervaloMinimo || 10,
         intervaloMaximo: campaign.configuracao_cadencia?.intervaloMaximo || 30,
+        limiteDiario: campaign.configuracao_cadencia?.limiteDiario || 100,
         pausaAposMensagens: campaign.configuracao_cadencia?.pausaAposMensagens || 50,
         tempoDescanso: campaign.configuracao_cadencia?.tempoDescanso || 60
       });
@@ -192,6 +194,14 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                 />
               </div>
               <div className="space-y-2">
+                <Label>Limite Diário de Mensagens</Label>
+                <Input 
+                  type="number" 
+                  value={cadencia.limiteDiario}
+                  onChange={(e) => setCadencia({...cadencia, limiteDiario: parseInt(e.target.value) || 0})}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>Pausa após X mensagens</Label>
                 <Input 
                   type="number" 
@@ -199,7 +209,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                   onChange={(e) => setCadencia({...cadencia, pausaAposMensagens: parseInt(e.target.value) || 0})}
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label>Tempo Descanso (minutos)</Label>
                 <Input 
                   type="number" 

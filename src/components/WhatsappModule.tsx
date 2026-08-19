@@ -409,7 +409,7 @@ export function WhatsappModule() {
                     value={newCampaign.cadencia.intervaloMinimo}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
-                      cadencia: {...newCampaign.cadencia, intervaloMinimo: parseInt(e.target.value)}
+                      cadencia: {...newCampaign.cadencia, intervaloMinimo: parseInt(e.target.value) || 0}
                     })}
                   />
                 </div>
@@ -420,7 +420,18 @@ export function WhatsappModule() {
                     value={newCampaign.cadencia.intervaloMaximo}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
-                      cadencia: {...newCampaign.cadencia, intervaloMaximo: parseInt(e.target.value)}
+                      cadencia: {...newCampaign.cadencia, intervaloMaximo: parseInt(e.target.value) || 0}
+                    })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Limite Diário de Mensagens</Label>
+                  <Input 
+                    type="number" 
+                    value={newCampaign.cadencia.limiteDiario}
+                    onChange={(e) => setNewCampaign({
+                      ...newCampaign, 
+                      cadencia: {...newCampaign.cadencia, limiteDiario: parseInt(e.target.value) || 0}
                     })}
                   />
                 </div>
@@ -431,18 +442,18 @@ export function WhatsappModule() {
                     value={newCampaign.cadencia.pausaAposMensagens}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
-                      cadencia: {...newCampaign.cadencia, pausaAposMensagens: parseInt(e.target.value)}
+                      cadencia: {...newCampaign.cadencia, pausaAposMensagens: parseInt(e.target.value) || 0}
                     })}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <Label>Tempo de descanso (minutos)</Label>
                   <Input 
                     type="number" 
                     value={newCampaign.cadencia.tempoDescanso}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
-                      cadencia: {...newCampaign.cadencia, tempoDescanso: parseInt(e.target.value)}
+                      cadencia: {...newCampaign.cadencia, tempoDescanso: parseInt(e.target.value) || 0}
                     })}
                   />
                 </div>
