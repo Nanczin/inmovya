@@ -17,6 +17,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
   // Use a ref to keep track of state inside the effect without re-triggering it constantly if not needed
   const isRunningRef = useRef(campaign.status === 'Em andamento');
   const isExecutingRef = useRef(false);
+  const currentWindowRef = useRef<Window | null>(null);
 
   useEffect(() => {
     isRunningRef.current = campaign.status === 'Em andamento';
@@ -92,8 +93,18 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         phone = '55' + phone;
       }
       
+      // Fecha a aba anterior se houver alguma aberta do disparo passado
+      if (currentWindowRef.current && !currentWindowRef.current.closed) {
+        try {
+          currentWindowRef.current.close();
+        } catch (e) {
+          // Ignora erro caso ocorra ao tentar fechar
+        }
+      }
+
       // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
       const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
+      currentWindowRef.current = newWindow;
 
       try {
         if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
