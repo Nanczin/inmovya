@@ -34,7 +34,8 @@ import {
   AlertCircle,
   Loader2,
   RotateCcw,
-  Target
+  Target,
+  Edit
 } from "lucide-react";
 
 interface Lista {
@@ -230,6 +231,43 @@ export function LigacoesModule() {
   const [showMetasDialog, setShowMetasDialog] = useState(false);
   const [metaLigacoes, setMetaLigacoes] = useState(200);
   const [ligacoesHoje, setLigacoesHoje] = useState(0);
+
+  // Edição de Contato
+  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [editedContactInfo, setEditedContactInfo] = useState({nome: '', telefone: '', email: ''});
+  const [savingContact, setSavingContact] = useState(false);
+
+  const saveContactInfo = async () => {
+    if (!contatoSelecionado) return;
+    setSavingContact(true);
+    try {
+      const { error } = await supabase
+        .from('contatos')
+        .update({
+          nome: editedContactInfo.nome,
+          telefone: editedContactInfo.telefone,
+          email: editedContactInfo.email || null
+        })
+        .eq('id', contatoSelecionado.id);
+
+      if (error) throw error;
+
+      setContatoSelecionado({
+        ...contatoSelecionado,
+        nome: editedContactInfo.nome,
+        telefone: editedContactInfo.telefone,
+        email: editedContactInfo.email
+      });
+      
+      toast({ title: "Contato atualizado", description: "Os dados foram salvos com sucesso." });
+      setIsEditingContact(false);
+    } catch (e) {
+       console.error("Erro ao salvar contato", e);
+       toast({ title: "Erro", description: "Falha ao salvar dados.", variant: "destructive" });
+    } finally {
+      setSavingContact(false);
+    }
+  };
 
   useEffect(() => {
     // Carregar preferências salvas
@@ -1231,10 +1269,39 @@ export function LigacoesModule() {
               {/* Customer Name and Classification Row */}
               <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
                 {/* Customer Info */}
-                <div className="text-center lg:text-left flex-1">
-                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-2">
-                    {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).nome}
-                  </h1>
+                <div className="text-center lg:text-left flex-1 relative group">
+                  <div className="flex flex-col sm:flex-row justify-between items-center mb-2 gap-2">
+                    {isEditingContact ? (
+                      <Input 
+                        value={editedContactInfo.nome}
+                        onChange={(e) => setEditedContactInfo({...editedContactInfo, nome: e.target.value})}
+                        className="text-xl sm:text-2xl lg:text-2xl font-bold h-auto py-1 text-center sm:text-left"
+                      />
+                    ) : (
+                      <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">
+                        {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).nome}
+                      </h1>
+                    )}
+                    
+                    {!isEditingContact ? (
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        const dados = extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada));
+                        setEditedContactInfo({nome: dados.nome, telefone: dados.telefone, email: dados.email || ''});
+                        setIsEditingContact(true);
+                      }} className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        <Edit className="w-4 h-4 mr-2" /> Editar Dados
+                      </Button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="default" onClick={saveContactInfo} disabled={savingContact}>
+                          {savingContact ? 'Salvando...' : 'Salvar'}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setIsEditingContact(false)} disabled={savingContact}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground mb-4">
                     Dados importados do mailing - Linha {contatoSelecionado.dados_extras?.linha_original || 'N/A'}
                   </p>
@@ -1243,18 +1310,36 @@ export function LigacoesModule() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-muted/20 rounded-lg border border-border/30">
                     {/* Telefone */}
                     <div className="flex items-center gap-2 justify-center md:justify-start">
-                      <Phone className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-mono">
-                        {formatPhoneNumber(extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).telefone)}
-                      </span>
+                      <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+                      {isEditingContact ? (
+                        <Input 
+                          value={editedContactInfo.telefone}
+                          onChange={(e) => setEditedContactInfo({...editedContactInfo, telefone: e.target.value})}
+                          className="h-8 text-sm"
+                          placeholder="Telefone"
+                        />
+                      ) : (
+                        <span className="text-sm font-mono">
+                          {formatPhoneNumber(extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).telefone)}
+                        </span>
+                      )}
                     </div>
 
                     {/* Email */}
                     <div className="flex items-center gap-2 justify-center md:justify-start">
-                      <Mail className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-mono break-all">
-                        {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).email || 'Não informado'}
-                      </span>
+                      <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                      {isEditingContact ? (
+                        <Input 
+                          value={editedContactInfo.email}
+                          onChange={(e) => setEditedContactInfo({...editedContactInfo, email: e.target.value})}
+                          className="h-8 text-sm"
+                          placeholder="Email"
+                        />
+                      ) : (
+                        <span className="text-sm font-mono break-all">
+                          {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).email || 'Não informado'}
+                        </span>
+                      )}
                     </div>
 
                     {/* Lista de origem */}
