@@ -12,12 +12,21 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
   const [currentIndex, setCurrentIndex] = useState(0);
   const [cooldown, setCooldown] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [extensionReady, setExtensionReady] = useState(false);
   const { toast } = useToast();
   
   // Use a ref to keep track of state inside the effect without re-triggering it constantly if not needed
   const isRunningRef = useRef(campaign.status === 'Em andamento');
   const isExecutingRef = useRef(false);
   const currentWindowRef = useRef<Window | null>(null);
+
+  useEffect(() => {
+    // Check if background extension is present
+    const handleReady = () => setExtensionReady(true);
+    window.addEventListener('INMOVYA_EXTENSION_READY', handleReady);
+    window.dispatchEvent(new CustomEvent('INMOVYA_CHECK_EXTENSION'));
+    return () => window.removeEventListener('INMOVYA_EXTENSION_READY', handleReady);
+  }, []);
 
   useEffect(() => {
     isRunningRef.current = campaign.status === 'Em andamento';
@@ -93,27 +102,34 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         phone = '55' + phone;
       }
       
-      // Fecha a aba anterior se houver alguma aberta do disparo passado
-      if (currentWindowRef.current && !currentWindowRef.current.closed) {
+      const url = `https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`;
+
+      if (extensionReady) {
+        // Dispara para a extensão abrir a aba em segundo plano
+        window.dispatchEvent(new CustomEvent('INMOVYA_OPEN_WHATSAPP', { detail: { url } }));
+      } else {
+        // Fecha a aba anterior se houver alguma aberta do disparo passado
+        if (currentWindowRef.current && !currentWindowRef.current.closed) {
+          try {
+            currentWindowRef.current.close();
+          } catch (e) {
+            // Ignora erro caso ocorra ao tentar fechar
+          }
+        }
+
+        // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
+        const newWindow = window.open(url, '_blank');
+        currentWindowRef.current = newWindow;
+
         try {
-          currentWindowRef.current.close();
+          if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+            toast({ title: "Pop-up Bloqueado!", description: "Por favor, permita pop-ups para este site para que o WhatsApp Web possa abrir automaticamente.", variant: "destructive" });
+            onUpdateStatus(campaign.id, 'Pausada');
+            return;
+          }
         } catch (e) {
-          // Ignora erro caso ocorra ao tentar fechar
+          // Ignora erro de cross-origin caso ocorra ao tentar ler propriedades da janela
         }
-      }
-
-      // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
-      const newWindow = window.open(`https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`, '_blank');
-      currentWindowRef.current = newWindow;
-
-      try {
-        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-          toast({ title: "Pop-up Bloqueado!", description: "Por favor, permita pop-ups para este site para que o WhatsApp Web possa abrir automaticamente.", variant: "destructive" });
-          onUpdateStatus(campaign.id, 'Pausada');
-          return;
-        }
-      } catch (e) {
-        // Ignora erro de cross-origin caso ocorra ao tentar ler propriedades da janela
       }
 
       await new Promise(r => setTimeout(r, 1000));
