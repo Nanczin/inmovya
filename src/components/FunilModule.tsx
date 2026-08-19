@@ -24,7 +24,18 @@ export function FunilModule() {
         { id: "6", name: "Fechado", color: "#22c55e" }
     ];
 
-    const [stages, setStages] = useState<{ id: string; name: string; color?: string }[]>([]);
+    const [stages, setStages] = useState<{ id: string; name: string; color?: string }[]>(() => {
+        const saved = localStorage.getItem("inmovya_funnel_stages");
+        if (saved) {
+            try {
+                return JSON.parse(saved);
+            } catch (e) {
+                return defaultStages;
+            }
+        }
+        return defaultStages;
+    });
+
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState("");
     const [newStageName, setNewStageName] = useState("");
@@ -49,25 +60,11 @@ export function FunilModule() {
         }
     };
 
-    // Load stages from localStorage on mount
-    useEffect(() => {
-        const saved = localStorage.getItem("inmovya_funnel_stages");
-        if (saved) {
-            try {
-                setStages(JSON.parse(saved));
-            } catch (e) {
-                setStages(defaultStages);
-            }
-        } else {
-            setStages(defaultStages);
-        }
-    }, []);
-
     // Save to localStorage whenever stages change
     useEffect(() => {
-        if (stages.length > 0) {
-            localStorage.setItem("inmovya_funnel_stages", JSON.stringify(stages));
-        }
+        localStorage.setItem("inmovya_funnel_stages", JSON.stringify(stages));
+        // Dispatch custom event to notify other modules
+        window.dispatchEvent(new Event('funnelStagesUpdated'));
     }, [stages]);
 
     const handleAddStage = () => {

@@ -58,6 +58,7 @@ export function RelatoriosModule() {
   });
   const [campanhasPerformance, setCampanhasPerformance] = useState<any[]>([]);
   const [topLeads, setTopLeads] = useState<any[]>([]);
+  const [numerosLigados, setNumerosLigados] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
@@ -256,6 +257,13 @@ export function RelatoriosModule() {
       return acc;
     }, {}) || {};
     setClassificacoesOferta(classificacoes);
+    
+    setNumerosLigados(ligacoesPeriodo?.map(l => ({
+      numero: l.numero_telefone,
+      status: l.status,
+      resultado: l.resultado,
+      data: l.data_ligacao
+    })).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()) || []);
 
     const metaLigacoesSalva = localStorage.getItem('meta_ligacoes_diarias');
     const metaLigacoes = metaLigacoesSalva ? parseInt(metaLigacoesSalva, 10) : 200;
@@ -1010,6 +1018,38 @@ export function RelatoriosModule() {
           ) : (
             <div className="text-center py-6 text-muted-foreground">
               Nenhuma classificação encontrada neste período.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Números Ligados */}
+      <Card className="shadow-card mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Phone className="w-5 h-5" />
+            Números Ligados no Período
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {numerosLigados.length > 0 ? (
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+              {numerosLigados.map((ligacao, index) => (
+                <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-gradient-card border">
+                  <div>
+                    <div className="font-medium">{ligacao.numero || 'Não informado'}</div>
+                    <div className="text-xs text-muted-foreground">{new Date(ligacao.data).toLocaleString('pt-BR')}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Badge variant="outline">{ligacao.status === 'realizada' ? 'Realizada' : ligacao.status}</Badge>
+                    {ligacao.resultado && <Badge className="bg-primary/20 text-primary">{ligacao.resultado}</Badge>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground">
+              Nenhuma ligação registrada neste período.
             </div>
           )}
         </CardContent>

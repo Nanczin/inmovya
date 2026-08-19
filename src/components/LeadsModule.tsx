@@ -137,27 +137,45 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   // const [leadsReais, setLeadsReais] = useState<any[]>([]); // REMOVIDO: Usar do Contexto
   const [empreendimentos, setEmpreendimentos] = useState<any[]>([]);
 
-  const [funnelStages, setFunnelStages] = useState<{ id: string; name: string }[]>([]);
 
-  useEffect(() => {
+
+  const defaultStages = [
+    { id: "1", name: "Novo" },
+    { id: "2", name: "Contatado" },
+    { id: "3", name: "Interessado" },
+    { id: "4", name: "Visita Agendada" },
+    { id: "5", name: "Proposta" },
+    { id: "6", name: "Fechado" }
+  ];
+
+  const [funnelStages, setFunnelStages] = useState<{ id: string; name: string }[]>(() => {
     const saved = localStorage.getItem("inmovya_funnel_stages");
-    const defaultStages = [
-      { id: "1", name: "Novo" },
-      { id: "2", name: "Contatado" },
-      { id: "3", name: "Interessado" },
-      { id: "4", name: "Visita Agendada" },
-      { id: "5", name: "Proposta" },
-      { id: "6", name: "Fechado" }
-    ];
     if (saved) {
       try {
-        setFunnelStages(JSON.parse(saved));
+        return JSON.parse(saved);
       } catch (e) {
+        return defaultStages;
+      }
+    }
+    return defaultStages;
+  });
+
+  useEffect(() => {
+    const loadStages = () => {
+      const saved = localStorage.getItem("inmovya_funnel_stages");
+      if (saved) {
+        try {
+          setFunnelStages(JSON.parse(saved));
+        } catch (e) {
+          setFunnelStages(defaultStages);
+        }
+      } else {
         setFunnelStages(defaultStages);
       }
-    } else {
-      setFunnelStages(defaultStages);
-    }
+    };
+
+    window.addEventListener('funnelStagesUpdated', loadStages);
+    return () => window.removeEventListener('funnelStagesUpdated', loadStages);
   }, []);
 
   const [statsReais, setStatsReais] = useState({

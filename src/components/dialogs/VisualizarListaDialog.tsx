@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,8 +13,14 @@ import {
   Users,
   FileSpreadsheet,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  Edit,
+  Trash2,
+  Check,
+  X
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface Lista {
   id: string;
@@ -55,6 +61,78 @@ export function VisualizarListaDialog({ children, lista }: VisualizarListaDialog
   const [open, setOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
+  
+  const [contatos, setContatos] = useState<any[]>([]);
+  const [loadingContatos, setLoadingContatos] = useState(false);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [editDados, setEditDados] = useState({ nome: '', telefone: '', email: '' });
+  const { toast } = useToast();
+
+  const carregarContatos = async () => {
+    setLoadingContatos(true);
+    try {
+      const { data, error } = await supabase
+        .from('contatos')
+        .select('*')
+        .eq('lista_id', lista.id)
+        .order('nome')
+        .limit(200); // Limit to 200 for performance
+      
+      if (error) throw error;
+      setContatos(data || []);
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Erro", description: "Falha ao carregar contatos.", variant: "destructive" });
+    } finally {
+      setLoadingContatos(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      carregarContatos();
+    } else {
+      setContatos([]);
+      setEditandoId(null);
+    }
+  }, [open, lista.id]);
+
+  const iniciarEdicao = (contato: any) => {
+    setEditandoId(contato.id);
+    setEditDados({ nome: contato.nome, telefone: contato.telefone, email: contato.email || '' });
+  };
+
+  const salvarEdicao = async (id: string) => {
+    try {
+      const { error } = await supabase.from('contatos').update({
+        nome: editDados.nome,
+        telefone: editDados.telefone,
+        email: editDados.email
+      }).eq('id', id);
+      if (error) throw error;
+      
+      setContatos(contatos.map(c => c.id === id ? { ...c, ...editDados } : c));
+      setEditandoId(null);
+      toast({ title: "Sucesso", description: "Contato atualizado." });
+    } catch(e) {
+      console.error(e);
+      toast({ title: "Erro", description: "Falha ao atualizar contato.", variant: "destructive" });
+    }
+  };
+
+  const excluirContato = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este contato?')) return;
+    try {
+      const { error } = await supabase.from('contatos').delete().eq('id', id);
+      if (error) throw error;
+      
+      setContatos(contatos.filter(c => c.id !== id));
+      toast({ title: "Sucesso", description: "Contato excluído." });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Erro", description: "Falha ao excluir contato.", variant: "destructive" });
+    }
+  };
 
   const contactsInfo = getContactsInfo(lista);
 
@@ -81,9 +159,10 @@ export function VisualizarListaDialog({ children, lista }: VisualizarListaDialog
         </DialogHeader>
 
         <Tabs defaultValue="dados" className="flex-1 overflow-hidden">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="dados">Dados da Lista</TabsTrigger>
             <TabsTrigger value="analise">Análise e Estatísticas</TabsTrigger>
+            <TabsTrigger value="contatos">Contatos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dados" className="space-y-4 overflow-y-auto max-h-[70vh]">
@@ -358,6 +437,80 @@ export function VisualizarListaDialog({ children, lista }: VisualizarListaDialog
                         Esta lista não possui contatos. Importe um arquivo ou adicione contatos manualmente.
                       </div>
                     </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="contatos" className="space-y-4 overflow-y-auto max-h-[70vh]">
+            <Card>
+              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5 text-primary" />
+                  Contatos da Lista
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loadingContatos ? (
+                  <div className="text-center py-4">Carregando contatos...</div>
+                ) : contatos.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground">Nenhum contato encontrado.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {contatos.map(contato => (
+                      <div key={contato.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg bg-muted/50 border gap-3">
+                        {editandoId === contato.id ? (
+                          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2 w-full">
+                            <Input 
+                              value={editDados.nome} 
+                              onChange={e => setEditDados({...editDados, nome: e.target.value})}
+                              placeholder="Nome"
+                            />
+                            <Input 
+                              value={editDados.telefone} 
+                              onChange={e => setEditDados({...editDados, telefone: e.target.value})}
+                              placeholder="Telefone"
+                            />
+                            <Input 
+                              value={editDados.email} 
+                              onChange={e => setEditDados({...editDados, email: e.target.value})}
+                              placeholder="Email"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex-1">
+                            <div className="font-medium">{contato.nome}</div>
+                            <div className="text-sm text-muted-foreground flex gap-3">
+                              <span>{contato.telefone}</span>
+                              {contato.email && <span>• {contato.email}</span>}
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="flex gap-2 w-full sm:w-auto justify-end">
+                          {editandoId === contato.id ? (
+                            <>
+                              <Button size="sm" variant="default" onClick={() => salvarEdicao(contato.id)}>
+                                <Check className="w-4 h-4" />
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditandoId(null)}>
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="ghost" onClick={() => iniciarEdicao(contato)}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => excluirContato(contato.id)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

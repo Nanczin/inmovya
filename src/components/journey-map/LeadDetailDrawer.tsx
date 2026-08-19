@@ -68,28 +68,47 @@ export function LeadDetailDrawer({ isOpen, onClose, data, lead }: LeadDetailDraw
   });
 
   const [loading, setLoading] = useState(false);
-  const [funnelStages, setFunnelStages] = useState<{ id: string; name: string }[]>([]);
+  const defaultStages = [
+    { id: "1", name: "Novo" },
+    { id: "2", name: "Contatado" },
+    { id: "3", name: "Interessado" },
+    { id: "4", name: "Visita Agendada" },
+    { id: "5", name: "Proposta" },
+    { id: "6", name: "Fechado" }
+  ];
+
+  const [funnelStages, setFunnelStages] = useState<{ id: string; name: string }[]>(() => {
+    const saved = localStorage.getItem("inmovya_funnel_stages");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return defaultStages;
+      }
+    }
+    return defaultStages;
+  });
 
   // Carregar os estágios do funil e resetar o formData quando o lead mudar
   useEffect(() => {
-    const saved = localStorage.getItem("inmovya_funnel_stages");
-    const defaultStages = [
-      { id: "1", name: "Novo" },
-      { id: "2", name: "Contatado" },
-      { id: "3", name: "Interessado" },
-      { id: "4", name: "Visita Agendada" },
-      { id: "5", name: "Proposta" },
-      { id: "6", name: "Fechado" }
-    ];
-    if (saved) {
-      try {
-        setFunnelStages(JSON.parse(saved));
-      } catch (e) {
+    const loadStages = () => {
+      const saved = localStorage.getItem("inmovya_funnel_stages");
+      if (saved) {
+        try {
+          setFunnelStages(JSON.parse(saved));
+        } catch (e) {
+          setFunnelStages(defaultStages);
+        }
+      } else {
         setFunnelStages(defaultStages);
       }
-    } else {
-      setFunnelStages(defaultStages);
-    }
+    };
+
+    window.addEventListener('funnelStagesUpdated', loadStages);
+    return () => window.removeEventListener('funnelStagesUpdated', loadStages);
+  }, []);
+
+  useEffect(() => {
 
     if (lead) {
       setFormData({
