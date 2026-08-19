@@ -36,20 +36,59 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
     fetchMessages();
   }, [campaign.id]);
 
+  const workerRef = useRef<Worker | null>(null);
+
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    // Web Worker para manter o timer rodando sem atrasos quando a aba está em segundo plano
+    const workerCode = `
+      let interval;
+      self.onmessage = function(e) {
+        if (e.data === 'start') {
+          if (!interval) interval = setInterval(() => self.postMessage('tick'), 1000);
+        } else if (e.data === 'stop') {
+          clearInterval(interval);
+          interval = null;
+        }
+      };
+    `;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    workerRef.current = new Worker(workerUrl);
+
+    return () => {
+      workerRef.current?.terminate();
+      URL.revokeObjectURL(workerUrl);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!workerRef.current) return;
+    const worker = workerRef.current;
+    
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data === 'tick') {
+        setCooldown(prev => (prev > 0 ? prev - 1 : 0));
+      }
+    };
+    
+    worker.addEventListener('message', handleMessage);
     
     // Auto runner engine
     if (isRunningRef.current && !loading && messages.length > 0 && currentIndex < messages.length) {
       if (cooldown > 0) {
-        timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
+        worker.postMessage('start');
       } else if (!isExecutingRef.current) {
-        // Cooldown reached 0, fire next message
+        worker.postMessage('stop');
         executeNextMessage();
       }
+    } else {
+      worker.postMessage('stop');
     }
     
-    return () => clearTimeout(timer);
+    return () => {
+      worker.removeEventListener('message', handleMessage);
+      worker.postMessage('stop');
+    };
   }, [cooldown, loading, currentIndex, messages]);
 
   const fetchMessages = async () => {
