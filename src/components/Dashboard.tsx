@@ -113,6 +113,7 @@ export function Dashboard({
   };
   const [activeLeads, setActiveLeads] = useState(0);
   const [callsToday, setCallsToday] = useState(0);
+  const [interacoes, setInteracoes] = useState(0);
 
   // Carregar dados de métricas reais
   useEffect(() => {
@@ -164,6 +165,15 @@ export function Dashboard({
 
       if (callsCount !== null) setCallsToday(callsCount);
 
+      // Contar interações
+      const { count: interacoesCount } = await supabase
+        .from('ligacoes')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('status', 'interacao');
+        
+      if (interacoesCount !== null) setInteracoes(interacoesCount);
+
     } catch (error) {
       console.error("Erro ao carregar métricas do dashboard:", error);
     }
@@ -183,6 +193,13 @@ export function Dashboard({
     changeType: "neutral" as const,
     icon: Phone,
     color: "text-accent"
+  }, {
+    title: "Interações",
+    value: interacoes.toString(),
+    change: "Em tempo real",
+    changeType: "neutral" as const,
+    icon: TrendingUp,
+    color: "text-success"
   }];
   return <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 animate-fade-in">
     {/* Hero Section */}
@@ -208,7 +225,7 @@ export function Dashboard({
     </div>
 
     {/* Stats Grid */}
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 sm:gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3 gap-4 sm:gap-6">
       {stats.map((stat, index) => {
         const Icon = stat.icon;
         return <Card key={index} className="shadow-card hover:shadow-elegant transition-all duration-300 animate-slide-up" style={{
