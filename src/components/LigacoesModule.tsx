@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -32,7 +33,9 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
-  RotateCcw
+  RotateCcw,
+  Target,
+  Edit
 } from "lucide-react";
 
 interface Lista {
@@ -65,7 +68,8 @@ interface Empreendimento {
 const classificacoes = [
   "Cliente Interessado",
   "Deny List",
-  "Caixa Postal/Cliente Não Atendeu"
+  "Caixa Postal/Cliente Não Atendeu",
+  "Número não existe"
 ];
 
 const interessesCliente = [
@@ -224,13 +228,79 @@ export function LigacoesModule() {
   const [gmailAccounts, setGmailAccounts] = useState<any[]>([]);
   const [selectedGmailAccount, setSelectedGmailAccount] = useState<string>("");
   const [isRequestingOffer, setIsRequestingOffer] = useState(false);
+  const [showMetasDialog, setShowMetasDialog] = useState(false);
+  const [metaLigacoes, setMetaLigacoes] = useState(200);
+  const [ligacoesHoje, setLigacoesHoje] = useState(0);
+
+  // Edição de Contato
+  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [editedContactInfo, setEditedContactInfo] = useState({nome: '', telefone: '', email: ''});
+  const [savingContact, setSavingContact] = useState(false);
+
+  const saveContactInfo = async () => {
+    if (!contatoSelecionado) return;
+    setSavingContact(true);
+    try {
+      const { error } = await supabase
+        .from('contatos')
+        .update({
+          nome: editedContactInfo.nome,
+          telefone: editedContactInfo.telefone,
+          email: editedContactInfo.email || null
+        })
+        .eq('id', contatoSelecionado.id);
+
+      if (error) throw error;
+
+      setContatoSelecionado({
+        ...contatoSelecionado,
+        nome: editedContactInfo.nome,
+        telefone: editedContactInfo.telefone,
+        email: editedContactInfo.email
+      });
+      
+      toast({ title: "Contato atualizado", description: "Os dados foram salvos com sucesso." });
+      setIsEditingContact(false);
+    } catch (e) {
+       console.error("Erro ao salvar contato", e);
+       toast({ title: "Erro", description: "Falha ao salvar dados.", variant: "destructive" });
+    } finally {
+      setSavingContact(false);
+    }
+  };
 
   useEffect(() => {
     // Carregar preferências salvas
     const savedWhatsappTemplate = localStorage.getItem('default_template_whatsapp');
     const savedEmailTemplate = localStorage.getItem('default_template_email');
+    const savedMetaLigacoes = localStorage.getItem('meta_ligacoes_diarias');
+    
     if (savedWhatsappTemplate) setTemplateWhatsappId(savedWhatsappTemplate);
     if (savedEmailTemplate) setTemplateEmailId(savedEmailTemplate);
+    if (savedMetaLigacoes) setMetaLigacoes(parseInt(savedMetaLigacoes, 10));
+
+    const carregarProgressoDiario = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        
+        const { count, error } = await supabase
+          .from('ligacoes')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('data_ligacao', hoje.toISOString());
+          
+        if (!error && count !== null) {
+          setLigacoesHoje(count);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar progresso:", err);
+      }
+    };
+    carregarProgressoDiario();
 
     // Carregar templates com fallback robusto
     const fetchTemplates = async () => {
@@ -325,6 +395,15 @@ export function LigacoesModule() {
   const getProcessedSubject = (templateId: string) => {
     const template = templatesDisponiveis.find(t => t.id === templateId);
     return template?.assunto ? encodeURIComponent(template.assunto) : '';
+  };
+
+  const salvarMetas = () => {
+    localStorage.setItem('meta_ligacoes_diarias', metaLigacoes.toString());
+    setShowMetasDialog(false);
+    toast({
+      title: "Metas salvas",
+      description: "Suas metas diárias foram atualizadas."
+    });
   };
 
   useEffect(() => {
@@ -430,6 +509,52 @@ export function LigacoesModule() {
     });
   };
 
+  const handleDownloadLista = async (lista: Lista, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      toast({ title: "Preparando download", description: "Buscando contatos..." });
+      const { data: contatosData, error } = await supabase
+        .from('contatos')
+        .select('*')
+        .eq('lista_id', lista.id)
+        .order('nome');
+
+      if (error) throw error;
+      
+      if (!contatosData || contatosData.length === 0) {
+        toast({ title: "Lista vazia", description: "Não há contatos para baixar.", variant: "destructive" });
+        return;
+      }
+
+      // Convert to CSV
+      const cabecalhos = ["Nome", "Telefone", "Email", "Status", "Classificacao", "Interesse", "Observacoes"];
+      const linhasCsv = contatosData.map(c => {
+        const dados = extractDataFromImportedFormat(c, lista);
+        const classificacao = c.dados_extras?.classificacao || "";
+        const interesse = c.dados_extras?.interesse || "";
+        const observacoes = c.dados_extras?.descricao || "";
+        return `"${dados.nome}","${dados.telefone}","${dados.email || ''}","${c.status || ''}","${classificacao}","${interesse}","${observacoes.replace(/"/g, '""')}"`;
+      });
+      
+      const csvContent = [cabecalhos.join(","), ...linhasCsv].join("\n");
+      const blob = new Blob([`\ufeff${csvContent}`], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `lista_${lista.nome.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      toast({ title: "Download concluído!", description: "Sua lista foi exportada com sucesso." });
+    } catch (err) {
+      console.error("Erro ao baixar lista:", err);
+      toast({ title: "Erro", description: "Falha ao baixar os contatos.", variant: "destructive" });
+    }
+  };
+
 
   const handleSolicitarOferta = async (listaId: string) => {
     // Prevent duplicate calls
@@ -525,6 +650,7 @@ export function LigacoesModule() {
       } else {
         console.log('Nenhum contato não processado encontrado');
         setShowContatosEsgotados(true);
+        setShowClientData(false); // Fechar a oferta ativa
         // Limpar o progresso se não há mais contatos
         localStorage.removeItem(progressKey);
       }
@@ -564,7 +690,7 @@ export function LigacoesModule() {
         if (empreendimentoSelecionado) {
           dadosExtrasAtualizados.empreendimento_interesse = empreendimentoSelecionado;
         }
-      } else if (classificacaoSelecionada === "Deny List") {
+      } else if (classificacaoSelecionada === "Deny List" || classificacaoSelecionada === "Número não existe") {
         interesseAutomatico = "Não Quer Mais Contato";
       } else if (classificacaoSelecionada === "Caixa Postal/Cliente Não Atendeu") {
         interesseAutomatico = ""; // Não define interesse para permitir retorno à oferta ativa
@@ -590,7 +716,7 @@ export function LigacoesModule() {
 
       // Se formos deletar o contato (Deny List ou Cliente Interessado), não precisamos atualizar antes
       // Isso evita chamadas redundantes e possíveis conflitos
-      const vaiDeletar = finalClassificacao === "Deny List" || finalClassificacao === "Cliente Interessado";
+      const vaiDeletar = finalClassificacao === "Deny List" || finalClassificacao === "Cliente Interessado" || finalClassificacao === "Número não existe";
 
       if (!vaiDeletar) {
         const { error } = await supabase
@@ -605,6 +731,22 @@ export function LigacoesModule() {
           .eq('id', contatoSelecionado.id);
 
         if (error) throw error;
+      }
+
+      // Registrar a ligação explicitamente para métricas do Relatório
+      try {
+        await supabase.from('ligacoes').insert({
+          numero_telefone: formatPhoneNumber(contatoSelecionado.telefone) || contatoSelecionado.telefone,
+          status: 'realizada',
+          resultado: finalClassificacao || 'Processado',
+          duracao: 0,
+          data_ligacao: new Date().toISOString(),
+          user_id: user?.id
+        } as any);
+        
+        setLigacoesHoje(prev => prev + 1);
+      } catch (err) {
+        console.error("Erro ao registrar estatística de ligação:", err);
       }
 
       // Se cliente tem interesse, cadastrar como lead
@@ -688,17 +830,19 @@ export function LigacoesModule() {
       // LOGICA DE EXCLUSÃO SE FOR DENY LIST OU CLIENTE INTERESSADO
       // Se virou Lead (Interessado), sai do mailing. Se é Deny List, sai do mailing.
       if (vaiDeletar) {
-        // Registrar interação na tabela de ligações
-        try {
-          await supabase.from('ligacoes').insert({
-            numero_telefone: formatPhoneNumber(contatoSelecionado.telefone),
-            lead_id: null,
-            status: 'interacao',
-            resultado: finalClassificacao,
-            user_id: user?.id
-          });
-        } catch (interacaoError) {
-          console.error('Erro ao registrar interação:', interacaoError);
+        // Registrar interação na tabela de ligações se for Cliente Interessado ou Deny List
+        if (finalClassificacao === "Cliente Interessado" || finalClassificacao === "Deny List") {
+          try {
+            await supabase.from('ligacoes').insert({
+              numero_telefone: formatPhoneNumber(contatoSelecionado.telefone),
+              lead_id: null,
+              status: 'interacao',
+              resultado: finalClassificacao,
+              user_id: user?.id
+            });
+          } catch (interacaoError) {
+            console.error('Erro ao registrar interação:', interacaoError);
+          }
         }
 
         // 1. Excluir contato da tabela contatos
@@ -732,8 +876,8 @@ export function LigacoesModule() {
 
           toast({
             title: "Contato Processado",
-            description: finalClassificacao === "Deny List"
-              ? "Contato removido da lista permanentemente (Deny List)."
+            description: (finalClassificacao === "Deny List" || finalClassificacao === "Número não existe")
+              ? "Contato removido da lista permanentemente."
               : "Contato promovido a LEAD e removido desta lista de mailing."
           });
         }
@@ -917,21 +1061,7 @@ export function LigacoesModule() {
       // Se classificacaoFinal for undefined, a função salvarInteresseEClassificacao usará o state classificacaoSelecionada
       await salvarInteresseEClassificacao(true, classificacaoFinal);
 
-      // Só criamos registro de "sem_resposta" na tabela de ligações se foi classificado como Caixa Postal
-      // Se foi "Cliente Interessado" ou "Deny List", subentende-se que houve contato ou decisão definitiva
-      if (usarCaixaPostalDefault || classificacaoSelecionada === "Caixa Postal/Cliente Não Atendeu") {
-        const { error } = await supabase
-          .from('ligacoes')
-          .insert({
-            numero_telefone: telefone,
-            lead_id: null,
-            status: 'sem_resposta',
-            resultado: 'Cliente não atendeu - reagendar ligação',
-            user_id: (await supabase.auth.getUser()).data.user?.id
-          });
 
-        if (error) throw error;
-      }
 
       toast({
         title: "Sucesso",
@@ -1007,12 +1137,51 @@ export function LigacoesModule() {
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Gestão de Contatos por Mailing</h2>
           <p className="text-muted-foreground">Visualize e classifique seus contatos organizados por campanhas de mailing</p>
         </div>
+        <div className="flex items-center gap-4 bg-card p-3 rounded-lg shadow-sm border min-w-[250px]">
+          <div className="flex-1">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground font-medium">Meta Diária</span>
+              <span className="font-bold">{ligacoesHoje} / {metaLigacoes}</span>
+            </div>
+            <Progress value={Math.min((ligacoesHoje / metaLigacoes) * 100, 100)} className="h-2" />
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setShowMetasDialog(true)} className="flex-shrink-0" title="Definir Metas">
+            <Target className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
+
+      {/* Metas Dialog */}
+      <Dialog open={showMetasDialog} onOpenChange={setShowMetasDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Definir Metas Diárias</DialogTitle>
+            <DialogDescription>
+              Configure suas metas para acompanhar seu desempenho.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Meta de Ligações (Diária)</Label>
+              <Input 
+                type="number" 
+                value={metaLigacoes} 
+                onChange={(e) => setMetaLigacoes(Number(e.target.value) || 0)} 
+                min={1} 
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowMetasDialog(false)}>Cancelar</Button>
+            <Button onClick={salvarMetas}>Salvar Metas</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Lista Selection */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
@@ -1042,7 +1211,7 @@ export function LigacoesModule() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-2">
                   <Button
                     variant="default"
                     size="sm"
@@ -1056,6 +1225,17 @@ export function LigacoesModule() {
                     <Mail className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                     {isRequestingOffer ? 'Carregando...' : 'Solicitar Oferta'}
                   </Button>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs sm:text-sm px-2"
+                    title="Baixar lista em CSV"
+                    onClick={(e) => handleDownloadLista(lista, e)}
+                  >
+                    <Download className="w-3 h-3 sm:w-4 sm:h-4" />
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -1085,20 +1265,58 @@ export function LigacoesModule() {
           </DialogHeader>
           {contatoSelecionado && (
             <div className="space-y-3 sm:space-y-6 animate-fade-in">
-              {/* Header with Campaign Name */}
-              <div className="text-center border-b border-border pb-4">
+              {/* Header with Campaign Name and Progress */}
+              <div className="flex flex-col sm:flex-row justify-between items-center border-b border-border pb-4 gap-4">
                 <h2 className="text-base sm:text-lg font-semibold text-muted-foreground uppercase tracking-wider">
                   {listas.find(l => l.id === mailingSelecionado)?.nome || 'CAMPANHA OFICIAL'}
                 </h2>
+                
+                {/* Progresso de Metas no Modal */}
+                <div className="flex flex-col gap-1 w-full sm:w-48 bg-muted/30 p-2 rounded-md">
+                  <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                    <span>Meta Diária</span>
+                    <span>{ligacoesHoje} / {metaLigacoes}</span>
+                  </div>
+                  <Progress value={Math.min((ligacoesHoje / metaLigacoes) * 100, 100)} className="h-1.5" />
+                </div>
               </div>
 
               {/* Customer Name and Classification Row */}
               <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
                 {/* Customer Info */}
-                <div className="text-center lg:text-left flex-1">
-                  <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground mb-2">
-                    {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).nome}
-                  </h1>
+                <div className="text-center lg:text-left flex-1 relative group">
+                  <div className="flex flex-col sm:flex-row justify-between items-center mb-2 gap-2">
+                    {isEditingContact ? (
+                      <Input 
+                        value={editedContactInfo.nome}
+                        onChange={(e) => setEditedContactInfo({...editedContactInfo, nome: e.target.value})}
+                        className="text-xl sm:text-2xl lg:text-2xl font-bold h-auto py-1 text-center sm:text-left"
+                      />
+                    ) : (
+                      <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-foreground">
+                        {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).nome}
+                      </h1>
+                    )}
+                    
+                    {!isEditingContact ? (
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        const dados = extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada));
+                        setEditedContactInfo({nome: dados.nome, telefone: dados.telefone, email: dados.email || ''});
+                        setIsEditingContact(true);
+                      }} className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        <Edit className="w-4 h-4 mr-2" /> Editar Dados
+                      </Button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="default" onClick={saveContactInfo} disabled={savingContact}>
+                          {savingContact ? 'Salvando...' : 'Salvar'}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setIsEditingContact(false)} disabled={savingContact}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground mb-4">
                     Dados importados do mailing - Linha {contatoSelecionado.dados_extras?.linha_original || 'N/A'}
                   </p>
@@ -1107,18 +1325,36 @@ export function LigacoesModule() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-muted/20 rounded-lg border border-border/30">
                     {/* Telefone */}
                     <div className="flex items-center gap-2 justify-center md:justify-start">
-                      <Phone className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-mono">
-                        {formatPhoneNumber(extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).telefone)}
-                      </span>
+                      <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
+                      {isEditingContact ? (
+                        <Input 
+                          value={editedContactInfo.telefone}
+                          onChange={(e) => setEditedContactInfo({...editedContactInfo, telefone: e.target.value})}
+                          className="h-8 text-sm"
+                          placeholder="Telefone"
+                        />
+                      ) : (
+                        <span className="text-sm font-mono">
+                          {formatPhoneNumber(extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).telefone)}
+                        </span>
+                      )}
                     </div>
 
                     {/* Email */}
                     <div className="flex items-center gap-2 justify-center md:justify-start">
-                      <Mail className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-mono break-all">
-                        {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).email || 'Não informado'}
-                      </span>
+                      <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                      {isEditingContact ? (
+                        <Input 
+                          value={editedContactInfo.email}
+                          onChange={(e) => setEditedContactInfo({...editedContactInfo, email: e.target.value})}
+                          className="h-8 text-sm"
+                          placeholder="Email"
+                        />
+                      ) : (
+                        <span className="text-sm font-mono break-all">
+                          {extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).email || 'Não informado'}
+                        </span>
+                      )}
                     </div>
 
                     {/* Lista de origem */}
@@ -1211,7 +1447,7 @@ export function LigacoesModule() {
 
                             // Abrir WhatsApp com o texto completo
                             const finalEncodedMsg = encodeURIComponent(rawMsg);
-                            const url = `https://wa.me/55${tel}${finalEncodedMsg ? `?text=${finalEncodedMsg}` : ''}`;
+                            const url = `https://web.whatsapp.com/send?phone=55${tel}${finalEncodedMsg ? `&text=${finalEncodedMsg}` : ''}`;
 
                             setTimeout(() => {
                               window.open(url, '_blank');
@@ -1370,57 +1606,7 @@ export function LigacoesModule() {
                       </div>
                     </div>
 
-                    {/* Quick Call Action */}
-                    <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs border-purple-500/30 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-900/20 w-full xl:w-auto flex-shrink-0"
-                        disabled={loadingCall}
-                        onClick={async () => {
-                          const dados = extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada));
-                          const cleanPhone = dados.telefone.replace(/\D/g, '');
 
-                          if (!cleanPhone) {
-                            toast({ title: "Erro", description: "Telefone não disponível", variant: "destructive" });
-                            return;
-                          }
-
-                          setLoadingCall(true);
-                          try {
-                            const payload = {
-                              "secret": "2.y1wOsIsfVWX_5L_zyLgiGFv7LkwG5L8bdxTpZvMaPFg",
-                              "to": "evgconsultoriaimob@gmail.com",
-                              "device": "MOTOROLA moto g34 5G",
-                              "priority": "normal",
-                              "payload": cleanPhone
-                            };
-
-                            const response = await fetch('/llamalab/automate/cloud/message', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify(payload)
-                            });
-
-                            if (response.ok) {
-                              toast({ title: "Sucesso", description: "Chamada solicitada ao dispositivo." });
-                            } else {
-                              const errorText = await response.text();
-                              console.error('Erro na resposta do Llamalab:', response.status, errorText);
-                              throw new Error(`Falha na requisição: ${response.status}`);
-                            }
-                          } catch (e) {
-                            toast({ title: "Erro", description: "Falha ao solicitar chamada via Automate Cloud.", variant: "destructive" });
-                            console.error('Erro ao chamar Automate Cloud API:', e);
-                          } finally {
-                            setLoadingCall(false);
-                          }
-                        }}
-                      >
-                        {loadingCall ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <Phone className="w-3 h-3 mr-1.5" />}
-                        Ligar via Celular
-                      </Button>
-                    </div>
                   </div>
 
                   {/* Current Classification Badge */}
@@ -1482,9 +1668,9 @@ export function LigacoesModule() {
                       </Select>
                     </div>
 
-                    {/* Campo de descrição - aparece quando cliente tem interesse */}
+                    {/* Empreendimento - aparece apenas quando cliente tem interesse */}
                     {(classificacaoSelecionada === "Cliente Interessado") && (
-                      <div className="space-y-4">
+                      <div className="space-y-4 pt-2 border-t border-border mt-2">
                         <div className="space-y-2">
                           <Label className="text-sm font-medium">Empreendimento de Interesse</Label>
                           <Select value={empreendimentoSelecionado} onValueChange={setEmpreendimentoSelecionado}>
@@ -1504,22 +1690,23 @@ export function LigacoesModule() {
                             </SelectContent>
                           </Select>
                         </div>
-
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium">Descrição sobre o cliente interessado</Label>
-                          <textarea
-                            value={descricaoCliente}
-                            onChange={(e) => setDescricaoCliente(e.target.value)}
-                            placeholder="Adicione detalhes sobre o interesse do cliente, preferências, orçamento, etc..."
-                            className="w-full min-h-[80px] p-3 text-sm border border-border rounded-md bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                            maxLength={500}
-                          />
-                          <p className="text-xs text-muted-foreground text-right">
-                            {descricaoCliente.length}/500 caracteres
-                          </p>
-                        </div>
                       </div>
                     )}
+
+                    {/* Notas da Oferta Ativa (Sempre Visível) */}
+                    <div className="space-y-2 pt-4 border-t border-border mt-4">
+                      <Label className="text-sm font-medium">Notas / Anotações</Label>
+                      <textarea
+                        value={descricaoCliente}
+                        onChange={(e) => setDescricaoCliente(e.target.value)}
+                        placeholder="Adicione observações sobre a ligação, interesse do cliente, detalhes, etc..."
+                        className="w-full min-h-[80px] p-3 text-sm border border-border rounded-md bg-background resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        maxLength={500}
+                      />
+                      <p className="text-xs text-muted-foreground text-right">
+                        {descricaoCliente.length}/500 caracteres
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
