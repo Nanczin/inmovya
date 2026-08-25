@@ -54,6 +54,9 @@ export function RelatoriosModule() {
       disparados: 0,
       sucesso: 0,
       falharam: 0
+    },
+    interacoes: {
+      total: 0
     }
   });
   const [campanhasPerformance, setCampanhasPerformance] = useState<any[]>([]);
@@ -268,12 +271,17 @@ export function RelatoriosModule() {
     const metaLigacoesSalva = localStorage.getItem('meta_ligacoes_diarias');
     const metaLigacoes = metaLigacoesSalva ? parseInt(metaLigacoesSalva, 10) : 200;
 
+    const interacoesPeriodo = ligacoesPeriodo?.filter(l => l.status === 'interacao').length || 0;
+
     setMetricas(prev => ({
       ...prev,
       ligacoes: {
         hoje: ligacoesHoje,
         ontem: ligacoesOntem,
         meta: metaLigacoes
+      },
+      interacoes: {
+        total: interacoesPeriodo
       }
     }));
   };
@@ -849,7 +857,7 @@ export function RelatoriosModule() {
       </div>
 
       {/* KPIs Principais */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6">
 
 
         <Card className="shadow-card">
@@ -925,6 +933,25 @@ export function RelatoriosModule() {
             <div className="text-xs space-y-1">
               <div>Sucesso: {metricas.emails.sucesso}</div>
               <div>Falharam: {metricas.emails.falharam}</div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-2 rounded-lg bg-success text-success-foreground">
+                <TrendingUp className="w-6 h-6" />
+              </div>
+              <div className="text-right">
+                <span className="text-sm ml-1 text-success">Em tempo real</span>
+              </div>
+            </div>
+            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total}</div>
+            <div className="text-sm text-muted-foreground mb-3">Interações</div>
+            <div className="text-xs space-y-1">
+              <div>Interessados e Deny List</div>
+              <div>Registradas: <span className="text-success">{metricas.interacoes.total}</span></div>
             </div>
           </CardContent>
         </Card>
