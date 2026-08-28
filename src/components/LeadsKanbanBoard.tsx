@@ -12,6 +12,7 @@ interface LeadsKanbanBoardProps {
   onViewJourneyMap: (lead: any) => void;
   onEditLead: (lead: any) => void;
   onRegisterContact: (lead: any) => void;
+  onWhatsApp: (lead: any) => void;
 }
 
 export function LeadsKanbanBoard({
@@ -21,7 +22,9 @@ export function LeadsKanbanBoard({
   onStatusChange,
   onViewTimeline,
   onViewJourneyMap,
-  onEditLead
+  onEditLead,
+  onRegisterContact,
+  onWhatsApp
 }: LeadsKanbanBoardProps) {
   const handleDragStart = (e: React.DragEvent, leadId: string) => {
     e.dataTransfer.setData('leadId', leadId);
@@ -95,12 +98,17 @@ export function LeadsKanbanBoard({
                     </span>
                     
                     <div className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                       <button onClick={() => onRegisterContact(lead)} className="p-1.5 hover:bg-blue-100 rounded text-blue-700 dark:hover:bg-blue-900/30 dark:text-blue-400 transition-colors" title="Registrar Contato"><PhoneOutgoing className="w-3.5 h-3.5" /></button>
+                       <button onClick={() => onRegisterContact(lead)} className="p-1.5 hover:bg-blue-100 rounded text-blue-700 dark:hover:bg-blue-900/30 dark:text-blue-400 transition-colors" title="Registrar Contato">
+                         <PhoneOutgoing className="w-3.5 h-3.5" />
+                       </button>
+                       <button onClick={() => onWhatsApp(lead)} className="p-1.5 hover:bg-green-100 rounded text-green-600 dark:hover:bg-green-900/30 dark:text-green-400 transition-colors" title="WhatsApp">
+                         <MessageCircle className="w-3.5 h-3.5" />
+                       </button>
                        <button onClick={() => onViewJourneyMap(lead)} className="p-1.5 hover:bg-emerald-100 rounded text-emerald-600 transition-colors" title="Jornada">
                          <Network className="w-3.5 h-3.5" />
                        </button>
                        <button onClick={() => onViewTimeline(lead)} className="p-1.5 hover:bg-primary/10 rounded text-primary transition-colors" title="Timeline">
-                         <MessageCircle className="w-3.5 h-3.5" />
+                         <Clock className="w-3.5 h-3.5" />
                        </button>
                        <button onClick={() => onEditLead(lead)} className="p-1.5 hover:bg-muted rounded text-muted-foreground transition-colors" title="Editar">
                          <Edit className="w-3.5 h-3.5" />
@@ -121,5 +129,3 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
-
-
