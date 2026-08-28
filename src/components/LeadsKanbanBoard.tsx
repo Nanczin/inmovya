@@ -1,6 +1,8 @@
 import React from 'react';
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Clock, MessageCircle, Edit, Network, PhoneOutgoing, CalendarPlus } from "lucide-react";
 
 interface LeadsKanbanBoardProps {
@@ -90,6 +92,12 @@ export function LeadsKanbanBoard({
                         {lead.origem}
                       </Badge>
                     )}
+                    {lead.ultimo_contato && (
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1" title={`Último contato: ${new Date(lead.ultimo_contato).toLocaleString('pt-BR')}`}>
+                        <PhoneOutgoing className="w-3 h-3" />
+                        {formatDistanceToNow(new Date(lead.ultimo_contato), { addSuffix: true, locale: ptBR })}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex justify-between items-center mt-3 pt-3 border-t border-border/50">
@@ -133,5 +141,10 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
+
+
+
+
 
 
