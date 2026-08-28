@@ -1557,7 +1557,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         </Card>
       </div>
 
-      {viewMode === "kanban" ? (<LeadsKanbanBoard leads={filteredLeads} stages={funnelStages} getStatusColor={getStatusColor} onStatusChange={handleKanbanStatusChange} onViewTimeline={handleViewTimeline} onViewJourneyMap={handleViewJourneyMap} onEditLead={handleEditLead} />) : (<Card className="shadow-card">
+      {viewMode === "kanban" ? (<LeadsKanbanBoard leads={filteredLeads} stages={funnelStages} getStatusColor={getStatusColor} onStatusChange={handleKanbanStatusChange} onViewTimeline={handleViewTimeline} onViewJourneyMap={handleViewJourneyMap} onEditLead={handleEditLead} onRegisterContact={handleRegisterContact} />) : (<Card className="shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
@@ -2228,6 +2228,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     </div >
   );
 }
+
 
 
 
