@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, MessageCircle, Edit, Network, PhoneOutgoing } from "lucide-react";
+import { Clock, MessageCircle, Edit, Network, PhoneOutgoing, CalendarPlus } from "lucide-react";
 
 interface LeadsKanbanBoardProps {
   leads: any[];
@@ -13,6 +13,7 @@ interface LeadsKanbanBoardProps {
   onEditLead: (lead: any) => void;
   onRegisterContact: (lead: any) => void;
   onWhatsApp: (lead: any) => void;
+  onScheduleTask: (lead: any) => void;
 }
 
 export function LeadsKanbanBoard({
@@ -110,6 +111,9 @@ export function LeadsKanbanBoard({
                        <button onClick={() => onViewTimeline(lead)} className="p-1.5 hover:bg-primary/10 rounded text-primary transition-colors" title="Timeline">
                          <Clock className="w-3.5 h-3.5" />
                        </button>
+                       <button onClick={() => onScheduleTask(lead)} className="p-1.5 hover:bg-orange-100 rounded text-orange-500 dark:hover:bg-orange-900/30 dark:text-orange-400 transition-colors" title="Criar Lembrete">
+                         <CalendarPlus className="w-3.5 h-3.5" />
+                       </button>
                        <button onClick={() => onEditLead(lead)} className="p-1.5 hover:bg-muted rounded text-muted-foreground transition-colors" title="Editar">
                          <Edit className="w-3.5 h-3.5" />
                        </button>
@@ -129,3 +133,5 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
+
