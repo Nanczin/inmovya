@@ -29,7 +29,8 @@ export function LeadsKanbanBoard({
   onEditLead,
   onRegisterContact,
   onWhatsApp,
-  onScheduleTask
+  onScheduleTask,
+  onDeleteTask
 }: LeadsKanbanBoardProps) {
   const handleDragStart = (e: React.DragEvent, leadId: string) => {
     e.dataTransfer.setData('leadId', leadId);
@@ -158,6 +159,8 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
+
 
 
 
