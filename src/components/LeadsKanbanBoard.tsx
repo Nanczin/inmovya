@@ -72,7 +72,9 @@ export function LeadsKanbanBoard({
             </div>
             
             <div className="flex flex-col gap-3 min-h-[200px] h-full rounded-lg">
-              {stageLeads.map(lead => (
+              {stageLeads.map(lead => {
+                const pendingTasks = lead.tasks?.filter((t: any) => t.status === 'pending') || [];
+                return (
                 <Card 
                   key={lead.id} 
                   draggable 
@@ -125,8 +127,21 @@ export function LeadsKanbanBoard({
                        </button>
                     </div>
                   </div>
+                {pendingTasks.length > 0 && (
+                    <div className="flex flex-col gap-1.5 mt-2.5 pt-2.5 border-t border-orange-100 dark:border-orange-950/50">
+                      {pendingTasks.map((task: any) => (
+                        <div key={task.id} className="flex items-start gap-1.5 text-[10px] text-orange-600 bg-orange-50 dark:bg-orange-950/40 dark:text-orange-400 p-1.5 rounded-md" title={task.description}>
+                          <CalendarPlus className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                          <div className="flex flex-col leading-tight">
+                            <span className="font-medium truncate max-w-[190px]">{task.title}</span>
+                            <span className="opacity-80">{new Date(task.due_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </Card>
-              ))}
+              );})} 
               {stageLeads.length === 0 && (
                 <div className="text-center flex items-center justify-center h-24 text-xs text-muted-foreground/60 border-2 border-dashed border-border/50 rounded-lg bg-background/30">
                   Arraste leads para cá
@@ -139,6 +154,9 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
+
+
 
 
 

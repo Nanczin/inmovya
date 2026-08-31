@@ -19,6 +19,7 @@ export interface Lead {
     empreendimento?: {
         nome: string;
     };
+    tasks?: any[];
     journey_map_data?: {
         nodes: any[];
         edges?: any[];
@@ -49,7 +50,8 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
                 .from('leads')
                 .select(`
                     *,
-                    empreendimento:empreendimentos(nome)
+                    empreendimento:empreendimentos(nome),
+                      tasks(id, title, due_date, status, description)
                 `)
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false });
@@ -139,3 +141,5 @@ export function useLeads() {
     }
     return context;
 }
+
+
