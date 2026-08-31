@@ -141,9 +141,6 @@ export function LeadsKanbanBoard({
                               <Trash2 className="w-3 h-3 pointer-events-none" />
                             </button>
                           </div>
-<!--dummy-->
-                          </div>
-                        </div>
                       ))}
                     </div>
                   )}
@@ -161,6 +158,7 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
 
 
 
