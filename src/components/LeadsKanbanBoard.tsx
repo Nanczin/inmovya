@@ -106,24 +106,21 @@ export function LeadsKanbanBoard({
                       {new Date(lead.created_at).toLocaleDateString('pt-BR')}
                     </span>
                     
-                    <div className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRegisterContact(lead); }} className="p-1.5 hover:bg-blue-100 rounded text-blue-700 dark:hover:bg-blue-900/30 dark:text-blue-400 transition-colors" title="Registrar Contato">
-                         <PhoneOutgoing className="w-3.5 h-3.5" />
+                         <PhoneOutgoing className="w-3.5 h-3.5 pointer-events-none" />
                        </button>
                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onWhatsApp(lead); }} className="p-1.5 hover:bg-green-100 rounded text-green-600 dark:hover:bg-green-900/30 dark:text-green-400 transition-colors" title="WhatsApp">
-                         <MessageCircle className="w-3.5 h-3.5" />
-                       </button>
-                       <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onViewJourneyMap(lead); }} className="p-1.5 hover:bg-emerald-100 rounded text-emerald-600 transition-colors" title="Jornada">
-                         <Network className="w-3.5 h-3.5" />
+                         <MessageCircle className="w-3.5 h-3.5 pointer-events-none" />
                        </button>
                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onViewTimeline(lead); }} className="p-1.5 hover:bg-primary/10 rounded text-primary transition-colors" title="Timeline">
-                         <Clock className="w-3.5 h-3.5" />
+                         <Clock className="w-3.5 h-3.5 pointer-events-none" />
                        </button>
                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onScheduleTask(lead); }} className="p-1.5 hover:bg-orange-100 rounded text-orange-500 dark:hover:bg-orange-900/30 dark:text-orange-400 transition-colors" title="Criar Lembrete">
-                         <CalendarPlus className="w-3.5 h-3.5" />
+                         <CalendarPlus className="w-3.5 h-3.5 pointer-events-none" />
                        </button>
                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEditLead(lead); }} className="p-1.5 hover:bg-muted rounded text-muted-foreground transition-colors" title="Editar">
-                         <Edit className="w-3.5 h-3.5" />
+                         <Edit className="w-3.5 h-3.5 pointer-events-none" />
                        </button>
                     </div>
                   </div>
@@ -141,6 +138,9 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
+
+
 
 
 
