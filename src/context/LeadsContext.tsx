@@ -46,29 +46,38 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
-            const { data, error } = await supabase
+            const { data: leadsData, error: leadsError } = await supabase
                 .from('leads')
-                .select(`
-                    *,
-                    empreendimento:empreendimentos(nome),
-                      tasks(id, title, due_date, status, description)
-                `)
+                .select('*, empreendimento:empreendimentos(nome)')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false });
 
-            if (error) {
-                console.error('Error fetching leads:', error);
+            if (leadsError) {
+                console.error('Error fetching leads:', leadsError);
                 return;
             }
 
-            if (data) {
-                setLeads(data);
+            const { data: tasksData, error: tasksError } = await supabase
+                .from('tasks')
+                .select('id, lead_id, title, due_date, status, description')
+                .eq('user_id', user.id)
+                .eq('status', 'pending');
+
+            if (tasksError) {
+                console.error('Error fetching tasks:', tasksError);
+            }
+
+            if (leadsData) {
+                const leadsWithTasks = leadsData.map(lead => ({
+                    ...lead,
+                    tasks: tasksData ? tasksData.filter(t => t.lead_id === lead.id) : []
+                }));
+                setLeads(leadsWithTasks);
             }
         } catch (error) {
             console.error('Unexpected error fetching leads:', error);
         }
     };
-
     useEffect(() => {
         fetchLeads();
 
@@ -141,5 +150,6 @@ export function useLeads() {
     }
     return context;
 }
+
 
 
