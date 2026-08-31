@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Clock, MessageCircle, Edit, Network, PhoneOutgoing, CalendarPlus } from "lucide-react";
+import { Clock, MessageCircle, Edit, Network, PhoneOutgoing, CalendarPlus, Trash2 } from "lucide-react";
 
 interface LeadsKanbanBoardProps {
   leads: any[];
@@ -16,6 +16,7 @@ interface LeadsKanbanBoardProps {
   onRegisterContact: (lead: any) => void;
   onWhatsApp: (lead: any) => void;
   onScheduleTask: (lead: any) => void;
+  onDeleteTask: (taskId: string) => void;
 }
 
 export function LeadsKanbanBoard({
@@ -132,9 +133,15 @@ export function LeadsKanbanBoard({
                       {pendingTasks.map((task: any) => (
                         <div key={task.id} className="flex items-start gap-1.5 text-[10px] text-orange-600 bg-orange-50 dark:bg-orange-950/40 dark:text-orange-400 p-1.5 rounded-md" title={task.description}>
                           <CalendarPlus className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                          <div className="flex flex-col leading-tight">
+                          <div className="flex flex-col leading-tight flex-1">
                             <span className="font-medium truncate max-w-[190px]">{task.title}</span>
                             <span className="opacity-80">{new Date(task.due_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDeleteTask(task.id); }} className="opacity-50 hover:opacity-100 hover:text-red-500 transition-colors p-1" title="Excluir lembrete">
+                              <Trash2 className="w-3 h-3 pointer-events-none" />
+                            </button>
+                          </div>
+<!--dummy-->
                           </div>
                         </div>
                       ))}
@@ -154,6 +161,11 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
+
+
+
+
 
 
 

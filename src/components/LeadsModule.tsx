@@ -546,6 +546,17 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     window.open(url, '_blank');
   };
 
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+      if (error) throw error;
+      toast({ title: 'Lembrete excluído', description: 'O lembrete foi removido com sucesso.' });
+      refreshLeads();
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    }
+  };
+
   const handleCreateTask = (lead: any) => {
     setSelectedLeadForTask(lead);
     setIsTaskDialogOpen(true);
@@ -1557,7 +1568,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         </Card>
       </div>
 
-      {viewMode === "kanban" ? (<LeadsKanbanBoard leads={filteredLeads} stages={funnelStages} getStatusColor={getStatusColor} onStatusChange={handleKanbanStatusChange} onViewTimeline={handleViewTimeline} onViewJourneyMap={handleViewJourneyMap} onEditLead={handleEditLead} onRegisterContact={handleRegisterContact} onWhatsApp={handleWhatsApp} onScheduleTask={handleCreateTask} />) : (<Card className="shadow-card">
+      {viewMode === "kanban" ? (<LeadsKanbanBoard leads={filteredLeads} stages={funnelStages} getStatusColor={getStatusColor} onStatusChange={handleKanbanStatusChange} onViewTimeline={handleViewTimeline} onViewJourneyMap={handleViewJourneyMap} onEditLead={handleEditLead} onRegisterContact={handleRegisterContact} onWhatsApp={handleWhatsApp} onScheduleTask={handleCreateTask} onDeleteTask={handleDeleteTask} />) : (<Card className="shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
@@ -2228,6 +2239,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     </div >
   );
 }
+
+
 
 
 
