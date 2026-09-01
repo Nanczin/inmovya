@@ -51,6 +51,10 @@ const Index = () => {
   }, [user, loading, navigate]);
 
   const handleNavigation = (module: string, params?: any) => {
+    if (module === 'view-task') {
+      setGlobalViewTaskId(params?.id);
+      return;
+    }
     setActiveModule(module);
     if (params) {
       setNavigationParams(params);
@@ -140,6 +144,7 @@ const Index = () => {
 };
 
 export default Index;
+
 
 
 
