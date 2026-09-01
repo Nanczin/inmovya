@@ -1,8 +1,8 @@
-�import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PowerBIFunnel } from './PowerBIFunnel';
 import { Badge } from "@/components/ui/badge";
+import { PowerBIFunnel } from './PowerBIFunnel';
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -401,7 +401,7 @@ export function RelatoriosModule() {
         ["Data de Exportação", dataAtual, "", ""],
         ["Data Início do Período", new Date(getPeriodoDatas().inicio).toLocaleDateString('pt-BR'), "", ""],
         ["", "", "", ""],
-        ["M�0TRICAS PRINCIPAIS", "", "", ""],
+        ["MÉTRICAS PRINCIPAIS", "", "", ""],
         ["Métrica", "Valor Atual", "Valor Anterior", "Meta"],
         ["Taxa de Conversão (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
         ["Ligações no Período", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
@@ -423,7 +423,7 @@ export function RelatoriosModule() {
           new Date(campanha.created_at).toLocaleDateString('pt-BR')
         ]) || [],
         ["", "", "", ""],
-        ["LOGS DE EMAIL (�altimos 50)", "", "", ""],
+        ["LOGS DE EMAIL (Últimos 50)", "", "", ""],
         ["Destinatário", "Status", "Provedor", "Data Envio"],
         ...emailsReais?.slice(0, 50).map(email => [
           email.recipient,
@@ -432,7 +432,7 @@ export function RelatoriosModule() {
           new Date(email.sent_at).toLocaleDateString('pt-BR')
         ]) || [],
         ["", "", "", ""],
-        ["LIGA�!�"ES REGISTRADAS", "", "", ""],
+        ["LIGAÇÕES REGISTRADAS", "", "", ""],
         ["Telefone", "Status", "Resultado", "Data"],
         ...ligacoesReais?.slice(0, 50).map(ligacao => [
           ligacao.numero_telefone,
@@ -454,7 +454,7 @@ export function RelatoriosModule() {
       document.body.removeChild(link);
 
       toast({
-        title: "�S& Relatório Exportado",
+        title: "✅ Relatório Exportado",
         description: `Dados reais exportados: ${campanhasReais?.length || 0} campanhas, ${emailsReais?.length || 0} emails, ${ligacoesReais?.length || 0} ligações`,
       });
     } catch (error) {
@@ -473,7 +473,7 @@ export function RelatoriosModule() {
 
     try {
       toast({
-        title: "�x Gerando Relatório PDF",
+        title: "🔄 Gerando Relatório PDF",
         description: `Coletando dados reais do período: ${periodoSelecionado}`,
       });
 
@@ -609,7 +609,7 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>�x` Métricas Principais</h2>
+            <h2>📊 Métricas Principais</h2>
             <div class="metric-grid">
               <div class="metric-card highlight">
                 <div class="metric-label">Taxa de Conversão</div>
@@ -631,7 +631,7 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>�x� Análise de Leads</h2>
+            <h2>👥 Análise de Leads</h2>
             <table class="table">
               <tr><th>Métrica</th><th>Valor</th><th>Percentual</th></tr>
               <tr><td>Leads Novos</td><td>${relatorioCompleto.leads.novos}</td><td>${((relatorioCompleto.leads.novos / relatorioCompleto.leads.total) * 100).toFixed(1)}%</td></tr>
@@ -649,7 +649,7 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>�x~ Análise de Ligações</h2>
+            <h2>📞 Análise de Ligações</h2>
             <table class="table">
               <tr><th>Métrica</th><th>Valor</th></tr>
               <tr><td>Total de Ligações</td><td>${relatorioCompleto.ligacoes.total}</td></tr>
@@ -660,7 +660,7 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>�x� Análise de Emails</h2>
+            <h2>📧 Análise de Emails</h2>
             <table class="table">
               <tr><th>Métrica</th><th>Valor</th></tr>
               <tr><td>Total de Emails</td><td>${relatorioCompleto.emails.total}</td></tr>
@@ -671,7 +671,7 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>�x�� Campanhas e Empreendimentos</h2>
+            <h2>🏢 Campanhas e Empreendimentos</h2>
             <div style="display: flex; gap: 20px;">
               <div style="flex: 1;">
                 <h3>Campanhas (${relatorioCompleto.campanhas.total} total)</h3>
@@ -692,7 +692,7 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>�x� Recomendações</h2>
+            <h2>📈 Recomendações</h2>
             <ul>
               <li><strong>Conversão:</strong> ${parseFloat(relatorioCompleto.leads.taxaConversao) > 20 ? 'Taxa excelente! Continue o trabalho.' : 'Foque em melhorar a qualificação dos leads.'}</li>
               <li><strong>Ligações:</strong> ${relatorioCompleto.ligacoes.realizadas > relatorioCompleto.ligacoes.naoAtendidas ? 'Boa taxa de conexão.' : 'Considere otimizar horários de ligação.'}</li>
@@ -719,14 +719,14 @@ export function RelatoriosModule() {
       URL.revokeObjectURL(url);
 
       toast({
-        title: "�S& Relatório Completo Gerado",
-        description: `�x` ${relatorioCompleto.leads.total} leads, ${relatorioCompleto.ligacoes.total} ligações, ${relatorioCompleto.emails.total} emails analisados | Taxa conversão: ${relatorioCompleto.leads.taxaConversao}%`,
+        title: "✅ Relatório Completo Gerado",
+        description: `📊 ${relatorioCompleto.leads.total} leads, ${relatorioCompleto.ligacoes.total} ligações, ${relatorioCompleto.emails.total} emails analisados | Taxa conversão: ${relatorioCompleto.leads.taxaConversao}%`,
       });
 
     } catch (error) {
       console.error("Erro ao gerar relatório:", error);
       toast({
-        title: "�R Erro na Geração",
+        title: "❌ Erro na Geração",
         description: "Não foi possível gerar o relatório completo. Verifique os dados.",
         variant: "destructive",
       });
@@ -757,13 +757,13 @@ export function RelatoriosModule() {
     };
 
     toast({
-      title: "�x Processando Análise Preditiva",
+      title: "🔄 Processando Análise Preditiva",
       description: "Analisando dados históricos com IA...",
     });
 
     setTimeout(() => {
       toast({
-        title: "�x� Análise Preditiva Concluída",
+        title: "🔮 Análise Preditiva Concluída",
         description: `Previsões para próximo mês: ${previsoes.proximoMes.ligacoes.toLocaleString()} ligações, ${previsoes.proximoMes.conversao}% conversão, R$ ${(previsoes.proximoMes.receita / 1000).toFixed(0)}K receita`,
       });
 
@@ -827,9 +827,9 @@ export function RelatoriosModule() {
             <SelectContent>
               <SelectItem value="hoje">Hoje</SelectItem>
               <SelectItem value="ontem">Ontem</SelectItem>
-              <SelectItem value="7dias">�altimos 7 dias</SelectItem>
-              <SelectItem value="30dias">�altimos 30 dias</SelectItem>
-              <SelectItem value="90dias">�altimos 90 dias</SelectItem>
+              <SelectItem value="7dias">Últimos 7 dias</SelectItem>
+              <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+              <SelectItem value="90dias">Últimos 90 dias</SelectItem>
               <SelectItem value="ano">Este ano</SelectItem>
               <SelectItem value="personalizado">Período personalizado</SelectItem>
             </SelectContent>
@@ -957,6 +957,7 @@ export function RelatoriosModule() {
           </CardContent>
         </Card>
 
+        <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} />
       </div>
 
 
@@ -967,7 +968,7 @@ export function RelatoriosModule() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5" />
-              �altimos Leads Cadastrados
+              Últimos Leads Cadastrados
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1082,10 +1083,6 @@ export function RelatoriosModule() {
           )}
         </CardContent>
       </Card>
-    
-      {/* Power BI Funnel */}
-      <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} />
     </div>
   );
 }
-

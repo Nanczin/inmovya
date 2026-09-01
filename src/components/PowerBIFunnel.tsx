@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Input } from "@/components/ui/input";
@@ -137,7 +137,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo }: PowerBIF
                 <Tooltip cursor={{fill: 'transparent'}} />
                 <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
                   {data.map((entry, index) => (
-                    <Cell key={cell-\} fill={entry.fill} />
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
                 </Bar>
               </BarChart>
