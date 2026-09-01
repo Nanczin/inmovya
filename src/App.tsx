@@ -32,7 +32,7 @@ const App = () => (
                   <Route path="/" element={<Index />} />
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/install" element={<Install />} />
-                  <Route path="/journey/:leadId" element={<JourneyMapPage />} />
+                  
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
@@ -46,3 +46,4 @@ const App = () => (
 );
 
 export default App;
+

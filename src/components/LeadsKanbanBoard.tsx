@@ -12,7 +12,6 @@ interface LeadsKanbanBoardProps {
   getStatusColor: (status: string) => string;
   onStatusChange: (leadId: string, newStatus: string) => void;
   onViewTimeline: (lead: any) => void;
-  onViewJourneyMap: (lead: any) => void;
   onEditLead: (lead: any) => void;
   onRegisterContact: (lead: any) => void;
   onWhatsApp: (lead: any) => void;
@@ -26,7 +25,6 @@ export function LeadsKanbanBoard({
   getStatusColor,
   onStatusChange,
   onViewTimeline,
-  onViewJourneyMap,
   onEditLead,
   onRegisterContact,
   onWhatsApp,
@@ -180,6 +178,7 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
 
 
 

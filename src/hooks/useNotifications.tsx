@@ -146,7 +146,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
               icon: '/icons/icon-192x192.png',
               badge: '/icons/icon-192x192.png',
               tag: newNotification.id, // Prevent duplicates
-              data: { url: notificationData.leadId ? '/journey/' + notificationData.leadId : '/' } // Route to journey if available
+              data: { url: '/' } // Route to journey if available
             });
           });
         } else {
@@ -157,9 +157,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           });
           n.onclick = () => {
             window.focus();
-            if (notificationData.leadId) {
-              window.location.href = '/journey/' + notificationData.leadId;
-            }
+            window.location.href = '/';
           };
         }
       } catch (err) {
@@ -241,4 +239,5 @@ export function useNotifications() {
   }
   return context;
 }
+
 

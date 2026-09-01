@@ -14,7 +14,6 @@ import { useToast } from "@/hooks/use-toast";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { EmailComposer } from "@/components/EmailComposer";
 import { LeadFilters } from "@/components/LeadFilters";
-import { LeadJourneyMap } from "@/components/journey-map";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { useLeads } from "@/context/LeadsContext";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -540,11 +539,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     setIsTimelineOpen(true);
   };
 
-  const handleViewJourneyMap = (lead: any) => {
-    // Open in new tab
-    const url = `/journey/${lead.id}`;
-    window.open(url, '_blank');
-  };
+  
 
   const handleDeleteTask = async (taskId: string) => {
     try {
@@ -1568,7 +1563,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         </Card>
       </div>
 
-      {viewMode === "kanban" ? (<LeadsKanbanBoard leads={filteredLeads} stages={funnelStages} getStatusColor={getStatusColor} onStatusChange={handleKanbanStatusChange} onViewTimeline={handleViewTimeline} onViewJourneyMap={handleViewJourneyMap} onEditLead={handleEditLead} onRegisterContact={handleRegisterContact} onWhatsApp={handleWhatsApp} onScheduleTask={handleCreateTask} onDeleteTask={handleDeleteTask} />) : (<Card className="shadow-card">
+      {viewMode === "kanban" ? (<LeadsKanbanBoard leads={filteredLeads} stages={funnelStages} getStatusColor={getStatusColor} onStatusChange={handleKanbanStatusChange} onViewTimeline={handleViewTimeline} onEditLead={handleEditLead} onRegisterContact={handleRegisterContact} onWhatsApp={handleWhatsApp} onScheduleTask={handleCreateTask} onDeleteTask={handleDeleteTask} />) : (<Card className="shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
@@ -2175,12 +2170,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Mapa da Jornada do Lead */}
-      <LeadJourneyMap
-        leadId={selectedLead?.id}
-        isOpen={isJourneyMapOpen}
-        onClose={() => setIsJourneyMapOpen(false)}
-      />
+      
 
 
 
@@ -2239,6 +2229,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     </div >
   );
 }
+
+
 
 
 
