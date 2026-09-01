@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+�import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
@@ -79,7 +79,7 @@ const Index = () => {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4">
           <h1 className="text-3xl font-bold">Inmovya</h1>
-          <p className="text-muted-foreground">Sistema de GestÃ£o ImobiliÃ¡ria</p>
+          <p className="text-muted-foreground">Sistema de Gestão Imobiliária</p>
           <Button onClick={() => navigate('/auth')}>
             Fazer Login
           </Button>

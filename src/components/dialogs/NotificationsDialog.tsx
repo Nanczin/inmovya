@@ -1,4 +1,4 @@
-﻿
+�
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -56,25 +56,25 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
 
       if (leadError) throw leadError;
 
-      // Determinar o tipo de evento na timeline baseado na notificaÃ§Ã£o
+      // Determinar o tipo de evento na timeline baseado na notificação
       const isReminder = notification.title.toLowerCase().includes('lembrete');
-      const timelineTitle = isReminder ? 'Lembrete ConcluÃ­do' : 'Contato Realizado';
+      const timelineTitle = isReminder ? 'Lembrete Concluído' : 'Contato Realizado';
       const timelineDesc = isReminder
         ? `Lembrete marcado como feito: "${notification.message}"`
-        : 'Contato registrado atravÃ©s da notificaÃ§Ã£o de follow-up.';
+        : 'Contato registrado através da notificação de follow-up.';
 
       // Adicionar Timeline
       await supabase
         .from('lead_timeline')
         .insert({
           lead_id: notification.leadId,
-          type: 'contact', // Mantemos contact para indicar aÃ§Ã£o realizada
+          type: 'contact', // Mantemos contact para indicar ação realizada
           title: timelineTitle,
           description: timelineDesc,
-          author: 'UsuÃ¡rio'
+          author: 'Usuário'
         });
 
-      // Se for lembrete, atualizar o status da tarefa para concluÃ­do
+      // Se for lembrete, atualizar o status da tarefa para concluído
       if (isReminder) {
         // Find and update pending tasks for this lead
         await supabase
@@ -84,18 +84,18 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
           .eq('status', 'pending');
       }
 
-      // NÃƒO marcar notificaÃ§Ã£o como lida automaticamente (pedido do usuÃ¡rio)
+      // NÒO marcar notificação como lida automaticamente (pedido do usuário)
       // markAsRead(notification.id);
 
       // Mark as Actioned locally so button disappears
       markAsActioned(notification.id);
 
-      // ForÃ§ar atualizaÃ§Ã£o da lista de leads
+      // Forçar atualização da lista de leads
       window.dispatchEvent(new Event('refreshLeads'));
 
       toast({
         title: "Contato registrado",
-        description: "O Ãºltimo contato foi atualizado com sucesso.",
+        description: "O último contato foi atualizado com sucesso.",
         variant: "default"
       });
 
@@ -150,7 +150,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0">
             <DialogTitle className="flex items-center gap-2">
               <Bell className="w-5 h-5" />
-              NotificaÃ§Ãµes
+              Notificações
               {unreadCount > 0 && (
                 <Badge variant="destructive" className="ml-2">
                   {unreadCount}
@@ -192,7 +192,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
               Todas ({notifications.length})
             </TabsTrigger>
             <TabsTrigger value="unread">
-              NÃ£o lidas ({unreadCount})
+              Não lidas ({unreadCount})
             </TabsTrigger>
           </TabsList>
 
@@ -201,7 +201,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
               {filteredNotifications.length === 0 ? (
                 <div className="text-center py-8">
                   <Bell className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Nenhuma notificaÃ§Ã£o encontrada</p>
+                  <p className="text-muted-foreground">Nenhuma notificação encontrada</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -259,7 +259,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                                     e.stopPropagation();
                                     removeNotification(notification.id);
                                   }}
-                                  title="Excluir notificaÃ§Ã£o"
+                                  title="Excluir notificação"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </Button>
@@ -293,7 +293,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
               {filteredNotifications.length === 0 ? (
                 <div className="text-center py-8">
                   <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-4" />
-                  <p className="text-muted-foreground">Todas as notificaÃ§Ãµes foram lidas!</p>
+                  <p className="text-muted-foreground">Todas as notificações foram lidas!</p>
                 </div>
               ) : (
                 <div className="space-y-4">
