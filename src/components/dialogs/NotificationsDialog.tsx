@@ -25,9 +25,10 @@ import { ptBR } from "date-fns/locale";
 interface NotificationsDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onNavigate?: (module: string, id?: string) => void;
 }
 
-export function NotificationsDialog({ isOpen, onClose }: NotificationsDialogProps) {
+export function NotificationsDialog({ isOpen, onClose, onNavigate }: NotificationsDialogProps) {
   const {
     notifications,
     unreadCount,
@@ -336,4 +337,6 @@ export function NotificationsDialog({ isOpen, onClose }: NotificationsDialogProp
     </Dialog>
   );
 }
+
+
 

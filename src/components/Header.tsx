@@ -190,7 +190,7 @@ export function Header({
     <GlobalSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onNavigate={handleNavigate} />
 
     {/* Notifications Dialog */}
-    <NotificationsDialog isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+    <NotificationsDialog isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} onNavigate={handleNavigate} />
 
     {/* Edit Profile Dialog */}
     <EditProfileDialog isOpen={isEditProfileOpen} onClose={handleProfileClose} />

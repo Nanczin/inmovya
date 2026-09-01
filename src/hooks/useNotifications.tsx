@@ -10,6 +10,7 @@ interface Notification {
   timestamp: Date;
   read: boolean;
   leadId?: string;
+  taskId?: string;
   actioned?: boolean;
 }
 
@@ -146,7 +147,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
               icon: '/icons/icon-192x192.png',
               badge: '/icons/icon-192x192.png',
               tag: newNotification.id, // Prevent duplicates
-              data: { url: '/' } // Route to journey if available
+              data: { url: notificationData.taskId ? '/?taskId=' + notificationData.taskId : (notificationData.leadId ? '/?leadId=' + notificationData.leadId : '/') } // Route to journey if available
             });
           });
         } else {
@@ -157,7 +158,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
           });
           n.onclick = () => {
             window.focus();
-            window.location.href = '/';
+            window.location.href = notificationData.taskId ? '/?taskId=' + notificationData.taskId : (notificationData.leadId ? '/?leadId=' + notificationData.leadId : '/');
           };
         }
       } catch (err) {
@@ -239,5 +240,7 @@ export function useNotifications() {
   }
   return context;
 }
+
+
 
 

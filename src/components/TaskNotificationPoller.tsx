@@ -52,7 +52,8 @@ export function TaskNotificationPoller() {
                             type: 'warning',
                             title: 'Lembrete Vencido',
                             message: `Lembrete "${task.title}" para ${leadName} venceu às ${new Date(task.due_date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`,
-                            leadId: task.lead_id
+                            leadId: task.lead_id,
+                            taskId: task.id
                         });
 
                         // Add to local storage to avoid notifying again
@@ -81,3 +82,4 @@ export function TaskNotificationPoller() {
     // This component doesn't render anything
     return null;
 }
+

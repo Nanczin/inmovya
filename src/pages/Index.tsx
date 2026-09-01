@@ -26,6 +26,22 @@ const Index = () => {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
 
+    useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get('taskId');
+    const leadId = params.get('leadId');
+
+    if (taskId) {
+      setActiveModule('agenda');
+      setNavigationParams({ id: taskId });
+      window.history.replaceState({}, '', '/');
+    } else if (leadId) {
+      setActiveModule('leads');
+      setNavigationParams({ id: leadId });
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
+
   // Redirect to auth if not logged in
   useEffect(() => {
     if (!loading && !user) {
@@ -72,7 +88,7 @@ const Index = () => {
       case "dashboard":
         return <Dashboard onModuleChange={setActiveModule} />;
       case "agenda":
-        return <AgendaModule />;
+        return <AgendaModule initialTaskId={navigationParams?.id} />;
       case "leads":
         return <LeadsModule initialLeadId={navigationParams?.id} />;
       case "email-marketing":
@@ -122,3 +138,5 @@ const Index = () => {
 };
 
 export default Index;
+
+

@@ -32,10 +32,11 @@ interface Task {
   lead_id: string | null;
 }
 
-export function AgendaModule() {
+export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialTaskHandled, setInitialTaskHandled] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
@@ -118,6 +119,17 @@ export function AgendaModule() {
       });
     }
   };
+
+    useEffect(() => {
+    if (initialTaskId && !initialTaskHandled && tasks.length > 0) {
+      const task = tasks.find(t => t.id === initialTaskId);
+      if (task) {
+        setTaskToEdit(task);
+        setIsDialogOpen(true);
+        setInitialTaskHandled(true);
+      }
+    }
+  }, [initialTaskId, tasks, initialTaskHandled]);
 
   const confirmDeleteTask = async () => {
     if (!taskToDelete) return;
@@ -614,3 +626,5 @@ export function AgendaModule() {
     </div>
   );
 }
+
+
