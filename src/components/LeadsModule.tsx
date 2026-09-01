@@ -36,7 +36,6 @@ import {
   Edit,
   Trash2,
   Clock,
-  Network,
   HelpCircle,
   FileText,
   AlertTriangle,
@@ -1601,15 +1600,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                           </div>
                         </div>
                         <div className="flex gap-1 ml-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewJourneyMap(lead)}
-                            title="Mapa da Jornada"
-                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200/50"
-                          >
-                            <Network className="w-4 h-4" strokeWidth={2.5} />
-                          </Button>
+                          
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1799,15 +1790,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                       </td>
                       <td className="p-3">
                         <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewJourneyMap(lead)}
-                            title="Mapa da Jornada"
-                            className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200/50"
-                          >
-                            <Network className="w-4 h-4" strokeWidth={2.5} />
-                          </Button>
+                          
                           <Button
                             variant="ghost"
                             size="sm"
@@ -2229,6 +2212,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     </div >
   );
 }
+
+
 
 
 

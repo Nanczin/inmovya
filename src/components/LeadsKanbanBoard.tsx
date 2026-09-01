@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Clock, MessageCircle, Edit, Network, PhoneOutgoing, CalendarPlus, Trash2 } from "lucide-react";
+import { Clock, MessageCircle, Edit, PhoneOutgoing, CalendarPlus, Trash2 } from "lucide-react";
 
 interface LeadsKanbanBoardProps {
   leads: any[];
@@ -178,6 +178,7 @@ export function LeadsKanbanBoard({
     </div>
   );
 }
+
 
 
 
