@@ -4,8 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
-import { BarChart3, Save } from 'lucide-react';
+import { BarChart3, Save, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PowerBIFunnelProps {
   periodo: string;
@@ -15,7 +16,8 @@ interface PowerBIFunnelProps {
 
 export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIFunnelProps) {
   const { toast } = useToast();
-  const storageKey = "powerbi_metrics_" + periodo;
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [manualMetrics, setManualMetrics] = useState({
     visitas: 0,
@@ -26,25 +28,76 @@ export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIF
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        setManualMetrics(JSON.parse(saved));
-      } catch(e) {}
-    } else {
-      setManualMetrics({
-        visitas: 0,
-        documentacao: 0,
-        negociacao: 0,
-        venda: 0,
-        interacaoAjuste: 0
-      });
-    }
-  }, [periodo, storageKey]);
+    fetchMetricsFromDB();
+  }, [periodo]);
 
-  const handleSave = () => {
-    localStorage.setItem(storageKey, JSON.stringify(manualMetrics));
-    toast({ title: 'Métricas salvas', description: 'Valores atualizados para o período selecionado.' });
+  const fetchMetricsFromDB = async () => {
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('powerbi_funnel_metrics')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('period', periodo)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching metrics:', error);
+        return;
+      }
+
+      if (data) {
+        setManualMetrics({
+          visitas: data.visitas || 0,
+          documentacao: data.documentacao || 0,
+          negociacao: data.negociacao || 0,
+          venda: data.venda || 0,
+          interacaoAjuste: data.interacao_ajuste || 0
+        });
+      } else {
+        setManualMetrics({ visitas: 0, documentacao: 0, negociacao: 0, venda: 0, interacaoAjuste: 0 });
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      // Use upsert to insert or update based on user_id and period
+      const { error } = await supabase
+        .from('powerbi_funnel_metrics')
+        .upsert({
+          user_id: user.id,
+          period: periodo,
+          visitas: manualMetrics.visitas,
+          documentacao: manualMetrics.documentacao,
+          negociacao: manualMetrics.negociacao,
+          venda: manualMetrics.venda,
+          interacao_ajuste: manualMetrics.interacaoAjuste,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id, period'
+        });
+
+      if (error) throw error;
+
+      toast({ title: 'Métricas salvas', description: 'Valores atualizados na nuvem para o período selecionado.' });
+    } catch (error) {
+      console.error('Save error:', error);
+      toast({ title: 'Erro ao salvar', description: 'Tente novamente.', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const finalInteracoes = Math.max(0, interacoesCount + (Number(manualMetrics.interacaoAjuste) || 0));
@@ -59,7 +112,12 @@ export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIF
   ];
 
   return (
-    <Card className="shadow-card mt-6 border-blue-500/20">
+    <Card className="shadow-card mt-6 border-blue-500/20 relative">
+      {loading && (
+        <div className="absolute inset-0 bg-background/50 backdrop-blur-sm flex items-center justify-center z-10 rounded-xl">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        </div>
+      )}
       <CardHeader className="bg-blue-50/50 dark:bg-blue-900/10 border-b">
         <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
           <BarChart3 className="w-5 h-5" />
@@ -95,8 +153,9 @@ export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIF
               </div>
             </div>
 
-            <Button onClick={handleSave} className="w-full mt-4 bg-blue-600 hover:bg-blue-700">
-              <Save className="w-4 h-4 mr-2" /> Salvar Dados
+            <Button onClick={handleSave} disabled={saving || loading} className="w-full mt-4 bg-blue-600 hover:bg-blue-700">
+              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />} 
+              {saving ? 'Salvando...' : 'Salvar Dados (Nuvem)'}
             </Button>
 
             <div className="text-xs text-muted-foreground mt-4 bg-muted/30 p-3 rounded-md">
@@ -125,4 +184,3 @@ export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIF
     </Card>
   );
 }
-
