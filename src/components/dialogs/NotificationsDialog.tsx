@@ -214,7 +214,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                           }`}
                         onClick={() => {
                           if (notification.leadId) {
-                            if (notification.taskId && onNavigate) { onNavigate('agenda', notification.taskId); onClose(); } else if (notification.leadId && onNavigate) { onNavigate('leads', notification.leadId); onClose(); }
+                            if (notification.taskId && onNavigate) { onNavigate('view-task', notification.taskId); onClose(); } else if (notification.leadId && onNavigate) { onNavigate('leads', notification.leadId); onClose(); }
                           }
                           // handleMarkAsRead(notification.id);
                         }}
@@ -337,6 +337,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
     </Dialog>
   );
 }
+
 
 
 
