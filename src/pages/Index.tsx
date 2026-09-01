@@ -134,11 +134,13 @@ const Index = () => {
           </main>
         </div>
       </div>
+    <TaskViewDialog taskId={globalViewTaskId} onClose={() => setGlobalViewTaskId(null)} />
     </SidebarProvider>
   );
 };
 
 export default Index;
+
 
 
 
