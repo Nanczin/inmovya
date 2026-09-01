@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from 'date-fns';
@@ -32,6 +33,8 @@ export function LeadsKanbanBoard({
   onScheduleTask,
   onDeleteTask
 }: LeadsKanbanBoardProps) {
+  const [viewingTask, setViewingTask] = useState<any>(null);
+
   const handleDragStart = (e: React.DragEvent, leadId: string) => {
     e.dataTransfer.setData('leadId', leadId);
     e.dataTransfer.effectAllowed = 'move';
@@ -132,7 +135,7 @@ export function LeadsKanbanBoard({
                 {pendingTasks.length > 0 && (
                     <div className="flex flex-col gap-1.5 mt-2.5 pt-2.5 border-t border-orange-100 dark:border-orange-950/50">
                       {pendingTasks.map((task: any) => (
-                        <div key={task.id} className="flex items-start gap-1.5 text-[10px] text-orange-600 bg-orange-50 dark:bg-orange-950/40 dark:text-orange-400 p-1.5 rounded-md" title={task.description}>
+                        <div key={task.id} className="flex items-start gap-1.5 text-[10px] text-orange-600 bg-orange-50 dark:bg-orange-950/40 dark:text-orange-400 p-1.5 rounded-md cursor-pointer hover:ring-1 hover:ring-orange-300 transition-all" title="Ver detalhes do lembrete" onClick={(e) => { e.stopPropagation(); setViewingTask(task); }}>
                           <CalendarPlus className="w-3 h-3 flex-shrink-0 mt-0.5" />
                           <div className="flex flex-col leading-tight flex-1">
                             <span className="font-medium truncate max-w-[190px]">{task.title}</span>
@@ -156,9 +159,31 @@ export function LeadsKanbanBoard({
           </div>
         );
       })}
+      {viewingTask && (
+        <Dialog open={!!viewingTask} onOpenChange={(open) => !open && setViewingTask(null)}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-orange-600">
+                <CalendarPlus className="w-5 h-5" />
+                {viewingTask.title}
+              </DialogTitle>
+              <DialogDescription>
+                Agendado para: {new Date(viewingTask.due_date).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 text-sm text-foreground whitespace-pre-wrap bg-muted/30 p-4 rounded-md border">
+              {viewingTask.description || "Nenhuma descrição informada para este lembrete."}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
+
+
+
+
 
 
 
