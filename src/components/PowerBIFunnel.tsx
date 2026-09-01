@@ -15,7 +15,7 @@ interface PowerBIFunnelProps {
 
 export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIFunnelProps) {
   const { toast } = useToast();
-  const storageKey = "powerbi_metrics_$periodo";
+  const storageKey = "powerbi_metrics_" + periodo;
 
   const [manualMetrics, setManualMetrics] = useState({
     visitas: 0,
@@ -125,3 +125,4 @@ export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIF
     </Card>
   );
 }
+
