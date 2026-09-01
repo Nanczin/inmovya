@@ -12,9 +12,10 @@ interface PowerBIFunnelProps {
   leadsCount: number;
   interacoesCount: number;
   periodo: string;
+  onAjusteChange?: (ajuste: number) => void;
 }
 
-export function PowerBIFunnel({ leadsCount, interacoesCount, periodo }: PowerBIFunnelProps) {
+export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteChange }: PowerBIFunnelProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -63,6 +64,12 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo }: PowerBIF
 
     fetchMetrics();
   }, [periodo]);
+
+  useEffect(() => {
+    if (onAjusteChange) {
+      onAjusteChange(manualMetrics.interacaoAjuste);
+    }
+  }, [manualMetrics.interacaoAjuste, onAjusteChange]);
 
   const handleSave = async () => {
     setSaving(true);

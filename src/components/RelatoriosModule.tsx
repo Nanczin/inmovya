@@ -29,6 +29,7 @@ export function RelatoriosModule() {
   const [periodoSelecionado, setPeriodoSelecionado] = useState("7dias");
   const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState<string>("");
   const [dataFimPersonalizada, setDataFimPersonalizada] = useState<string>("");
+  const [interacaoAjuste, setInteracaoAjuste] = useState(0);
   const [classificacoesOferta, setClassificacoesOferta] = useState<Record<string, number>>({});
   const [metricas, setMetricas] = useState({
     conversao: {
@@ -948,16 +949,16 @@ export function RelatoriosModule() {
                 <span className="text-sm ml-1 text-success">Em tempo real</span>
               </div>
             </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total}</div>
+            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total + interacaoAjuste}</div>
             <div className="text-sm text-muted-foreground mb-3">Interações</div>
             <div className="text-xs space-y-1">
               <div>Interessados e Deny List</div>
-              <div>Registradas: <span className="text-success">{metricas.interacoes.total}</span></div>
+              <div>Registradas: <span className="text-success">{metricas.interacoes.total}</span> (Ajuste: {interacaoAjuste})</div>
             </div>
           </CardContent>
         </Card>
 
-        <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} />
+        <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} onAjusteChange={setInteracaoAjuste} />
       </div>
 
 
