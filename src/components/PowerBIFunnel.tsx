@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+ï»¿import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +45,7 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
 
   const handleSave = () => {
     localStorage.setItem(storageKey, JSON.stringify(manualMetrics));
-    toast({ title: 'Métricas salvas', description: 'Valores atualizados para o período: ' + periodo });
+    toast({ title: 'MÃ©tricas salvas', description: 'Valores atualizados para o perÃ­odo: ' + periodo });
   };
 
   const filteredLeads = useMemo(() => {
@@ -85,10 +85,10 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
 
   const data = [
     { name: 'Leads', valor: leadCount, fill: '#3b82f6' },
-    { name: 'Interações', valor: interacaoCount, fill: '#8b5cf6' },
+    { name: 'InteraÃ§Ãµes', valor: interacaoCount, fill: '#8b5cf6' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
-    { name: 'Documentação', valor: Number(manualMetrics.documentacao) || 0, fill: '#10b981' },
-    { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#ef4444' },
+    { name: 'DocumentaÃ§Ã£o', valor: Number(manualMetrics.documentacao) || 0, fill: '#10b981' },
+    { name: 'NegociaÃ§Ãµes', valor: Number(manualMetrics.negociacao) || 0, fill: '#ef4444' },
     { name: 'Vendas', valor: Number(manualMetrics.venda) || 0, fill: '#22c55e' },
   ];
 
@@ -104,11 +104,11 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           <div className="lg:col-span-1 space-y-4">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Inserção Manual de Dados</h3>
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">InserÃ§Ã£o Manual de Dados</h3>
             
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-4">
-                <Label className="w-1/2">Ajuste Interações (+/-)</Label>
+                <Label className="w-1/2">Ajuste InteraÃ§Ãµes (+/-)</Label>
                 <Input type="number" value={manualMetrics.interacaoAjuste} onChange={e => setManualMetrics({...manualMetrics, interacaoAjuste: parseInt(e.target.value) || 0})} className="w-1/2" />
               </div>
               <div className="flex items-center justify-between gap-4">
@@ -116,11 +116,11 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
                 <Input type="number" min="0" value={manualMetrics.visitas} onChange={e => setManualMetrics({...manualMetrics, visitas: parseInt(e.target.value) || 0})} className="w-1/2" />
               </div>
               <div className="flex items-center justify-between gap-4">
-                <Label className="w-1/2">Documentação</Label>
+                <Label className="w-1/2">DocumentaÃ§Ã£o</Label>
                 <Input type="number" min="0" value={manualMetrics.documentacao} onChange={e => setManualMetrics({...manualMetrics, documentacao: parseInt(e.target.value) || 0})} className="w-1/2" />
               </div>
               <div className="flex items-center justify-between gap-4">
-                <Label className="w-1/2">Negociações</Label>
+                <Label className="w-1/2">NegociaÃ§Ãµes</Label>
                 <Input type="number" min="0" value={manualMetrics.negociacao} onChange={e => setManualMetrics({...manualMetrics, negociacao: parseInt(e.target.value) || 0})} className="w-1/2" />
               </div>
               <div className="flex items-center justify-between gap-4">
@@ -134,7 +134,7 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
             </Button>
 
             <div className="text-xs text-muted-foreground mt-4 bg-muted/30 p-3 rounded-md">
-              <span className="font-semibold">Info:</span> Leads e Interações (base) são calculados automaticamente pelo sistema de acordo com o período selecionado.
+              <span className="font-semibold">Info:</span> Leads e InteraÃ§Ãµes (base) sÃ£o calculados automaticamente pelo sistema de acordo com o perÃ­odo selecionado.
             </div>
           </div>
 
@@ -147,7 +147,7 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
                 <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                 <Bar dataKey="valor" radius={[0, 4, 4, 0]} barSize={32}>
                   {data.map((entry, index) => (
-                    <Cell key={cell-$index} fill={entry.fill} />
+                    <Cell key={"cell-" + index} fill={entry.fill} />
                   ))}
                 </Bar>
               </BarChart>
@@ -159,3 +159,5 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
     </Card>
   );
 }
+
+
