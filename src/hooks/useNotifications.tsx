@@ -146,7 +146,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
               icon: '/icons/icon-192x192.png',
               badge: '/icons/icon-192x192.png',
               tag: newNotification.id, // Prevent duplicates
-              data: { url: '/' } // Can be used to handle click
+              data: { url: notificationData.leadId ? '/journey/' + notificationData.leadId : '/' } // Route to journey if available
             });
           });
         } else {
@@ -155,6 +155,12 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
             body: newNotification.message,
             icon: '/icons/icon-192x192.png',
           });
+          n.onclick = () => {
+            window.focus();
+            if (notificationData.leadId) {
+              window.location.href = '/journey/' + notificationData.leadId;
+            }
+          };
         }
       } catch (err) {
         console.error("Failed to show system notification", err);
@@ -235,3 +241,4 @@ export function useNotifications() {
   }
   return context;
 }
+
