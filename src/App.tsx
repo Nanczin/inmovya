@@ -1,4 +1,4 @@
-import { Toaster } from "@/components/ui/toaster";
+﻿import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -13,7 +13,6 @@ import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
 import { TaskNotificationPoller } from "./components/TaskNotificationPoller";
 
-import JourneyMapPage from "./pages/JourneyMapPage";
 
 const queryClient = new QueryClient();
 
@@ -46,4 +45,5 @@ const App = () => (
 );
 
 export default App;
+
 
