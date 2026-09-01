@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PowerBIFunnel } from './PowerBIFunnel';
@@ -83,10 +83,10 @@ export function RelatoriosModule() {
         carregarTopLeads()
       ]);
     } catch (error) {
-      console.error('Erro ao carregar métricas:', error);
+      console.error('Erro ao carregar mÃ©tricas:', error);
       toast({
         title: "Erro ao carregar dados",
-        description: "Não foi possível carregar as métricas do dashboard.",
+        description: "NÃ£o foi possÃ­vel carregar as mÃ©tricas do dashboard.",
         variant: "destructive",
       });
     } finally {
@@ -145,7 +145,7 @@ export function RelatoriosModule() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Buscar leads do período atual
+    // Buscar leads do perÃ­odo atual
     const { data: leadsAtuais, error: errorAtuais } = await supabase
       .from('leads')
       .select('*')
@@ -153,7 +153,7 @@ export function RelatoriosModule() {
       .gte('created_at', inicio)
       .lte('created_at', fim);
 
-    // Buscar leads do período anterior para comparação
+    // Buscar leads do perÃ­odo anterior para comparaÃ§Ã£o
     const dataInicioAnterior = new Date(inicio);
     const diasPeriodo = Math.max(1, Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (1000 * 60 * 60 * 24)));
 
@@ -167,10 +167,10 @@ export function RelatoriosModule() {
       .lt('created_at', inicio);
 
     if (errorAtuais && errorAtuais.code !== 'PGRST116') throw errorAtuais;
-    // Ignorar erro se tabela não existir mas logar
+    // Ignorar erro se tabela nÃ£o existir mas logar
     if (errorAtuais) console.warn("Leads table error", errorAtuais);
 
-    // Calcular métricas período atual
+    // Calcular mÃ©tricas perÃ­odo atual
     const leadsNovos = leadsAtuais?.filter(lead => lead.status === 'novo').length || 0;
     const leadsQualificados = leadsAtuais?.filter(lead =>
       lead.status === 'qualificado' ||
@@ -180,15 +180,15 @@ export function RelatoriosModule() {
     const leadsConvertidos = leadsAtuais?.filter(lead => lead.status === 'convertido').length || 0;
     const totalLeadsAtuais = leadsAtuais?.length || 0;
 
-    // Calcular métricas período anterior
+    // Calcular mÃ©tricas perÃ­odo anterior
     const leadsConvertidosAnteriores = leadsAnteriores?.filter(lead => lead.status === 'convertido').length || 0;
     const totalLeadsAnteriores = leadsAnteriores?.length || 0;
 
     const taxaConversaoAtual = totalLeadsAtuais > 0 ? (leadsConvertidos / totalLeadsAtuais) * 100 : 0;
     const taxaConversaoAnterior = totalLeadsAnteriores > 0 ? (leadsConvertidosAnteriores / totalLeadsAnteriores) * 100 : 0;
 
-    // Calcular receita estimada baseada em conversões
-    const receitaEstimada = leadsConvertidos * 450000; // Valor médio por conversão
+    // Calcular receita estimada baseada em conversÃµes
+    const receitaEstimada = leadsConvertidos * 450000; // Valor mÃ©dio por conversÃ£o
     const receitaRealizada = Math.floor(receitaEstimada * 0.7); // 70% da estimada como realizada
 
     setMetricas(prev => ({
@@ -217,7 +217,7 @@ export function RelatoriosModule() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Ligações do período atual
+    // LigaÃ§Ãµes do perÃ­odo atual
     const { data: ligacoesPeriodo, error: errorPeriodo } = await supabase
       .from('ligacoes')
       .select('*')
@@ -225,7 +225,7 @@ export function RelatoriosModule() {
       .gte('data_ligacao', inicio)
       .lte('data_ligacao', fim);
 
-    // Ligações do período anterior para comparação
+    // LigaÃ§Ãµes do perÃ­odo anterior para comparaÃ§Ã£o
     const diasPeriodo = Math.max(1, Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (1000 * 60 * 60 * 24)));
     const dataInicioAnterior = new Date(inicio);
     dataInicioAnterior.setDate(dataInicioAnterior.getDate() - diasPeriodo);
@@ -239,7 +239,7 @@ export function RelatoriosModule() {
 
     if (errorPeriodo) console.warn("Ligacoes fetch error", errorPeriodo);
 
-    // Para comparação "hoje vs ontem" quando período for "hoje"
+    // Para comparaÃ§Ã£o "hoje vs ontem" quando perÃ­odo for "hoje"
     let ligacoesHoje = 0;
     let ligacoesOntem = 0;
 
@@ -247,15 +247,15 @@ export function RelatoriosModule() {
       ligacoesHoje = ligacoesPeriodo?.length || 0;
       ligacoesOntem = ligacoesAnteriores?.length || 0;
     } else {
-      // Para outros períodos, usar contagem do período atual vs anterior
+      // Para outros perÃ­odos, usar contagem do perÃ­odo atual vs anterior
       ligacoesHoje = ligacoesPeriodo?.length || 0;
       ligacoesOntem = ligacoesAnteriores?.length || 0;
     }
 
     // Calcular classificacoes da oferta ativa (resultado)
     const classificacoes = ligacoesPeriodo?.reduce((acc: Record<string, number>, ligacao) => {
-      const resultado = ligacao.resultado || 'Sem Classificação';
-      if (resultado !== 'Cliente não atendeu - reagendar ligação') {
+      const resultado = ligacao.resultado || 'Sem ClassificaÃ§Ã£o';
+      if (resultado !== 'Cliente nÃ£o atendeu - reagendar ligaÃ§Ã£o') {
         acc[resultado] = (acc[resultado] || 0) + 1;
       }
       return acc;
@@ -370,7 +370,7 @@ export function RelatoriosModule() {
     const nomeArquivo = `relatorio-${periodoSelecionado}-${dataAtual}.csv`;
 
     try {
-      // Buscar dados reais das campanhas para exportação
+      // Buscar dados reais das campanhas para exportaÃ§Ã£o
       const { data: campanhasReais, error: errorCampanhas } = await supabase
         .from('campanhas')
         .select('*')
@@ -383,28 +383,28 @@ export function RelatoriosModule() {
         .select('*')
         .gte('sent_at', inicio);
 
-      // Buscar ligações reais
+      // Buscar ligaÃ§Ãµes reais
       const { data: ligacoesReais, error: errorLigacoes } = await supabase
         .from('ligacoes')
         .select('*')
         .gte('data_ligacao', inicio);
 
       if (errorCampanhas || errorEmails || errorLigacoes) {
-        throw new Error('Erro ao buscar dados para exportação');
+        throw new Error('Erro ao buscar dados para exportaÃ§Ã£o');
       }
 
-      // Dados das métricas reais
+      // Dados das mÃ©tricas reais
       const csvContent = [
-        // Cabeçalho
-        ["Relatório de Performance - Dados Reais", "", "", ""],
-        ["Período", periodoSelecionado, "", ""],
-        ["Data de Exportação", dataAtual, "", ""],
-        ["Data Início do Período", new Date(getPeriodoDatas().inicio).toLocaleDateString('pt-BR'), "", ""],
+        // CabeÃ§alho
+        ["RelatÃ³rio de Performance - Dados Reais", "", "", ""],
+        ["PerÃ­odo", periodoSelecionado, "", ""],
+        ["Data de ExportaÃ§Ã£o", dataAtual, "", ""],
+        ["Data InÃ­cio do PerÃ­odo", new Date(getPeriodoDatas().inicio).toLocaleDateString('pt-BR'), "", ""],
         ["", "", "", ""],
-        ["MÉTRICAS PRINCIPAIS", "", "", ""],
-        ["Métrica", "Valor Atual", "Valor Anterior", "Meta"],
-        ["Taxa de Conversão (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
-        ["Ligações no Período", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
+        ["MÃ‰TRICAS PRINCIPAIS", "", "", ""],
+        ["MÃ©trica", "Valor Atual", "Valor Anterior", "Meta"],
+        ["Taxa de ConversÃ£o (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
+        ["LigaÃ§Ãµes no PerÃ­odo", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
         ["Leads Novos", metricas.leads.novos, "-", "-"],
         ["Leads Qualificados", metricas.leads.qualificados, "-", "-"],
         ["Leads Convertidos", metricas.leads.convertidos, "-", "-"],
@@ -415,7 +415,7 @@ export function RelatoriosModule() {
         ["Receita Realizada (R$)", metricas.receita.realizada.toLocaleString(), "-", metricas.receita.meta.toLocaleString()],
         ["", "", "", ""],
         ["CAMPANHAS CADASTRADAS", "", "", ""],
-        ["Nome", "Status", "Tipo", "Data Criação"],
+        ["Nome", "Status", "Tipo", "Data CriaÃ§Ã£o"],
         ...campanhasReais?.map(campanha => [
           `"${campanha.nome}"`,
           campanha.status,
@@ -423,8 +423,8 @@ export function RelatoriosModule() {
           new Date(campanha.created_at).toLocaleDateString('pt-BR')
         ]) || [],
         ["", "", "", ""],
-        ["LOGS DE EMAIL (Últimos 50)", "", "", ""],
-        ["Destinatário", "Status", "Provedor", "Data Envio"],
+        ["LOGS DE EMAIL (Ãšltimos 50)", "", "", ""],
+        ["DestinatÃ¡rio", "Status", "Provedor", "Data Envio"],
         ...emailsReais?.slice(0, 50).map(email => [
           email.recipient,
           email.status,
@@ -432,12 +432,12 @@ export function RelatoriosModule() {
           new Date(email.sent_at).toLocaleDateString('pt-BR')
         ]) || [],
         ["", "", "", ""],
-        ["LIGAÇÕES REGISTRADAS", "", "", ""],
+        ["LIGAÃ‡Ã•ES REGISTRADAS", "", "", ""],
         ["Telefone", "Status", "Resultado", "Data"],
         ...ligacoesReais?.slice(0, 50).map(ligacao => [
           ligacao.numero_telefone,
           ligacao.status,
-          ligacao.resultado || 'Não informado',
+          ligacao.resultado || 'NÃ£o informado',
           new Date(ligacao.data_ligacao).toLocaleDateString('pt-BR')
         ]) || []
       ].map(row => row.join(",")).join("\n");
@@ -454,14 +454,14 @@ export function RelatoriosModule() {
       document.body.removeChild(link);
 
       toast({
-        title: "✅ Relatório Exportado",
-        description: `Dados reais exportados: ${campanhasReais?.length || 0} campanhas, ${emailsReais?.length || 0} emails, ${ligacoesReais?.length || 0} ligações`,
+        title: "âœ… RelatÃ³rio Exportado",
+        description: `Dados reais exportados: ${campanhasReais?.length || 0} campanhas, ${emailsReais?.length || 0} emails, ${ligacoesReais?.length || 0} ligaÃ§Ãµes`,
       });
     } catch (error) {
-      console.error('Erro na exportação:', error);
+      console.error('Erro na exportaÃ§Ã£o:', error);
       toast({
-        title: "Erro na Exportação",
-        description: "Não foi possível exportar os dados reais. Tente novamente.",
+        title: "Erro na ExportaÃ§Ã£o",
+        description: "NÃ£o foi possÃ­vel exportar os dados reais. Tente novamente.",
         variant: "destructive",
       });
     }
@@ -473,11 +473,11 @@ export function RelatoriosModule() {
 
     try {
       toast({
-        title: "🔄 Gerando Relatório PDF",
-        description: `Coletando dados reais do período: ${periodoSelecionado}`,
+        title: "ðŸ”„ Gerando RelatÃ³rio PDF",
+        description: `Coletando dados reais do perÃ­odo: ${periodoSelecionado}`,
       });
 
-      // Buscar todos os dados reais do período
+      // Buscar todos os dados reais do perÃ­odo
       const { inicio, fim } = getPeriodoDatas();
       const agora = new Date().toISOString();
 
@@ -499,20 +499,20 @@ export function RelatoriosModule() {
         throw new Error('Erro ao buscar dados do banco');
       }
 
-      // Calcular métricas detalhadas
+      // Calcular mÃ©tricas detalhadas
       const relatorioCompleto = {
         periodo: periodoSelecionado,
         dataInicio: new Date(inicio).toLocaleDateString('pt-BR'),
         dataGeracao: dataAtual,
 
-        // Métricas de Leads
+        // MÃ©tricas de Leads
         leads: {
           total: leadsData?.length || 0,
           novos: leadsData?.filter(l => l.status === 'novo').length || 0,
           qualificados: leadsData?.filter(l => ['qualificado', 'interessado', 'em_contato'].includes(l.status)).length || 0,
           convertidos: leadsData?.filter(l => l.status === 'convertido').length || 0,
           porOrigem: leadsData?.reduce((acc: any, lead) => {
-            const origem = lead.origem || 'Não informado';
+            const origem = lead.origem || 'NÃ£o informado';
             acc[origem] = (acc[origem] || 0) + 1;
             return acc;
           }, {}) || {},
@@ -520,7 +520,7 @@ export function RelatoriosModule() {
             ((leadsData?.filter(l => l.status === 'convertido').length / leadsData?.length) * 100).toFixed(1) : '0'
         },
 
-        // Métricas de Ligações
+        // MÃ©tricas de LigaÃ§Ãµes
         ligacoes: {
           total: ligacoesData?.length || 0,
           realizadas: ligacoesData?.filter(l => l.status === 'realizada' || l.status === 'conectada').length || 0,
@@ -529,15 +529,15 @@ export function RelatoriosModule() {
           duracaoMedia: ligacoesData?.length > 0 ?
             Math.round(ligacoesData?.reduce((acc, l) => acc + (l.duracao || 0), 0) / ligacoesData?.length) : 0,
           porResultado: ligacoesData?.reduce((acc: any, ligacao) => {
-            const resultado = ligacao.resultado || 'Não informado';
-            if (resultado !== 'Cliente não atendeu - reagendar ligação') {
+            const resultado = ligacao.resultado || 'NÃ£o informado';
+            if (resultado !== 'Cliente nÃ£o atendeu - reagendar ligaÃ§Ã£o') {
               acc[resultado] = (acc[resultado] || 0) + 1;
             }
             return acc;
           }, {}) || {}
         },
 
-        // Métricas de Email
+        // MÃ©tricas de Email
         emails: {
           total: emailsData?.length || 0,
           enviados: emailsData?.filter(e => e.status === 'success').length || 0,
@@ -545,7 +545,7 @@ export function RelatoriosModule() {
           taxaSucesso: emailsData?.length > 0 ?
             ((emailsData?.filter(e => e.status === 'success').length / emailsData?.length) * 100).toFixed(1) : '0',
           porProvedor: emailsData?.reduce((acc: any, email) => {
-            const provider = email.provider || 'Não informado';
+            const provider = email.provider || 'NÃ£o informado';
             acc[provider] = (acc[provider] || 0) + 1;
             return acc;
           }, {}) || {}
@@ -561,7 +561,7 @@ export function RelatoriosModule() {
             nome: c.nome,
             status: c.status,
             tipo: c.tipo,
-            dataInicio: c.data_inicio ? new Date(c.data_inicio).toLocaleDateString('pt-BR') : 'Não definida'
+            dataInicio: c.data_inicio ? new Date(c.data_inicio).toLocaleDateString('pt-BR') : 'NÃ£o definida'
           })) || []
         },
 
@@ -581,7 +581,7 @@ export function RelatoriosModule() {
         }
       };
 
-      // Gerar conteúdo HTML para o PDF
+      // Gerar conteÃºdo HTML para o PDF
       const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -603,16 +603,16 @@ export function RelatoriosModule() {
         </head>
         <body>
           <div class="header">
-            <h1>Relatório Completo - Inmovya</h1>
-            <p>Período: ${relatorioCompleto.periodo} | ${relatorioCompleto.dataInicio} até ${new Date().toLocaleDateString('pt-BR')}</p>
+            <h1>RelatÃ³rio Completo - Inmovya</h1>
+            <p>PerÃ­odo: ${relatorioCompleto.periodo} | ${relatorioCompleto.dataInicio} atÃ© ${new Date().toLocaleDateString('pt-BR')}</p>
             <p>Gerado em: ${relatorioCompleto.dataGeracao}</p>
           </div>
 
           <div class="section">
-            <h2>📊 Métricas Principais</h2>
+            <h2>ðŸ“Š MÃ©tricas Principais</h2>
             <div class="metric-grid">
               <div class="metric-card highlight">
-                <div class="metric-label">Taxa de Conversão</div>
+                <div class="metric-label">Taxa de ConversÃ£o</div>
                 <div class="metric-value">${relatorioCompleto.leads.taxaConversao}%</div>
               </div>
               <div class="metric-card">
@@ -620,7 +620,7 @@ export function RelatoriosModule() {
                 <div class="metric-value">${relatorioCompleto.leads.total}</div>
               </div>
               <div class="metric-card">
-                <div class="metric-label">Ligações Realizadas</div>
+                <div class="metric-label">LigaÃ§Ãµes Realizadas</div>
                 <div class="metric-value">${relatorioCompleto.ligacoes.total}</div>
               </div>
               <div class="metric-card">
@@ -631,9 +631,9 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>👥 Análise de Leads</h2>
+            <h2>ðŸ‘¥ AnÃ¡lise de Leads</h2>
             <table class="table">
-              <tr><th>Métrica</th><th>Valor</th><th>Percentual</th></tr>
+              <tr><th>MÃ©trica</th><th>Valor</th><th>Percentual</th></tr>
               <tr><td>Leads Novos</td><td>${relatorioCompleto.leads.novos}</td><td>${((relatorioCompleto.leads.novos / relatorioCompleto.leads.total) * 100).toFixed(1)}%</td></tr>
               <tr><td>Leads Qualificados</td><td>${relatorioCompleto.leads.qualificados}</td><td>${((relatorioCompleto.leads.qualificados / relatorioCompleto.leads.total) * 100).toFixed(1)}%</td></tr>
               <tr><td>Leads Convertidos</td><td>${relatorioCompleto.leads.convertidos}</td><td>${relatorioCompleto.leads.taxaConversao}%</td></tr>
@@ -649,20 +649,20 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>📞 Análise de Ligações</h2>
+            <h2>ðŸ“ž AnÃ¡lise de LigaÃ§Ãµes</h2>
             <table class="table">
-              <tr><th>Métrica</th><th>Valor</th></tr>
-              <tr><td>Total de Ligações</td><td>${relatorioCompleto.ligacoes.total}</td></tr>
-              <tr><td>Ligações Realizadas</td><td>${relatorioCompleto.ligacoes.realizadas}</td></tr>
-              <tr><td>Não Atendidas</td><td>${relatorioCompleto.ligacoes.naoAtendidas}</td></tr>
-              <tr><td>Duração Média (min)</td><td>${relatorioCompleto.ligacoes.duracaoMedia}</td></tr>
+              <tr><th>MÃ©trica</th><th>Valor</th></tr>
+              <tr><td>Total de LigaÃ§Ãµes</td><td>${relatorioCompleto.ligacoes.total}</td></tr>
+              <tr><td>LigaÃ§Ãµes Realizadas</td><td>${relatorioCompleto.ligacoes.realizadas}</td></tr>
+              <tr><td>NÃ£o Atendidas</td><td>${relatorioCompleto.ligacoes.naoAtendidas}</td></tr>
+              <tr><td>DuraÃ§Ã£o MÃ©dia (min)</td><td>${relatorioCompleto.ligacoes.duracaoMedia}</td></tr>
             </table>
           </div>
 
           <div class="section">
-            <h2>📧 Análise de Emails</h2>
+            <h2>ðŸ“§ AnÃ¡lise de Emails</h2>
             <table class="table">
-              <tr><th>Métrica</th><th>Valor</th></tr>
+              <tr><th>MÃ©trica</th><th>Valor</th></tr>
               <tr><td>Total de Emails</td><td>${relatorioCompleto.emails.total}</td></tr>
               <tr><td>Emails Enviados com Sucesso</td><td>${relatorioCompleto.emails.enviados}</td></tr>
               <tr><td>Emails que Falharam</td><td>${relatorioCompleto.emails.falharam}</td></tr>
@@ -671,14 +671,14 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>🏢 Campanhas e Empreendimentos</h2>
+            <h2>ðŸ¢ Campanhas e Empreendimentos</h2>
             <div style="display: flex; gap: 20px;">
               <div style="flex: 1;">
                 <h3>Campanhas (${relatorioCompleto.campanhas.total} total)</h3>
                 <ul>
                   <li>Ativas: ${relatorioCompleto.campanhas.ativas}</li>
                   <li>Pausadas: ${relatorioCompleto.campanhas.pausadas}</li>
-                  <li>Concluídas: ${relatorioCompleto.campanhas.concluidas}</li>
+                  <li>ConcluÃ­das: ${relatorioCompleto.campanhas.concluidas}</li>
                 </ul>
               </div>
               <div style="flex: 1;">
@@ -692,22 +692,22 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>📈 Recomendações</h2>
+            <h2>ðŸ“ˆ RecomendaÃ§Ãµes</h2>
             <ul>
-              <li><strong>Conversão:</strong> ${parseFloat(relatorioCompleto.leads.taxaConversao) > 20 ? 'Taxa excelente! Continue o trabalho.' : 'Foque em melhorar a qualificação dos leads.'}</li>
-              <li><strong>Ligações:</strong> ${relatorioCompleto.ligacoes.realizadas > relatorioCompleto.ligacoes.naoAtendidas ? 'Boa taxa de conexão.' : 'Considere otimizar horários de ligação.'}</li>
-              <li><strong>Email:</strong> ${parseFloat(relatorioCompleto.emails.taxaSucesso) > 90 ? 'Excelente deliverability!' : 'Revisar configurações de email para reduzir falhas.'}</li>
+              <li><strong>ConversÃ£o:</strong> ${parseFloat(relatorioCompleto.leads.taxaConversao) > 20 ? 'Taxa excelente! Continue o trabalho.' : 'Foque em melhorar a qualificaÃ§Ã£o dos leads.'}</li>
+              <li><strong>LigaÃ§Ãµes:</strong> ${relatorioCompleto.ligacoes.realizadas > relatorioCompleto.ligacoes.naoAtendidas ? 'Boa taxa de conexÃ£o.' : 'Considere otimizar horÃ¡rios de ligaÃ§Ã£o.'}</li>
+              <li><strong>Email:</strong> ${parseFloat(relatorioCompleto.emails.taxaSucesso) > 90 ? 'Excelente deliverability!' : 'Revisar configuraÃ§Ãµes de email para reduzir falhas.'}</li>
             </ul>
           </div>
         </body>
         </html>
       `;
 
-      // Simular geração do PDF (implementação real precisaria de uma biblioteca como jsPDF ou html2pdf)
-      console.log("Relatório PDF Completo:", relatorioCompleto);
+      // Simular geraÃ§Ã£o do PDF (implementaÃ§Ã£o real precisaria de uma biblioteca como jsPDF ou html2pdf)
+      console.log("RelatÃ³rio PDF Completo:", relatorioCompleto);
       console.log("HTML para PDF:", htmlContent);
 
-      // Criar arquivo HTML temporário para visualização
+      // Criar arquivo HTML temporÃ¡rio para visualizaÃ§Ã£o
       const blob = new Blob([htmlContent], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -719,15 +719,15 @@ export function RelatoriosModule() {
       URL.revokeObjectURL(url);
 
       toast({
-        title: "✅ Relatório Completo Gerado",
-        description: `📊 ${relatorioCompleto.leads.total} leads, ${relatorioCompleto.ligacoes.total} ligações, ${relatorioCompleto.emails.total} emails analisados | Taxa conversão: ${relatorioCompleto.leads.taxaConversao}%`,
+        title: "âœ… RelatÃ³rio Completo Gerado",
+        description: `ðŸ“Š ${relatorioCompleto.leads.total} leads, ${relatorioCompleto.ligacoes.total} ligaÃ§Ãµes, ${relatorioCompleto.emails.total} emails analisados | Taxa conversÃ£o: ${relatorioCompleto.leads.taxaConversao}%`,
       });
 
     } catch (error) {
-      console.error("Erro ao gerar relatório:", error);
+      console.error("Erro ao gerar relatÃ³rio:", error);
       toast({
-        title: "❌ Erro na Geração",
-        description: "Não foi possível gerar o relatório completo. Verifique os dados.",
+        title: "âŒ Erro na GeraÃ§Ã£o",
+        description: "NÃ£o foi possÃ­vel gerar o relatÃ³rio completo. Verifique os dados.",
         variant: "destructive",
       });
     }
@@ -742,44 +742,44 @@ export function RelatoriosModule() {
         leadsNovos: Math.round(metricas.leads.novos * 30 * 1.08) // Crescimento de 8%
       },
       tendencias: [
-        "Taxa de conversão em alta - tendência de crescimento de 5%",
-        "Meta de ligações será atingida em 18 dias no ritmo atual",
+        "Taxa de conversÃ£o em alta - tendÃªncia de crescimento de 5%",
+        "Meta de ligaÃ§Ãµes serÃ¡ atingida em 18 dias no ritmo atual",
         "Receita projeta superar meta em 15% baseado no pipeline atual",
-        "Campanhas com IA mostram 23% mais eficiência",
-        "Horário ideal para ligações: 14h-16h (maior taxa de conexão)"
+        "Campanhas com IA mostram 23% mais eficiÃªncia",
+        "HorÃ¡rio ideal para ligaÃ§Ãµes: 14h-16h (maior taxa de conexÃ£o)"
       ],
       recomendacoes: [
         "Aumentar investimento em campanhas de melhor performance",
-        "Otimizar horários de ligação baseado nos dados históricos",
-        "Implementar follow-up automático para leads não convertidos",
+        "Otimizar horÃ¡rios de ligaÃ§Ã£o baseado nos dados histÃ³ricos",
+        "Implementar follow-up automÃ¡tico para leads nÃ£o convertidos",
         "Personalizar scripts por tipo de empreendimento"
       ]
     };
 
     toast({
-      title: "🔄 Processando Análise Preditiva",
-      description: "Analisando dados históricos com IA...",
+      title: "ðŸ”„ Processando AnÃ¡lise Preditiva",
+      description: "Analisando dados histÃ³ricos com IA...",
     });
 
     setTimeout(() => {
       toast({
-        title: "🔮 Análise Preditiva Concluída",
-        description: `Previsões para próximo mês: ${previsoes.proximoMes.ligacoes.toLocaleString()} ligações, ${previsoes.proximoMes.conversao}% conversão, R$ ${(previsoes.proximoMes.receita / 1000).toFixed(0)}K receita`,
+        title: "ðŸ”® AnÃ¡lise Preditiva ConcluÃ­da",
+        description: `PrevisÃµes para prÃ³ximo mÃªs: ${previsoes.proximoMes.ligacoes.toLocaleString()} ligaÃ§Ãµes, ${previsoes.proximoMes.conversao}% conversÃ£o, R$ ${(previsoes.proximoMes.receita / 1000).toFixed(0)}K receita`,
       });
 
-      console.log("Análise Preditiva Gerada:", previsoes);
+      console.log("AnÃ¡lise Preditiva Gerada:", previsoes);
     }, 1500);
   };
 
   const compararPeriodos = () => {
-    // Usar os dados já carregados no estado 'metricas'
-    // Como a lógica de carregar comparações já é feita no useEffect, podemos usar os dados diretos
+    // Usar os dados jÃ¡ carregados no estado 'metricas'
+    // Como a lÃ³gica de carregar comparaÃ§Ãµes jÃ¡ Ã© feita no useEffect, podemos usar os dados diretos
 
-    // Simplificado para usar o que temos no estado, que já contém 'atual' e 'anterior'/'meta' para algumas métricas
+    // Simplificado para usar o que temos no estado, que jÃ¡ contÃ©m 'atual' e 'anterior'/'meta' para algumas mÃ©tricas
     const ligacoesAtual = metricas.ligacoes.hoje;
     const ligacoesAnterior = metricas.ligacoes.ontem;
 
-    // Infelizmente o estado simples atual não tem leads anteriores separados, vamos focar no que temos
+    // Infelizmente o estado simples atual nÃ£o tem leads anteriores separados, vamos focar no que temos
 
     const calcularVariacaoSimples = (atual: number, anterior: number) => {
       if (anterior === 0) return atual > 0 ? "+100%" : "0%";
@@ -788,8 +788,8 @@ export function RelatoriosModule() {
     };
 
     toast({
-      title: "� Comparação de Ligações",
-      description: `Período Atual: ${ligacoesAtual} vs Anterior: ${ligacoesAnterior} (${calcularVariacaoSimples(ligacoesAtual, ligacoesAnterior)})`,
+      title: "ï¿½ ComparaÃ§Ã£o de LigaÃ§Ãµes",
+      description: `PerÃ­odo Atual: ${ligacoesAtual} vs Anterior: ${ligacoesAnterior} (${calcularVariacaoSimples(ligacoesAtual, ligacoesAnterior)})`,
     });
   };
 
@@ -815,23 +815,23 @@ export function RelatoriosModule() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Relatórios e Análises</h2>
-          <p className="text-muted-foreground">Dashboard completo de performance e métricas {isLoading && '(Carregando...)'}</p>
+          <h2 className="text-2xl font-bold text-foreground">RelatÃ³rios e AnÃ¡lises</h2>
+          <p className="text-muted-foreground">Dashboard completo de performance e mÃ©tricas {isLoading && '(Carregando...)'}</p>
         </div>
         <div className="flex gap-4">
           <Select value={periodoSelecionado} onValueChange={setPeriodoSelecionado} disabled={isLoading}>
             <SelectTrigger className="w-[180px]">
               <Filter className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Selecionar período" />
+              <SelectValue placeholder="Selecionar perÃ­odo" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="hoje">Hoje</SelectItem>
               <SelectItem value="ontem">Ontem</SelectItem>
-              <SelectItem value="7dias">Últimos 7 dias</SelectItem>
-              <SelectItem value="30dias">Últimos 30 dias</SelectItem>
-              <SelectItem value="90dias">Últimos 90 dias</SelectItem>
+              <SelectItem value="7dias">Ãšltimos 7 dias</SelectItem>
+              <SelectItem value="30dias">Ãšltimos 30 dias</SelectItem>
+              <SelectItem value="90dias">Ãšltimos 90 dias</SelectItem>
               <SelectItem value="ano">Este ano</SelectItem>
-              <SelectItem value="personalizado">Período personalizado</SelectItem>
+              <SelectItem value="personalizado">PerÃ­odo personalizado</SelectItem>
             </SelectContent>
           </Select>
           {periodoSelecionado === "personalizado" && (
@@ -881,7 +881,7 @@ export function RelatoriosModule() {
               </div>
             </div>
             <div className="text-3xl font-bold text-foreground mb-1">{metricas.ligacoes.hoje}</div>
-            <div className="text-sm text-muted-foreground mb-3">Ligações Hoje</div>
+            <div className="text-sm text-muted-foreground mb-3">LigaÃ§Ãµes Hoje</div>
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
                 <span>Meta: {metricas.ligacoes.meta}</span>
@@ -949,7 +949,7 @@ export function RelatoriosModule() {
               </div>
             </div>
             <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total}</div>
-            <div className="text-sm text-muted-foreground mb-3">Interações</div>
+            <div className="text-sm text-muted-foreground mb-3">InteraÃ§Ãµes</div>
             <div className="text-xs space-y-1">
               <div>Interessados e Deny List</div>
               <div>Registradas: <span className="text-success">{metricas.interacoes.total}</span></div>
@@ -967,7 +967,7 @@ export function RelatoriosModule() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5" />
-              Últimos Leads Cadastrados
+              Ãšltimos Leads Cadastrados
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1002,14 +1002,14 @@ export function RelatoriosModule() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="w-5 h-5" />
-              Ações Rápidas
+              AÃ§Ãµes RÃ¡pidas
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <Button variant="hero" className="w-full justify-start h-16" onClick={gerarRelatorioPDF}>
               <div className="text-left">
-                <div className="font-medium">Relatório Completo</div>
-                <div className="text-sm opacity-90">PDF com todas as métricas</div>
+                <div className="font-medium">RelatÃ³rio Completo</div>
+                <div className="text-sm opacity-90">PDF com todas as mÃ©tricas</div>
               </div>
             </Button>
 
@@ -1017,20 +1017,20 @@ export function RelatoriosModule() {
 
             <Button variant="outline" className="w-full justify-start h-16" onClick={compararPeriodos}>
               <div className="text-left">
-                <div className="font-medium">Comparar Períodos</div>
-                <div className="text-sm opacity-90">Análise comparativa detalhada</div>
+                <div className="font-medium">Comparar PerÃ­odos</div>
+                <div className="text-sm opacity-90">AnÃ¡lise comparativa detalhada</div>
               </div>
             </Button>
           </CardContent>
         </Card>
       </div>
 
-      {/* Classificações Oferta Ativa */}
+      {/* ClassificaÃ§Ãµes Oferta Ativa */}
       <Card className="shadow-card mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Phone className="w-5 h-5" />
-            Classificações da Oferta Ativa
+            ClassificaÃ§Ãµes da Oferta Ativa
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1045,18 +1045,18 @@ export function RelatoriosModule() {
             </div>
           ) : (
             <div className="text-center py-6 text-muted-foreground">
-              Nenhuma classificação encontrada neste período.
+              Nenhuma classificaÃ§Ã£o encontrada neste perÃ­odo.
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Números Ligados */}
+      {/* NÃºmeros Ligados */}
       <Card className="shadow-card mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Phone className="w-5 h-5" />
-            Números Ligados no Período
+            NÃºmeros Ligados no PerÃ­odo
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1065,7 +1065,7 @@ export function RelatoriosModule() {
               {numerosLigados.map((ligacao, index) => (
                 <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-gradient-card border">
                   <div>
-                    <div className="font-medium">{ligacao.numero || 'Não informado'}</div>
+                    <div className="font-medium">{ligacao.numero || 'NÃ£o informado'}</div>
                     <div className="text-xs text-muted-foreground">{new Date(ligacao.data).toLocaleString('pt-BR')}</div>
                   </div>
                   <div className="flex gap-2">
@@ -1077,14 +1077,15 @@ export function RelatoriosModule() {
             </div>
           ) : (
             <div className="text-center py-6 text-muted-foreground">
-              Nenhuma ligação registrada neste período.
+              Nenhuma ligaÃ§Ã£o registrada neste perÃ­odo.
             </div>
           )}
         </CardContent>
       </Card>
     
       {/* Power BI Funnel */}
-      <PowerBIFunnel periodo={periodoSelecionado} />
+      <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} />
     </div>
   );
 }
+

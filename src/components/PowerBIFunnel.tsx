@@ -1,21 +1,20 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
-import { useLeads } from '@/context/LeadsContext';
 import { BarChart3, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface PowerBIFunnelProps {
   periodo: string;
+  leadsCount: number;
+  interacoesCount: number;
 }
 
-export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
-  const { leads } = useLeads();
+export function PowerBIFunnel({ periodo, leadsCount, interacoesCount }: PowerBIFunnelProps) {
   const { toast } = useToast();
-
   const storageKey = "powerbi_metrics_$periodo";
 
   const [manualMetrics, setManualMetrics] = useState({
@@ -45,47 +44,14 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
 
   const handleSave = () => {
     localStorage.setItem(storageKey, JSON.stringify(manualMetrics));
-    toast({ title: 'Métricas salvas', description: 'Valores atualizados para o período: ' + periodo });
+    toast({ title: 'Métricas salvas', description: 'Valores atualizados para o período selecionado.' });
   };
 
-  const filteredLeads = useMemo(() => {
-    const now = new Date();
-    let startDate = new Date();
-    
-    switch (periodo) {
-      case 'hoje':
-        startDate.setHours(0,0,0,0);
-        break;
-      case 'ontem':
-        startDate.setDate(now.getDate() - 1);
-        startDate.setHours(0,0,0,0);
-        const endDate = new Date(startDate);
-        endDate.setHours(23,59,59,999);
-        return leads.filter(l => new Date(l.created_at || '') >= startDate && new Date(l.created_at || '') <= endDate);
-      case '7dias':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case '30dias':
-        startDate.setDate(now.getDate() - 30);
-        break;
-      case '90dias':
-        startDate.setDate(now.getDate() - 90);
-        break;
-      default:
-        startDate.setFullYear(2000); // custom or all
-    }
-    
-    return leads.filter(l => new Date(l.created_at || '') >= startDate);
-  }, [leads, periodo]);
-
-  const leadCount = filteredLeads.length;
-  // Considera interacao automatica os leads que tiveram ultimo_contato ou estao em status de contato
-  const interacaoAuto = filteredLeads.filter(l => l.ultimo_contato || ['em_contato', 'interessado', 'qualificado'].includes(l.status)).length;
-  const interacaoCount = Math.max(0, interacaoAuto + (Number(manualMetrics.interacaoAjuste) || 0));
+  const finalInteracoes = Math.max(0, interacoesCount + (Number(manualMetrics.interacaoAjuste) || 0));
 
   const data = [
-    { name: 'Leads', valor: leadCount, fill: '#3b82f6' },
-    { name: 'Interações', valor: interacaoCount, fill: '#8b5cf6' },
+    { name: 'Leads', valor: leadsCount, fill: '#3b82f6' },
+    { name: 'Interações', valor: finalInteracoes, fill: '#8b5cf6' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
     { name: 'Documentação', valor: Number(manualMetrics.documentacao) || 0, fill: '#10b981' },
     { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#ef4444' },
@@ -97,7 +63,7 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
       <CardHeader className="bg-blue-50/50 dark:bg-blue-900/10 border-b">
         <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
           <BarChart3 className="w-5 h-5" />
-          Funil de Vendas - Dashboard Power BI ({periodo})
+          Funil de Vendas - Dashboard Power BI
         </CardTitle>
       </CardHeader>
       <CardContent className="p-6">
@@ -134,7 +100,7 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
             </Button>
 
             <div className="text-xs text-muted-foreground mt-4 bg-muted/30 p-3 rounded-md">
-              <span className="font-semibold">Info:</span> Leads e Interações (base) são calculados automaticamente pelo sistema de acordo com o período selecionado.
+              <span className="font-semibold">Info:</span> Leads e Interações (base) são calculados automaticamente pelo sistema de acordo com o período selecionado no topo da página.
             </div>
           </div>
 
@@ -159,5 +125,3 @@ export function PowerBIFunnel({ periodo }: PowerBIFunnelProps) {
     </Card>
   );
 }
-
-
