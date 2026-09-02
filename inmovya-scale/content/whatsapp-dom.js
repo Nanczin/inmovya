@@ -1,45 +1,53 @@
-﻿// content/whatsapp-dom.js
+// content/whatsapp-dom.js
 window.IS = window.IS || {};
 
 window.IS.WhatsAppDOM = {
   findMessageInput() {
-    // Look for footer which contains the message input
-    const footer = document.querySelector('footer');
-    if (footer) {
-      const input = footer.querySelector('div[contenteditable="true"]');
-      if (input) return input;
+    // O WhatsApp usa divs contenteditable. O campo de digitação fica no #main (a área de conversa)
+    const mainArea = document.getElementById('main');
+    if (mainArea) {
+      const boxes = mainArea.querySelectorAll('div[contenteditable="true"]');
+      // Pega o último contenteditable dentro do #main (evita pegar algo no cabeçalho)
+      if (boxes.length > 0) return boxes[boxes.length - 1];
     }
     
-    // Fallback: aria-label="Digite uma mensagem" or similar (may vary by language)
-    const fallback = document.querySelector('div[contenteditable="true"][data-tab="10"]');
-    if (fallback) return fallback;
-    
+    // Fallback: Procura qualquer contenteditable visível que não seja a barra de pesquisa
+    const allBoxes = document.querySelectorAll('div[contenteditable="true"]');
+    for (let i = allBoxes.length - 1; i >= 0; i--) {
+      const box = allBoxes[i];
+      if (box.offsetParent !== null && !box.closest('#side')) {
+        return box;
+      }
+    }
     return null;
   },
 
   getCurrentChatName() {
-    const header = document.querySelector('header');
+    const mainArea = document.getElementById('main');
+    if (!mainArea) return "";
+    const header = mainArea.querySelector('header');
     if (!header) return "";
 
-    // The contact name is usually inside a span with the title attribute in the header
     const titleSpan = header.querySelector('span[title]');
     if (titleSpan && titleSpan.title) {
       return titleSpan.title.trim();
     }
-    
     return "";
   },
 
   insertMessage(text) {
     const input = this.findMessageInput();
     if (!input) {
-      window.IS.error("Não foi possível localizar o campo de mensagem.");
+      window.IS.error("Campo de mensagem não encontrado. Abra uma conversa primeiro!");
       return false;
     }
 
     input.focus();
 
-    // Move cursor to end
+    // Remove qualquer placeholder que o WhatsApp coloque simulando clique
+    input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+
+    // Coloca o cursor no final
     const selection = window.getSelection();
     if (selection) {
       const range = document.createRange();
@@ -49,22 +57,18 @@ window.IS.WhatsAppDOM = {
       selection.addRange(range);
     }
 
-    // Insert text safely mimicking user input
-    // execCommand is deprecated but it is still the only reliable way to insert text 
-    // into a contenteditable and properly trigger React's synthetic events in WhatsApp Web.
-    const success = document.execCommand("insertText", false, text);
+    // Tenta usar execCommand (ainda é o mais suportado para disparar inputs no React/Lexical do WhatsApp)
+    let success = document.execCommand("insertText", false, text);
     
+    // Se falhar, tenta o método de ClipboardEvent
     if (!success) {
-      // Fallback for modern browsers if execCommand fails
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', text);
-      const pasteEvent = new ClipboardEvent('paste', {
-        clipboardData: dataTransfer,
-        bubbles: true,
-        cancelable: true
-      });
-      input.dispatchEvent(pasteEvent);
+      input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
     }
+    
+    // Dispara evento de input manualmente para forçar o React a acordar o botão de Enviar
+    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     
     return true;
   },
@@ -77,13 +81,11 @@ window.IS.WhatsAppDOM = {
     const selection = window.getSelection();
     if (!selection.rangeCount) return false;
     
-    const range = selection.getRangeAt(0);
-    // Delete chars by modifying the range
-    let startOffset = range.startOffset - charsToDelete;
-    if (startOffset < 0) startOffset = 0;
+    // Tenta apagar usando o comando nativo delete para manter o React State do Lexical atualizado
+    for (let i = 0; i < charsToDelete; i++) {
+      document.execCommand('delete', false, null);
+    }
     
-    range.setStart(range.startContainer, startOffset);
-    range.deleteContents();
     return true;
   }
 };
