@@ -1,0 +1,127 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inmovya Scale</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">Inmovya Scale</div>
+    <nav>
+      <button class="tab-btn active" data-tab="replies">Respostas</button>
+      <button class="tab-btn" data-tab="categories">Categorias</button>
+      <button class="tab-btn" data-tab="settings">Config</button>
+      <button class="tab-btn" data-tab="backup">Backup</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- TAB: REPLIES -->
+    <section id="tab-replies" class="tab-content active">
+      <div class="actions-bar">
+        <input type="text" id="search-replies" placeholder="Buscar...">
+        <button id="btn-new-reply" class="btn btn-primary">Nova</button>
+      </div>
+      <div id="replies-list" class="list-container"></div>
+    </section>
+
+    <!-- TAB: CATEGORIES -->
+    <section id="tab-categories" class="tab-content">
+      <div class="actions-bar">
+        <input type="text" id="new-category-name" placeholder="Nova categoria...">
+        <button id="btn-add-category" class="btn btn-primary">Adicionar</button>
+      </div>
+      <div id="categories-list" class="list-container"></div>
+    </section>
+
+    <!-- TAB: SETTINGS -->
+    <section id="tab-settings" class="tab-content">
+      <div class="form-group">
+        <label>Seu Nome (usado em {{meu_nome}})</label>
+        <input type="text" id="set-username">
+      </div>
+      <div class="form-group checkbox">
+        <input type="checkbox" id="set-shortcuts">
+        <label for="set-shortcuts">Ativar atalhos digitados</label>
+      </div>
+      <div class="form-group">
+        <label>Tecla para disparar atalho</label>
+        <select id="set-trigger">
+          <option value="Space">Espaço</option>
+          <option value="Enter">Enter</option>
+          <option value="Tab">Tab</option>
+        </select>
+      </div>
+      <div class="form-group checkbox">
+        <input type="checkbox" id="set-autoopen">
+        <label for="set-autoopen">Abrir painel automaticamente</label>
+      </div>
+      <div class="form-group checkbox">
+        <input type="checkbox" id="set-favfirst">
+        <label for="set-favfirst">Favoritos no topo</label>
+      </div>
+      <div class="form-actions">
+        <button id="btn-save-settings" class="btn btn-primary">Salvar Configurações</button>
+      </div>
+    </section>
+
+    <!-- TAB: BACKUP -->
+    <section id="tab-backup" class="tab-content">
+      <p class="help-text">Exporte todas as suas respostas e configurações, ou importe de um arquivo existente.</p>
+      <div class="backup-actions">
+        <button id="btn-export" class="btn btn-outline">Exportar Backup (JSON)</button>
+        <label for="file-import" class="btn btn-primary">Importar Backup</label>
+        <input type="file" id="file-import" accept=".json" style="display: none;">
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL DE FORMULARIO DE RESPOSTA -->
+  <div id="modal-reply" class="modal">
+    <div class="modal-content">
+      <h3 id="modal-title">Nova Resposta</h3>
+      
+      <div class="form-group">
+        <label>Título</label>
+        <input type="text" id="form-title" placeholder="Ex: Primeiro Contato">
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Atalho (opcional)</label>
+          <input type="text" id="form-shortcut" placeholder="Ex: /oi">
+        </div>
+        <div class="form-group">
+          <label>Categoria</label>
+          <select id="form-category"></select>
+        </div>
+      </div>
+      
+      <div class="form-group checkbox">
+        <input type="checkbox" id="form-favorite">
+        <label for="form-favorite">Marcar como favorito</label>
+      </div>
+      
+      <div class="form-group">
+        <label>Mensagem</label>
+        <div class="help-text">Variáveis: {{nome}}, {{saudacao}}, {{meu_nome}}, {{data}}, {{hora}}</div>
+        <textarea id="form-message" rows="5"></textarea>
+      </div>
+      
+      <div class="modal-actions">
+        <button id="btn-cancel-reply" class="btn btn-outline">Cancelar</button>
+        <button id="btn-save-reply" class="btn btn-primary">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="../utils/helpers.js"></script>
+  <script src="../utils/constants.js"></script>
+  <script src="../utils/storage.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

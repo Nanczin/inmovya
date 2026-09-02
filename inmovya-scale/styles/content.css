@@ -1,0 +1,306 @@
+﻿/* styles/content.css */
+:root {
+  --inmovya-primary: #00a884;
+  --inmovya-primary-hover: #008f6f;
+  --inmovya-background: #ffffff;
+  --inmovya-surface: #f0f2f5;
+  --inmovya-text: #111b21;
+  --inmovya-text-secondary: #667781;
+  --inmovya-border: #d1d7db;
+  --inmovya-hover: #f5f6f6;
+  --inmovya-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --inmovya-background: #111b21;
+    --inmovya-surface: #202c33;
+    --inmovya-text: #e9edef;
+    --inmovya-text-secondary: #8696a0;
+    --inmovya-border: #222d34;
+    --inmovya-hover: #2a3942;
+    --inmovya-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  }
+}
+
+/* Base styles to match user setting if possible, but auto by default */
+html[dir] body.dark {
+  --inmovya-background: #111b21;
+  --inmovya-surface: #202c33;
+  --inmovya-text: #e9edef;
+  --inmovya-text-secondary: #8696a0;
+  --inmovya-border: #222d34;
+  --inmovya-hover: #2a3942;
+}
+
+#inmovya-scale-root {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  z-index: 9999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  pointer-events: none; /* Let clicks pass through root */
+}
+
+#is-toggle-button {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  width: 40px;
+  height: 40px;
+  background: var(--inmovya-primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--inmovya-shadow);
+  pointer-events: auto;
+  transition: transform 0.2s;
+  z-index: 10000;
+}
+
+#is-toggle-button:hover {
+  transform: scale(1.05);
+  background: var(--inmovya-primary-hover);
+}
+
+#is-toggle-button.is-hidden {
+  display: none;
+}
+
+#is-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  background: var(--inmovya-background);
+  border-left: 1px solid var(--inmovya-border);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: var(--inmovya-shadow);
+  pointer-events: auto;
+  min-width: 280px;
+  max-width: 600px;
+}
+
+#is-sidebar.is-open {
+  transform: translateX(0);
+}
+
+#is-resizer {
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 10px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+}
+
+.is-header {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--inmovya-surface);
+  border-bottom: 1px solid var(--inmovya-border);
+}
+
+.is-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--inmovya-text);
+  font-size: 16px;
+}
+
+#is-close-btn {
+  background: none;
+  border: none;
+  color: var(--inmovya-text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+#is-close-btn:hover {
+  background: var(--inmovya-hover);
+  color: var(--inmovya-text);
+}
+
+.is-filters {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--inmovya-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.is-search-wrapper input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--inmovya-border);
+  background: var(--inmovya-surface);
+  color: var(--inmovya-text);
+  font-size: 14px;
+  outline: none;
+}
+
+.is-search-wrapper input:focus {
+  border-color: var(--inmovya-primary);
+}
+
+.is-filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.is-filter-actions select {
+  flex: 1;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--inmovya-border);
+  background: var(--inmovya-surface);
+  color: var(--inmovya-text);
+  font-size: 13px;
+  outline: none;
+}
+
+#is-fav-filter {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--inmovya-border);
+  background: var(--inmovya-surface);
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.5;
+  transition: all 0.2s;
+}
+
+#is-fav-filter.active {
+  filter: grayscale(0);
+  opacity: 1;
+  background: var(--inmovya-hover);
+  border-color: var(--inmovya-primary);
+}
+
+#is-replies-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Custom scrollbar */
+#is-replies-list::-webkit-scrollbar {
+  width: 6px;
+}
+#is-replies-list::-webkit-scrollbar-thumb {
+  background: var(--inmovya-border);
+  border-radius: 4px;
+}
+
+.is-reply-item {
+  background: var(--inmovya-background);
+  border: 1px solid var(--inmovya-border);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.is-reply-item:hover {
+  background: var(--inmovya-hover);
+  border-color: var(--inmovya-primary);
+}
+
+.is-reply-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
+.is-reply-title {
+  font-weight: 600;
+  color: var(--inmovya-text);
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.is-reply-shortcut {
+  font-size: 12px;
+  color: var(--inmovya-primary);
+  background: var(--inmovya-primary);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.is-reply-category {
+  font-size: 11px;
+  color: var(--inmovya-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.is-reply-preview {
+  font-size: 13px;
+  color: var(--inmovya-text-secondary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.is-empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--inmovya-text-secondary);
+  font-size: 14px;
+}
+
+/* Toast */
+.is-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--inmovya-primary);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  z-index: 10001;
+  pointer-events: none;
+  animation: is-fade-in 0.3s forwards;
+}
+
+.is-toast.fade-out {
+  animation: is-fade-out 0.3s forwards;
+}
+
+@keyframes is-fade-in {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes is-fade-out {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, -20px); }
+}

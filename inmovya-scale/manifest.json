@@ -1,0 +1,35 @@
+﻿{
+  "manifest_version": 3,
+  "name": "Inmovya Scale",
+  "short_name": "Inmovya Scale",
+  "version": "1.0.0",
+  "description": "Ferramentas de produtividade e respostas rápidas para WhatsApp Web.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://web.whatsapp.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Abrir Inmovya Scale"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "css": ["styles/content.css"],
+      "js": [
+        "utils/constants.js",
+        "utils/helpers.js",
+        "utils/storage.js",
+        "content/variables.js",
+        "content/whatsapp-dom.js",
+        "content/shortcuts.js",
+        "content/panel.js",
+        "content/observer.js",
+        "content/content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ]
+}
