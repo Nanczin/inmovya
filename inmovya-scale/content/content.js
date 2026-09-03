@@ -1,28 +1,28 @@
 ﻿// content/content.js
 window.IS = window.IS || {};
 
-window.IS.App = {
-  async init() {
-    window.IS.log("Iniciando Inmovya Scale...");
-    
-    // Initialize default storage data if missing
-    await window.IS.Storage.initDefaults();
-    
-    // Read settings
-    const settings = await window.IS.Storage.getSettings();
-    
-    // Initialize Sub-modules
-    window.IS.Shortcuts.init(settings);
-    await window.IS.Panel.init();
-    window.IS.Observer.init();
-    
-    window.IS.log("Inmovya Scale carregado com sucesso!");
-  }
+window.IS.init = async function() {
+  window.IS.log("Inicializando Inmovya Scale Extension...");
+  
+  // Opcional: injetar CSS de painel se necessrio no futuro
+  // O Observer e Shortcuts sero as principais funcionalidades
+  
+  if (window.IS.Observer) window.IS.Observer.init();
+  if (window.IS.Shortcuts) window.IS.Shortcuts.init();
 };
 
-// Start the app when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => window.IS.App.init());
+  document.addEventListener('DOMContentLoaded', window.IS.init);
 } else {
-  window.IS.App.init();
+  window.IS.init();
 }
+
+// Lidar com mensagens do popup
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+  if (request.action === 'insert_message') {
+    const contactName = window.IS.WhatsAppDOM.getCurrentChatName();
+    const finalMessage = await window.IS.Variables.parseMessage(request.message, contactName);
+    window.IS.WhatsAppDOM.insertMessage(finalMessage);
+    sendResponse({ success: true });
+  }
+});

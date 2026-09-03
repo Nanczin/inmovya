@@ -1,17 +1,17 @@
-// content/whatsapp-dom.js
+﻿// content/whatsapp-dom.js
 window.IS = window.IS || {};
 
 window.IS.WhatsAppDOM = {
   findMessageInput() {
-    // O WhatsApp usa divs contenteditable. O campo de digitação fica no #main (a área de conversa)
+    // O WhatsApp usa divs contenteditable. O campo de digitaÃ§Ã£o fica no #main (a Ã¡rea de conversa)
     const mainArea = document.getElementById('main');
     if (mainArea) {
       const boxes = mainArea.querySelectorAll('div[contenteditable="true"]');
-      // Pega o último contenteditable dentro do #main (evita pegar algo no cabeçalho)
+      // Pega o Ãºltimo contenteditable dentro do #main (evita pegar algo no cabeÃ§alho)
       if (boxes.length > 0) return boxes[boxes.length - 1];
     }
     
-    // Fallback: Procura qualquer contenteditable visível que não seja a barra de pesquisa
+    // Fallback: Procura qualquer contenteditable visÃ­vel que nÃ£o seja a barra de pesquisa
     const allBoxes = document.querySelectorAll('div[contenteditable="true"]');
     for (let i = allBoxes.length - 1; i >= 0; i--) {
       const box = allBoxes[i];
@@ -38,7 +38,7 @@ window.IS.WhatsAppDOM = {
   insertMessage(text) {
     const input = this.findMessageInput();
     if (!input) {
-      window.IS.error("Campo de mensagem não encontrado. Abra uma conversa primeiro!");
+      window.IS.error("Campo de mensagem nÃ£o encontrado. Abra uma conversa primeiro!");
       return false;
     }
 
@@ -57,18 +57,22 @@ window.IS.WhatsAppDOM = {
       selection.addRange(range);
     }
 
-    // Tenta usar execCommand (ainda é o mais suportado para disparar inputs no React/Lexical do WhatsApp)
+    // Tenta usar execCommand (ainda Ã© o mais suportado para disparar inputs no React/Lexical do WhatsApp)
     let success = document.execCommand("insertText", false, text);
     
-    // Se falhar, tenta o método de ClipboardEvent
+    // Se falhar, tenta o mÃ©todo de ClipboardEvent
     if (!success) {
       const dataTransfer = new DataTransfer();
       dataTransfer.setData('text/plain', text);
       input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
     }
     
-    // Dispara evento de input manualmente para forçar o React a acordar o botão de Enviar
+    // Dispara evento de input manualmente para forÃ§ar o React a acordar o botÃ£o de Enviar
     input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    
+    // Dispara keydown para forçar o aviso de 'digitando...'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', bubbles: true, cancelable: true, keyCode: 229 }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Process', bubbles: true, cancelable: true, keyCode: 229 }));
     
     return true;
   },
@@ -89,3 +93,4 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
+

@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     list.innerHTML = filtered.map(r => `
       <div class="list-item">
-        <div class="item-info">
+        <div class="item-info" style="cursor:pointer;" title="Clique para inserir no WhatsApp" data-id="${r.id}">
           <h4>${r.favorite ? '⭐ ' : ''}${IS.escapeHTML(r.title)}</h4>
           <p>${IS.escapeHTML(r.message)}</p>
           ${r.shortcut ? `<span class="shortcut-badge">${IS.escapeHTML(r.shortcut)}</span>` : ''}
@@ -69,16 +69,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Event Delegation for Replies List
   document.getElementById('replies-list').addEventListener('click', (e) => {
     const btn = e.target.closest('.btn-action');
-    if (!btn) return;
-    
-    const id = btn.getAttribute('data-id');
-    
-    if (btn.classList.contains('btn-edit')) {
-      editReply(id);
-    } else if (btn.classList.contains('btn-delete')) {
-      deleteReply(id);
-    } else if (btn.classList.contains('btn-duplicate')) {
-      duplicateReply(id);
+    if (btn) {
+      const id = btn.getAttribute('data-id');
+      if (btn.classList.contains('btn-edit')) {
+        editReply(id);
+      } else if (btn.classList.contains('btn-delete')) {
+        deleteReply(id);
+      } else if (btn.classList.contains('btn-duplicate')) {
+        duplicateReply(id);
+      }
+      return;
+    }
+
+    // Clique na linha para inserir a mensagem
+    const info = e.target.closest('.item-info');
+    if (info) {
+      const id = info.getAttribute('data-id');
+      const r = replies.find(x => x.id === id);
+      if (r) {
+        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+          if (tabs.length > 0 && tabs[0].url.includes("web.whatsapp.com")) {
+            chrome.tabs.sendMessage(tabs[0].id, { action: "insert_message", message: r.message }, (response) => {
+              if (chrome.runtime.lastError) {
+                showToast("Por favor, recarregue a aba do WhatsApp.");
+              } else {
+                window.close(); // Fecha o popup aps inserir
+              }
+            });
+          } else {
+            showToast("Esta extenso s funciona no WhatsApp Web.");
+          }
+        });
+      }
     }
   });
 
@@ -190,7 +212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const list = document.getElementById('categories-list');
     list.innerHTML = categories.map(c => `
       <div class="list-item">
-        <div class="item-info"><h4>${IS.escapeHTML(c.name)}</h4></div>
+        <div class="item-info" style="cursor:pointer;" title="Clique para inserir no WhatsApp" data-id="${r.id}"><h4>${IS.escapeHTML(c.name)}</h4></div>
         <div class="item-actions">
           <button class="btn-action delete btn-delete-cat" data-id="${c.id}" title="Excluir">🗑️</button>
         </div>
@@ -285,3 +307,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => t.classList.remove('show'), 3000);
   }
 });
+
