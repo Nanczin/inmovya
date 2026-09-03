@@ -8,7 +8,7 @@ window.IS.init = async function() {
   
   if (window.IS.Observer) window.IS.Observer.init();
   if (window.IS.Shortcuts) window.IS.Shortcuts.init(settings);
-  if (window.IS.WaScaleUI) window.IS.WaScaleUI.init();
+  if (window.IS.Panel) window.IS.Panel.init();
 };
 
 if (document.readyState === 'loading') {
@@ -37,3 +37,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+

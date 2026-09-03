@@ -95,6 +95,7 @@ window.IS.WhatsAppDOM = {
         }
       }
     }
+    return true;
   },
 
   getCurrentChatName() {
@@ -168,6 +169,7 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
+
 
 
 

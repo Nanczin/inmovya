@@ -149,7 +149,7 @@ window.IS.Panel = {
     const contactName = window.IS.WhatsAppDOM.getCurrentChatName();
     const finalMessage = await window.IS.Variables.parseMessage(reply.message, contactName);
 
-    const success = await window.IS.WhatsAppDOM.insertMessage(finalMessage);
+    const success = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(finalMessage, reply.attachments);
     
     if (success) {
       this.showToast("Mensagem inserida.");
@@ -272,5 +272,6 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+
 
 
