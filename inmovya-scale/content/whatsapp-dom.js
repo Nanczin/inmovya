@@ -42,17 +42,22 @@ window.IS.WhatsAppDOM = {
     const parts = (text || "").split('===').map(s => s.trim()).filter(s => s.length > 0);
     
     const triggerSend = async () => {
-      // Tenta achar o botão de enviar por até 1 segundo
-      for (let i = 0; i < 10; i++) {
-        const sendBtnIcon = document.querySelector('span[data-icon="send"]');
-        if (sendBtnIcon) {
-          const btn = sendBtnIcon.closest('div[role="button"]') || sendBtnIcon.closest('button');
-          if (btn) {
-            btn.click();
-            return;
+      // Tenta achar o botão de enviar por até 3 segundos
+      for (let i = 0; i < 15; i++) {
+        const sendIcons = document.querySelectorAll('span[data-icon="send"]');
+        // Pega o último botão na tela (geralmente o do modal fica no fim do DOM)
+        for (let j = sendIcons.length - 1; j >= 0; j--) {
+          const icon = sendIcons[j];
+          // Verifica se está visível
+          if (icon.offsetParent !== null) {
+            const btn = icon.closest('div[role="button"]') || icon.closest('button');
+            if (btn) {
+              btn.click();
+              return;
+            }
           }
         }
-        await delay(100);
+        await delay(200);
       }
       
       // Fallback
@@ -87,7 +92,7 @@ window.IS.WhatsAppDOM = {
           input.focus();
           input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
           
-          await delay(1500); // Wait for image preview modal
+          await delay(2000); // Wait for image preview modal
           await triggerSend();
           await delay(800);
         } catch(e) {
@@ -169,6 +174,9 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
+
+
+
 
 
 
