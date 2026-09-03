@@ -169,12 +169,38 @@ window.IS.Panel = {
     }
   },
 
-  setupListeners() {
+    setupListeners() {
     const toggleBtn = document.getElementById('is-toggle-button');
     const closeBtn = document.getElementById('is-close-btn');
     const searchInput = document.getElementById('is-search-input');
     const catSelect = document.getElementById('is-category-select');
     const favBtn = document.getElementById('is-fav-filter');
+    const settingsBtnHeader = document.getElementById('is-settings-btn');
+    const settingsBtnMain = document.getElementById('is-settings-btn-main');
+    const mainView = document.getElementById('is-main-view');
+    const settingsView = document.getElementById('is-settings-view');
+    const iframe = document.getElementById('is-settings-iframe');
+    
+    let isSettingsOpen = false;
+    
+    const toggleSettings = (e) => {
+      if(e) e.preventDefault();
+      isSettingsOpen = !isSettingsOpen;
+      if (isSettingsOpen) {
+        if(mainView) mainView.style.display = 'none';
+        if(settingsView) settingsView.style.display = 'block';
+        if (iframe && (!iframe.src || iframe.src === window.location.href)) {
+          iframe.src = chrome.runtime.getURL('popup/popup.html');
+        }
+      } else {
+        if(mainView) mainView.style.display = 'flex';
+        if(settingsView) settingsView.style.display = 'none';
+        this.reloadData(); 
+      }
+    };
+
+    if (settingsBtnHeader) settingsBtnHeader.addEventListener('click', toggleSettings);
+    if (settingsBtnMain) settingsBtnMain.addEventListener('click', toggleSettings);
 
     if (toggleBtn) toggleBtn.addEventListener('click', () => this.togglePanel(true));
     if (closeBtn) closeBtn.addEventListener('click', () => this.togglePanel(false));
@@ -284,6 +310,7 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+
 
 
 
