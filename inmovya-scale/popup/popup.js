@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     IS.Storage.exportData();
   });
   
-  document.getElementById('file-import').addEventListener('change', (e) => {
+  document.getElementById('file-import').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     
@@ -331,6 +331,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => t.classList.remove('show'), 3000);
   }
 });
+
 
 
 
