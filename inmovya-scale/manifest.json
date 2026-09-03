@@ -34,7 +34,8 @@
                                            "content/wascale-ui.js",
                                            "content/panel.js",
                                            "content/observer.js",
-                                           "content/content.js"
+                                           "content/content.js",
+                                           "content/scraper.js"
                                        ],
                                 "run_at":  "document_end"
                             }

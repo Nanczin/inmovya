@@ -1,9 +1,12 @@
-﻿// popup.js
+﻿let currentAttachments = [];
+// popup.js
 document.addEventListener('DOMContentLoaded', async () => {
   let replies = [];
   let categories = [];
-  let settings = {};
+    let settings = {};
   let currentEditId = null;
+
+  let waLabels = [];
 
   // Initialize
   await IS.Storage.initDefaults();
@@ -11,14 +14,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderReplies();
   renderCategories();
   renderSettings();
+  renderWaLabels();
 
-  async function loadData() {
+    async function loadData() {
     replies = await IS.Storage.getReplies();
     categories = await IS.Storage.getCategories();
     settings = await IS.Storage.getSettings();
+    const storageData = await chrome.storage.local.get('waLabels');
+    waLabels = storageData.waLabels || [];
   }
-
-    let currentAttachments = [];
 
   document.getElementById('form-attachments').addEventListener('change', async (e) => {
     const files = e.target.files;
@@ -301,6 +305,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+    // --- CRM / ETIQUETAS ---
+  function renderWaLabels() {
+    const list = document.getElementById('labels-list');
+    if (waLabels.length === 0) {
+      list.innerHTML = `<div style="text-align: center; color: gray; margin-top: 20px;">Nenhuma etiqueta sincronizada.</div>`;
+      return;
+    }
+    
+    list.innerHTML = waLabels.map(label => `
+      <div class="list-item" style="flex-direction: column; align-items: flex-start;">
+        <h4 style="margin:0 0 5px 0;">🏷️ ${IS.escapeHTML(label.name)} (${label.contacts.length})</h4>
+        <div style="font-size: 11px; color: gray; max-height: 100px; overflow-y: auto;">
+          ${label.contacts.map(c => IS.escapeHTML(c.name)).join(', ')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('btn-sync-labels').addEventListener('click', () => {
+    document.getElementById('btn-sync-labels').textContent = "Sincronizando... (Não mexa no WA)";
+    document.getElementById('btn-sync-labels').disabled = true;
+    
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs.length > 0 && tabs[0].url.includes("web.whatsapp.com")) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: "start_scraper" }, async (response) => {
+          document.getElementById('btn-sync-labels').textContent = "🔄 Sincronizar Etiquetas do WhatsApp";
+          document.getElementById('btn-sync-labels').disabled = false;
+          
+          if (chrome.runtime.lastError || !response || response.data.error) {
+            showToast("Erro ao sincronizar. Recarregue o WhatsApp e tente novamente.");
+          } else {
+            waLabels = response.data;
+            await chrome.storage.local.set({ waLabels });
+            renderWaLabels();
+            showToast("Etiquetas sincronizadas com sucesso!");
+          }
+        });
+      } else {
+        showToast("Abra o WhatsApp Web para sincronizar.");
+        document.getElementById('btn-sync-labels').textContent = "🔄 Sincronizar Etiquetas do WhatsApp";
+        document.getElementById('btn-sync-labels').disabled = false;
+      }
+    });
+  });
+
   // --- SETTINGS & BACKUP ---
   function renderSettings() {
     document.getElementById('set-username').value = settings.userName || '';
@@ -339,6 +388,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           renderReplies();
           renderCategories();
           renderSettings();
+  renderWaLabels();
           showToast("Backup importado com sucesso!");
         } catch(err) {
           showToast("Erro ao importar arquivo inválido.");
@@ -380,6 +430,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => t.classList.remove('show'), 3000);
   }
 });
+
+
+
 
 
 

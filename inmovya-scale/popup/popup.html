@@ -9,9 +9,10 @@
 <body>
   <header>
     <div class="brand">Inmovya Scale</div>
-    <nav>
+        <nav>
       <button class="tab-btn active" data-tab="replies">Respostas</button>
       <button class="tab-btn" data-tab="categories">Categorias</button>
+      <button class="tab-btn" data-tab="crm">CRM</button>
       <button class="tab-btn" data-tab="settings">Config</button>
       <button class="tab-btn" data-tab="backup">Backup</button>
     </nav>
@@ -34,6 +35,15 @@
         <button id="btn-add-category" class="btn btn-primary">Adicionar</button>
       </div>
       <div id="categories-list" class="list-container"></div>
+    </section>
+
+        <!-- TAB: CRM / ETIQUETAS -->
+    <section id="tab-crm" class="tab-content">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <button id="btn-sync-labels" class="btn btn-primary" style="width: 100%;">🔄 Sincronizar Etiquetas do WhatsApp</button>
+        <p class="help-text" style="margin-top: 10px;">Isso fará com que a extensão navegue no seu WhatsApp Business para capturar os contatos.</p>
+      </div>
+      <div id="labels-list" class="list-container"></div>
     </section>
 
     <!-- TAB: SETTINGS -->
@@ -141,5 +151,6 @@
   <script src="popup.js"></script>
 </body>
 </html>
+
 
 

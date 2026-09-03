@@ -26,7 +26,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await window.IS.WhatsAppDOM.insertSequenceAndAttachments(finalMessage, request.attachments);
       sendResponse({ success: true });
     })();
-    return true; // Keep the message channel open for the async response
+    return true; 
+  }
+  
+  if (request.action === 'start_scraper') {
+    (async () => {
+      const data = await window.IS.Scraper.run();
+      sendResponse({ data });
+    })();
+    return true;
   }
 });
-
