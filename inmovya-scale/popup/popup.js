@@ -212,7 +212,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const list = document.getElementById('categories-list');
     list.innerHTML = categories.map(c => `
       <div class="list-item">
-        <div class="item-info" style="cursor:pointer;" title="Clique para inserir no WhatsApp" data-id="${r.id}"><h4>${IS.escapeHTML(c.name)}</h4></div>
+        <div class="item-info"><h4>${IS.escapeHTML(c.name)}</h4></div>
         <div class="item-actions">
           <button class="btn-action delete btn-delete-cat" data-id="${c.id}" title="Excluir">🗑️</button>
         </div>
@@ -331,6 +331,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => t.classList.remove('show'), 3000);
   }
 });
+
 
 
 
