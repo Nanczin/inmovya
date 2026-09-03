@@ -18,6 +18,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     settings = await IS.Storage.getSettings();
   }
 
+    let currentAttachments = [];
+
+  document.getElementById('form-attachments').addEventListener('change', async (e) => {
+    const files = e.target.files;
+    for (let file of files) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast("Arquivo muito grande (mx 5MB).");
+        continue;
+      }
+      const base64 = await toBase64(file);
+      currentAttachments.push({
+        name: file.name,
+        type: file.type,
+        data: base64
+      });
+    }
+    renderAttachmentsPreview();
+    e.target.value = '';
+  });
+
+  function renderAttachmentsPreview() {
+    const container = document.getElementById('form-attachments-preview');
+    container.innerHTML = currentAttachments.map((att, idx) => `
+      <div style="position: relative; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+        ${IS.escapeHTML(att.name)}
+        <span style="color: red; cursor: pointer; margin-left: 8px;" class="btn-remove-att" data-idx="${idx}">x</span>
+      </div>
+    `).join('');
+  }
+
+  window.removeAttachment = (idx) => {
+    currentAttachments.splice(idx, 1);
+    renderAttachmentsPreview();
+  };
+
+  function toBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
+    });
+  }
+
   // --- TABS LOGIC ---
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
@@ -89,7 +133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (r) {
         chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
           if (tabs.length > 0 && tabs[0].url.includes("web.whatsapp.com")) {
-            chrome.tabs.sendMessage(tabs[0].id, { action: "insert_message", message: r.message }, (response) => {
+            chrome.tabs.sendMessage(tabs[0].id, { action: "insert_message", message: r.message, attachments: r.attachments }, (response) => {
               if (chrome.runtime.lastError) {
                 showToast("Por favor, recarregue a aba do WhatsApp.");
               } else {
@@ -115,6 +159,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('form-shortcut').value = '';
     document.getElementById('form-message').value = '';
     document.getElementById('form-favorite').checked = false;
+    currentAttachments = [];
+    renderAttachmentsPreview();
     
     const catSelect = document.getElementById('form-category');
     catSelect.innerHTML = categories.map(c => `<option value="${c.id}">${IS.escapeHTML(c.name)}</option>`).join('');
@@ -131,7 +177,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let shortcut = document.getElementById('form-shortcut').value.trim();
     const message = document.getElementById('form-message').value.trim();
     const categoryId = document.getElementById('form-category').value;
-    const favorite = document.getElementById('form-favorite').checked;
+        const favorite = document.getElementById('form-favorite').checked;
+    const attachmentsToSave = [...currentAttachments];
 
     if (!title || !message) {
       showToast("Título e Mensagem são obrigatórios.");
@@ -153,13 +200,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (currentEditId) {
       const idx = replies.findIndex(r => r.id === currentEditId);
       if (idx !== -1) {
-        replies[idx] = { ...replies[idx], title, shortcut, message, categoryId, favorite, updatedAt: new Date().toISOString() };
+        replies[idx] = { ...replies[idx], title, shortcut, message, categoryId, favorite, attachments: attachmentsToSave, updatedAt: new Date().toISOString() };
         showToast("Resposta atualizada.");
       }
     } else {
       replies.push({
         id: IS.generateUUID(),
-        title, shortcut, message, categoryId, favorite,
+        title, shortcut, message, categoryId, favorite, attachments: attachmentsToSave,
         usageCount: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -180,7 +227,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('form-title').value = r.title;
     document.getElementById('form-shortcut').value = r.shortcut || '';
     document.getElementById('form-message').value = r.message;
-    document.getElementById('form-favorite').checked = !!r.favorite;
+        document.getElementById('form-favorite').checked = !!r.favorite;
+    currentAttachments = r.attachments ? [...r.attachments] : [];
+    renderAttachmentsPreview();
     
     const catSelect = document.getElementById('form-category');
     catSelect.innerHTML = categories.map(c => `<option value="${c.id}" ${c.id === r.categoryId ? 'selected' : ''}>${IS.escapeHTML(c.name)}</option>`).join('');
@@ -331,6 +380,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => t.classList.remove('show'), 3000);
   }
 });
+
+
+
 
 
 

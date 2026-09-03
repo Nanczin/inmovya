@@ -70,7 +70,7 @@ window.IS.Shortcuts = {
       const contactName = window.IS.WhatsAppDOM.getCurrentChatName();
       const finalMessage = await window.IS.Variables.parseMessage(reply.message, contactName);
       
-      await window.IS.WhatsAppDOM.insertMessage(finalMessage);
+      await window.IS.WhatsAppDOM.insertSequenceAndAttachments(finalMessage, reply.attachments);
       
       // Update usage
       reply.usageCount = (reply.usageCount || 0) + 1;
@@ -79,3 +79,4 @@ window.IS.Shortcuts = {
     }
   }
 };
+

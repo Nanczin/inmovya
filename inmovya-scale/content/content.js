@@ -23,9 +23,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       const contactName = window.IS.WhatsAppDOM.getCurrentChatName();
       const finalMessage = await window.IS.Variables.parseMessage(request.message, contactName);
-      window.IS.WhatsAppDOM.insertMessage(finalMessage);
+      await window.IS.WhatsAppDOM.insertSequenceAndAttachments(finalMessage, request.attachments);
       sendResponse({ success: true });
     })();
     return true; // Keep the message channel open for the async response
   }
 });
+

@@ -6,7 +6,8 @@
     "description":  "Ferramentas de produtividade e respostas rápidas para WhatsApp Web.",
     "permissions":  [
                         "storage",
-                        "declarativeContent"
+                        "declarativeContent",
+                        "unlimitedStorage"
                     ],
     "host_permissions":  [
                              "https://web.whatsapp.com/*"

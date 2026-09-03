@@ -198,6 +198,11 @@ window.IS.WaScaleUI = {
           <label style="font-size: 12px; color: gray; margin-bottom: 4px; display: block;">Mensagem (use {{nome}} para Saudação)</label>
           <textarea id="is-form-msg" placeholder="Sua mensagem..." style="flex: 1; min-height: 120px; width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid ${borderColor}; background: ${inputBg}; color: ${textColor}; outline: none; resize: none;"></textarea>
         </div>
+        <div style="flex: 1; display: flex; flex-direction: column;">
+          <label style="font-size: 12px; color: gray; margin-bottom: 4px; display: block;">Anexos (Opcional)</label>
+          <input type="file" id="is-form-attachments" multiple style="width: 100%; box-sizing: border-box; padding: 4px; border-radius: 6px; border: 1px solid ${borderColor}; background: ${inputBg}; color: ${textColor}; outline: none;">
+          <div id="is-form-attachments-preview" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;"></div>
+        </div>
 
         <button id="is-btn-save" style="width: 100%; padding: 12px; background: #00a884; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: auto;">Salvar Mensagem</button>
       </div>
@@ -236,6 +241,43 @@ window.IS.WaScaleUI = {
       document.getElementById('is-new-cat-name').value = '';
     });
 
+        let currentAttachments = [];
+
+    const fileInput = document.getElementById('is-form-attachments');
+    const previewContainer = document.getElementById('is-form-attachments-preview');
+
+    function renderAttachmentsPreview() {
+      previewContainer.innerHTML = currentAttachments.map((att, idx) => `
+        <div style="position: relative; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          ${window.IS.escapeHTML(att.name)}
+          <span class="is-btn-remove-att" data-idx="${idx}" style="color: red; cursor: pointer; margin-left: 8px;">x</span>
+        </div>
+      `).join('');
+    }
+
+    fileInput.addEventListener('change', async (e) => {
+      const files = e.target.files;
+      for (let file of files) {
+        if (file.size > 5 * 1024 * 1024) continue; // max 5mb
+        const base64 = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => resolve(reader.result);
+        });
+        currentAttachments.push({ name: file.name, type: file.type, data: base64 });
+      }
+      renderAttachmentsPreview();
+      e.target.value = '';
+    });
+
+    previewContainer.addEventListener('click', (e) => {
+      if (e.target.classList.contains('is-btn-remove-att')) {
+        const idx = e.target.getAttribute('data-idx');
+        currentAttachments.splice(idx, 1);
+        renderAttachmentsPreview();
+      }
+    });
+
     // Impedir que cliques no form fechem o menu
     menu.querySelectorAll('input, select, textarea').forEach(el => {
       el.addEventListener('click', e => e.stopPropagation());
@@ -260,7 +302,7 @@ window.IS.WaScaleUI = {
         message,
         categoryId,
         shortcut: title.startsWith('/') ? title : '',
-        favorite: false,
+        favorite: false, attachments: currentAttachments,
         usageCount: 0
       });
 
@@ -269,3 +311,5 @@ window.IS.WaScaleUI = {
     });
   }
 };
+
+

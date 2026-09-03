@@ -22,6 +22,65 @@ window.IS.WhatsAppDOM = {
     return null;
   },
 
+    async insertSequenceAndAttachments(text, attachments) {
+    const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+    const parts = (text || "").split('===').map(s => s.trim()).filter(s => s.length > 0);
+    
+    const triggerSend = async () => {
+      const sendBtnIcon = document.querySelector('span[data-icon="send"]');
+      if (sendBtnIcon) {
+        const btn = sendBtnIcon.closest('div[role="button"]') || sendBtnIcon.closest('button');
+        if (btn) {
+          btn.click();
+          return;
+        }
+      }
+      
+      const input = this.findMessageInput();
+      if (input) {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+      }
+    };
+
+    // Text sequences
+    for (let i = 0; i < parts.length; i++) {
+      this.insertMessage(parts[i]);
+      if (parts.length > 1 || (attachments && attachments.length > 0)) {
+        await delay(300);
+        await triggerSend();
+        await delay(800);
+      }
+    }
+
+    // Attachments
+    if (attachments && attachments.length > 0) {
+      for (let i = 0; i < attachments.length; i++) {
+        const att = attachments[i];
+        try {
+          const res = await fetch(att.data);
+          const blob = await res.blob();
+          const file = new File([blob], att.name, { type: att.type });
+          
+          const input = this.findMessageInput();
+          if (!input) continue;
+
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(file);
+          
+          input.focus();
+          input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
+          
+          await delay(1500); // Wait for image preview modal
+          await triggerSend();
+          await delay(800);
+        } catch(e) {
+          window.IS.error("Erro ao colar anexo", e);
+        }
+      }
+    }
+  },
+
   getCurrentChatName() {
     const mainArea = document.getElementById('main');
     if (!mainArea) return "";
@@ -93,4 +152,5 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
+
 
