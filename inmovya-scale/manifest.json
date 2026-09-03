@@ -24,7 +24,7 @@
         "utils/storage.js",
         "content/variables.js",
         "content/whatsapp-dom.js",
-        "content/shortcuts.js",
+        "content/shortcuts.js",`n        "content/wascale-ui.js",
         "content/panel.js",
         "content/observer.js",
         "content/content.js"
@@ -33,3 +33,4 @@
     }
   ]
 }
+
