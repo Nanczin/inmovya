@@ -306,3 +306,24 @@ html[dir] body.dark {
 }
 
 
+
+
+/* Settings Tabs */
+.is-set-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 12px;
+}
+.is-set-tab.active {
+  border-bottom: 2px solid var(--inmovya-primary);
+  color: var(--inmovya-primary);
+}
+.is-set-tab:hover {
+  background: rgba(0,0,0,0.05);
+}

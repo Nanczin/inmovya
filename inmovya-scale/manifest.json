@@ -30,6 +30,7 @@
                                            "content/variables.js",
                                            "content/whatsapp-dom.js",
                                            "content/shortcuts.js",
+                                           "content/settings-ui.js",
                                            "content/panel.js",
                                            "content/observer.js",
                                            "content/content.js",
@@ -40,16 +41,5 @@
                         ],
     "background":  {
                        "service_worker":  "background.js"
-                   },
-    "web_accessible_resources":  [
-                                     {
-                                         "matches":  [
-                                                         "https://web.whatsapp.com/*"
-                                                     ],
-                                         "resources":  [
-                                                           "popup/*",
-                                                           "styles/*"
-                                                       ]
-                                     }
-                                 ]
+                   }
 }

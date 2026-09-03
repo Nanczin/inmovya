@@ -77,8 +77,8 @@ window.IS.Panel = {
         <div id="is-replies-list"></div>
         </div> <!-- End main view -->
         
-        <div id="is-settings-view" style="display:none; width:100%; height:calc(100% - 50px);">
-          <iframe id="is-settings-iframe" src="" style="width:100%; height:100%; border:none; background:white;"></iframe>
+                <div id="is-settings-view" style="display:none; width:100%; height:calc(100% - 50px);">
+          <!-- Settings UI injected here -->
         </div>
       </div>
     `;
@@ -175,22 +175,26 @@ window.IS.Panel = {
     const searchInput = document.getElementById('is-search-input');
     const catSelect = document.getElementById('is-category-select');
     const favBtn = document.getElementById('is-fav-filter');
-    const settingsBtnHeader = document.getElementById('is-settings-btn');
+        const settingsBtnHeader = document.getElementById('is-settings-btn');
     const settingsBtnMain = document.getElementById('is-settings-btn-main');
     const mainView = document.getElementById('is-main-view');
     const settingsView = document.getElementById('is-settings-view');
-    const iframe = document.getElementById('is-settings-iframe');
     
     let isSettingsOpen = false;
     
-    const toggleSettings = (e) => {
+    const toggleSettings = async (e) => {
       if(e) e.preventDefault();
       isSettingsOpen = !isSettingsOpen;
       if (isSettingsOpen) {
         if(mainView) mainView.style.display = 'none';
-        if(settingsView) settingsView.style.display = 'block';
-        if (iframe && (!iframe.src || iframe.src === window.location.href)) {
-          iframe.src = chrome.runtime.getURL('popup/popup.html');
+        if(settingsView) {
+          settingsView.style.display = 'block';
+          if (!window.IS.SettingsUI.initialized) {
+            settingsView.innerHTML = window.IS.SettingsUI.htmlTemplate;
+            await window.IS.SettingsUI.init();
+          } else {
+            await window.IS.SettingsUI.refreshData();
+          }
         }
       } else {
         if(mainView) mainView.style.display = 'flex';
@@ -310,6 +314,7 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+
 
 
 
