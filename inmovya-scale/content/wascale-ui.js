@@ -2,7 +2,11 @@
 window.IS = window.IS || {};
 
 window.IS.WaScaleUI = {
-    if (!document.getElementById('is-wascale-hover-style')) {
+  observer: null,
+  
+  init() {
+    window.IS.log("Iniciando interface nativa estilo WaScale...");
+        if (!document.getElementById('is-wascale-hover-style')) {
       const style = document.createElement('style');
       style.id = 'is-wascale-hover-style';
       style.textContent = `
@@ -11,10 +15,6 @@ window.IS.WaScaleUI = {
       `;
       document.head.appendChild(style);
     }
-  observer: null,
-  
-  init() {
-    window.IS.log("Iniciando interface nativa estilo WaScale...");
     this.startObserver();
   },
   
@@ -320,6 +320,7 @@ window.IS.WaScaleUI = {
     });
   }
 };
+
 
 
 

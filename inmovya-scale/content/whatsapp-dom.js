@@ -42,15 +42,20 @@ window.IS.WhatsAppDOM = {
     const parts = (text || "").split('===').map(s => s.trim()).filter(s => s.length > 0);
     
     const triggerSend = async () => {
-      const sendBtnIcon = document.querySelector('span[data-icon="send"]');
-      if (sendBtnIcon) {
-        const btn = sendBtnIcon.closest('div[role="button"]') || sendBtnIcon.closest('button');
-        if (btn) {
-          btn.click();
-          return;
+      // Tenta achar o botão de enviar por até 1 segundo
+      for (let i = 0; i < 10; i++) {
+        const sendBtnIcon = document.querySelector('span[data-icon="send"]');
+        if (sendBtnIcon) {
+          const btn = sendBtnIcon.closest('div[role="button"]') || sendBtnIcon.closest('button');
+          if (btn) {
+            btn.click();
+            return;
+          }
         }
+        await delay(100);
       }
       
+      // Fallback
       const input = this.findMessageInput();
       if (input) {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
@@ -60,11 +65,9 @@ window.IS.WhatsAppDOM = {
     // Text sequences
     for (let i = 0; i < parts.length; i++) {
       this.insertMessage(parts[i]);
-      if (parts.length > 1 || (attachments && attachments.length > 0)) {
-        await delay(300);
-        await triggerSend();
-        await delay(800);
-      }
+      await delay(300);
+      await triggerSend();
+      await delay(800);
     }
 
     // Attachments
@@ -165,6 +168,8 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
+
+
 
 
 
