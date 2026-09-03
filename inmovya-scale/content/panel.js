@@ -1,4 +1,4 @@
-﻿// content/panel.js
+// content/panel.js
 window.IS = window.IS || {};
 
 window.IS.Panel = {
@@ -10,6 +10,7 @@ window.IS.Panel = {
   searchTerm: "",
   activeCategory: "all",
   showFavoritesOnly: false,
+  isSettingsOpen: false,
 
   async init() {
     this.settings = await window.IS.Storage.getSettings();
@@ -18,7 +19,6 @@ window.IS.Panel = {
     this.isOpen = this.settings.autoOpenPanel;
 
     this.render();
-    this.setupListeners();
     this.setupDragResizer();
   },
 
@@ -29,7 +29,7 @@ window.IS.Panel = {
     this.updateList();
   },
 
-    render() {
+  render() {
     if (document.getElementById('inmovya-scale-root')) {
       this.container = document.getElementById('inmovya-scale-root');
     } else {
@@ -42,8 +42,8 @@ window.IS.Panel = {
       <div id="is-toggle-button" class="${this.isOpen ? 'is-hidden' : ''}" title="Abrir Inmovya Scale">
         <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
       </div>
-      
-      <div id="is-sidebar" class="${this.isOpen ? 'is-open' : ''}" style="width: ${this.settings.panelWidth}px">
+
+      <div id="is-sidebar" class="${this.isOpen ? 'is-open' : ''}" style="width: ${this.settings.panelWidth || 340}px">
         <div id="is-resizer"></div>
         <div class="is-header">
           <div class="is-brand">
@@ -54,37 +54,35 @@ window.IS.Panel = {
             <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
-        
-        <div id="is-main-view" style="display:flex; flex-direction:column; height:calc(100% - 50px);">
+
+        <div id="is-main-view" style="display:flex; flex-direction:column; height:calc(100% - 50px); overflow:hidden;">
           <div class="is-filters">
             <div class="is-search-wrapper" style="display:flex; gap:5px;">
               <input type="text" id="is-search-input" placeholder="Pesquisar respostas..." style="flex:1;" />
               <button id="is-btn-new" title="Nova Resposta" style="background:var(--inmovya-primary); color:white; border:none; border-radius:4px; padding:0 10px; cursor:pointer;">+ Nova</button>
             </div>
-            <div class="is-filter-actions" style="margin-top: 5px; display: flex; gap: 5px; width: 100%;">
-              <select id="is-category-select" style="flex: 1;">
+            <div class="is-filter-actions" style="margin-top:5px; display:flex; gap:5px; width:100%;">
+              <select id="is-category-select" style="flex:1;">
                 <option value="all">Todas as categorias</option>
                 ${this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('')}
               </select>
-              <button id="is-settings-btn-main" title="Gerenciar" style="background: var(--inmovya-primary); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; flex-shrink: 0;">
+              <button id="is-settings-btn-main" title="Gerenciar" style="background:var(--inmovya-primary); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold; white-space:nowrap;">
                 ⚙️ Gerenciar
               </button>
-              <button id="is-fav-filter" class="${this.showFavoritesOnly ? 'active' : ''}" title="Mostrar apenas favoritos">
-                ⭐
-              </button>
+              <button id="is-fav-filter" class="${this.showFavoritesOnly ? 'active' : ''}" title="Mostrar apenas favoritos">⭐</button>
             </div>
           </div>
-          
           <div id="is-replies-list" style="flex:1; overflow-y:auto;"></div>
         </div>
-        
-        <div id="is-settings-view" style="display:none; width:100%; height:calc(100% - 50px);">
+
+        <div id="is-settings-view" style="display:none; width:100%; height:calc(100% - 50px); overflow:auto;">
           <!-- Settings UI injected here -->
         </div>
       </div>
     `;
 
     this.updateList();
+    this.setupListeners();
   },
 
   updateList() {
@@ -93,17 +91,12 @@ window.IS.Panel = {
 
     let filtered = this.replies;
 
-    // Filter by favorites
     if (this.showFavoritesOnly) {
       filtered = filtered.filter(r => r.favorite);
     }
-
-    // Filter by category
     if (this.activeCategory !== 'all') {
       filtered = filtered.filter(r => r.categoryId === this.activeCategory);
     }
-
-    // Filter by search term
     if (this.searchTerm) {
       const term = window.IS.removeAccents(this.searchTerm.toLowerCase());
       filtered = filtered.filter(r => {
@@ -114,7 +107,6 @@ window.IS.Panel = {
       });
     }
 
-    // Sorting (Favorites first, then order or title)
     filtered.sort((a, b) => {
       if (this.settings.favoritesFirst) {
         if (a.favorite && !b.favorite) return -1;
@@ -126,7 +118,7 @@ window.IS.Panel = {
     if (filtered.length === 0) {
       listEl.innerHTML = `
         <div class="is-empty-state">
-          <p>${this.replies.length === 0 ? "Você ainda não possui respostas rápidas." : "Nenhuma resposta encontrada."}</p>
+          <p>${this.replies.length === 0 ? "Você ainda não possui respostas rápidas.<br><br>Clique em <strong>+ Nova</strong> para criar." : "Nenhuma resposta encontrada."}</p>
         </div>
       `;
       return;
@@ -134,19 +126,20 @@ window.IS.Panel = {
 
     listEl.innerHTML = filtered.map(reply => {
       const cat = this.categories.find(c => c.id === reply.categoryId) || window.IS.DEFAULT_CATEGORY;
+      const preview = window.IS.escapeHTML(reply.message || "").replace(/\n\n===\n\n/g, ' <strong>⤶</strong> ').substring(0, 100);
       return `
         <div class="is-reply-item" data-id="${reply.id}">
           <div class="is-reply-header">
             <span class="is-reply-title">${reply.favorite ? '⭐ ' : ''}${window.IS.escapeHTML(reply.title)}</span>
-            ${reply.shortcut ? `<span class="is-reply-shortcut">${window.IS.escapeHTML(reply.shortcut)}</span>` : ''}
+            ${reply.shortcut ? `<span class="is-reply-shortcut">/${window.IS.escapeHTML(reply.shortcut)}</span>` : ''}
           </div>
           <div class="is-reply-category">${window.IS.escapeHTML(cat.name)}</div>
-          <div class="is-reply-preview">${window.IS.escapeHTML(reply.message).substring(0, 80)}...</div>
+          <div class="is-reply-preview">${preview}${(reply.message || "").length > 100 ? '...' : ''}</div>
+          ${(reply.attachments && reply.attachments.length > 0) ? `<div style="font-size:10px; color:var(--inmovya-primary); margin-top:3px;">📎 ${reply.attachments.length} anexo(s)</div>` : ''}
         </div>
       `;
     }).join('');
 
-    // Attach click events
     listEl.querySelectorAll('.is-reply-item').forEach(item => {
       item.addEventListener('click', () => this.handleReplyClick(item.getAttribute('data-id')));
     });
@@ -160,72 +153,27 @@ window.IS.Panel = {
     const finalMessage = await window.IS.Variables.parseMessage(reply.message, contactName);
 
     const success = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(finalMessage, reply.attachments);
-    
+
     if (success) {
       this.showToast("Mensagem inserida.");
-      // Increment usage count
       reply.usageCount = (reply.usageCount || 0) + 1;
       reply.lastUsedAt = new Date().toISOString();
       await window.IS.Storage.saveReplies(this.replies);
     }
   },
 
-    setupListeners() {
+  setupListeners() {
     const toggleBtn = document.getElementById('is-toggle-button');
     const closeBtn = document.getElementById('is-close-btn');
     const searchInput = document.getElementById('is-search-input');
     const catSelect = document.getElementById('is-category-select');
     const favBtn = document.getElementById('is-fav-filter');
-        const settingsBtnHeader = document.getElementById('is-settings-btn');
     const settingsBtnMain = document.getElementById('is-settings-btn-main');
-    const mainView = document.getElementById('is-main-view');
-    const settingsView = document.getElementById('is-settings-view');
-    
-    let isSettingsOpen = false;
-    
-    const toggleSettings = async (e) => {
-      if(e) e.preventDefault();
-      isSettingsOpen = !isSettingsOpen;
-      if (isSettingsOpen) {
-        if(mainView) mainView.style.display = 'none';
-        if(settingsView) {
-          settingsView.style.display = 'block';
-          if (!window.IS.SettingsUI.initialized) {
-            settingsView.innerHTML = window.IS.SettingsUI.htmlTemplate;
-            await window.IS.SettingsUI.init();
-          } else {
-            await window.IS.SettingsUI.refreshData();
-          }
-        }
-      } else {
-        if(mainView) mainView.style.display = 'flex';
-        if(settingsView) settingsView.style.display = 'none';
-        this.reloadData(); 
-      }
-    };
-
-    if (settingsBtnHeader) settingsBtnHeader.addEventListener('click', toggleSettings);
-    if (settingsBtnMain) settingsBtnMain.addEventListener('click', toggleSettings);
-    
     const btnNew = document.getElementById('is-btn-new');
-    if (btnNew) btnNew.addEventListener('click', async (e) => {
-      // First open settings if not open
-      if (!isSettingsOpen) await toggleSettings(e);
-      // Ensure SettingsUI is ready
-      if (window.IS.SettingsUI && window.IS.SettingsUI.initialized) {
-        // Switch to Respostas tab
-        document.querySelectorAll('.is-set-tab').forEach(b => b.classList.remove('active'));
-        document.querySelector('.is-set-tab[data-tab="is-tab-replies"]').classList.add('active');
-        document.querySelectorAll('.is-tab-content').forEach(c => c.style.display = 'none');
-        document.getElementById('is-tab-replies').style.display = 'block';
-        // Open form
-        window.IS.SettingsUI.openReplyForm(null);
-      }
-    });
 
     if (toggleBtn) toggleBtn.addEventListener('click', () => this.togglePanel(true));
     if (closeBtn) closeBtn.addEventListener('click', () => this.togglePanel(false));
-    
+
     if (searchInput) {
       searchInput.addEventListener('input', window.IS.debounce((e) => {
         this.searchTerm = e.target.value;
@@ -247,8 +195,22 @@ window.IS.Panel = {
         this.updateList();
       });
     }
-    
-    // Listen for storage changes to sync with popup
+
+    if (settingsBtnMain) {
+      settingsBtnMain.addEventListener('click', () => this.openSettings());
+    }
+
+    if (btnNew) {
+      btnNew.addEventListener('click', async () => {
+        await this.openSettings();
+        // After settings UI is rendered, open the new reply form
+        if (window.IS.SettingsUI && window.IS.SettingsUI.initialized) {
+          window.IS.SettingsUI.openReplyForm(null);
+        }
+      });
+    }
+
+    // Sync storage changes from settings panel
     chrome.storage.onChanged.addListener((changes, namespace) => {
       if (namespace === 'local') {
         let changed = false;
@@ -258,11 +220,12 @@ window.IS.Panel = {
         }
         if (changes.categories) {
           this.categories = changes.categories.newValue || [];
-          const catSelect = document.getElementById('is-category-select');
-          if (catSelect) {
-            const oldVal = catSelect.value;
-            catSelect.innerHTML = `<option value="all">Todas as categorias</option>` + this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('');
-            catSelect.value = oldVal;
+          const sel = document.getElementById('is-category-select');
+          if (sel) {
+            const oldVal = sel.value;
+            sel.innerHTML = `<option value="all">Todas as categorias</option>` +
+              this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('');
+            sel.value = oldVal;
           }
           changed = true;
         }
@@ -275,14 +238,42 @@ window.IS.Panel = {
     });
   },
 
-    toggle() {
+  async openSettings() {
+    const mainView = document.getElementById('is-main-view');
+    const settingsView = document.getElementById('is-settings-view');
+    if (!mainView || !settingsView) return;
+
+    this.isSettingsOpen = true;
+    mainView.style.display = 'none';
+    settingsView.style.display = 'block';
+
+    if (!window.IS.SettingsUI.initialized) {
+      settingsView.innerHTML = window.IS.SettingsUI.htmlTemplate;
+      await window.IS.SettingsUI.init();
+    } else {
+      await window.IS.SettingsUI.refreshData();
+    }
+  },
+
+  closeSettings() {
+    const mainView = document.getElementById('is-main-view');
+    const settingsView = document.getElementById('is-settings-view');
+    if (mainView) mainView.style.display = 'flex';
+    if (settingsView) settingsView.style.display = 'none';
+    this.isSettingsOpen = false;
+    this.reloadData();
+  },
+
+  toggle() {
     this.togglePanel(!this.isOpen);
   },
+
   togglePanel(open) {
     this.isOpen = open;
     const sidebar = document.getElementById('is-sidebar');
     const toggleBtn = document.getElementById('is-toggle-button');
-    
+    if (!sidebar || !toggleBtn) return;
+
     if (open) {
       sidebar.classList.add('is-open');
       toggleBtn.classList.add('is-hidden');
@@ -291,29 +282,28 @@ window.IS.Panel = {
       toggleBtn.classList.remove('is-hidden');
     }
   },
-  
+
   setupDragResizer() {
     const resizer = document.getElementById('is-resizer');
     const sidebar = document.getElementById('is-sidebar');
     if (!resizer || !sidebar) return;
-    
+
     let isResizing = false;
-    
+
     resizer.addEventListener('mousedown', (e) => {
       isResizing = true;
       document.body.style.cursor = 'ew-resize';
       e.preventDefault();
     });
-    
+
     document.addEventListener('mousemove', (e) => {
       if (!isResizing) return;
-      // Calculate width from the right edge
       let newWidth = window.innerWidth - e.clientX;
       if (newWidth < 280) newWidth = 280;
       if (newWidth > 600) newWidth = 600;
       sidebar.style.width = newWidth + 'px';
     });
-    
+
     document.addEventListener('mouseup', () => {
       if (isResizing) {
         isResizing = false;
@@ -323,33 +313,16 @@ window.IS.Panel = {
       }
     });
   },
-  
+
   showToast(message) {
     let toast = document.createElement('div');
     toast.className = 'is-toast';
     toast.textContent = message;
-    this.container.appendChild(toast);
-    
+    if (this.container) this.container.appendChild(toast);
+
     setTimeout(() => {
       toast.classList.add('fade-out');
       setTimeout(() => toast.remove(), 300);
     }, 2500);
   }
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

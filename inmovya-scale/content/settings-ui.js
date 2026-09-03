@@ -1,4 +1,4 @@
-﻿window.IS = window.IS || {};
+window.IS = window.IS || {};
 
 window.IS.SettingsUI = {
   initialized: false,
@@ -174,9 +174,7 @@ window.IS.SettingsUI = {
 
     // Close settings view
     document.getElementById('is-settings-close-btn').addEventListener('click', () => {
-      document.getElementById('is-native-settings-container').style.display = 'none';
-      document.getElementById('is-main-view').style.display = 'flex';
-      window.IS.Panel.reloadData();
+      window.IS.Panel.closeSettings();
     });
 
     // --- REPLIES ---
