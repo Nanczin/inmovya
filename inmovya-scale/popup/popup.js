@@ -161,7 +161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('modal-title').textContent = 'Nova Resposta';
     document.getElementById('form-title').value = '';
     document.getElementById('form-shortcut').value = '';
-    document.getElementById('form-message').value = '';
+    renderMessageBlocks(['']);
     document.getElementById('form-favorite').checked = false;
     currentAttachments = [];
     renderAttachmentsPreview();
@@ -179,7 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-save-reply').addEventListener('click', async () => {
     const title = document.getElementById('form-title').value.trim();
     let shortcut = document.getElementById('form-shortcut').value.trim();
-    const message = document.getElementById('form-message').value.trim();
+    const message = getMessageBlocksData();
     const categoryId = document.getElementById('form-category').value;
         const favorite = document.getElementById('form-favorite').checked;
     const attachmentsToSave = [...currentAttachments];
@@ -230,7 +230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('modal-title').textContent = 'Editar Resposta';
     document.getElementById('form-title').value = r.title;
     document.getElementById('form-shortcut').value = r.shortcut || '';
-    document.getElementById('form-message').value = r.message;
+    renderMessageBlocks((r.message || "").split('===').map(s => s.trim()));
         document.getElementById('form-favorite').checked = !!r.favorite;
     currentAttachments = r.attachments ? [...r.attachments] : [];
     renderAttachmentsPreview();
@@ -442,3 +442,40 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 
+
+// --- MESSAGE BLOCKS LOGIC ---
+function renderMessageBlocks(messagesArray) {
+  const container = document.getElementById('form-message-blocks');
+  if (!messagesArray || messagesArray.length === 0) messagesArray = [""];
+  
+  container.innerHTML = messagesArray.map((msg, idx) => `
+    <div class="message-block" style="position:relative; display:flex; align-items:flex-start; gap:5px;">
+      <div style="background:#f0f2f5; color:#666; padding:5px 8px; border-radius:4px; font-size:10px; font-weight:bold;">${idx + 1}</div>
+      <textarea class="form-message-input" rows="${msg.length > 50 ? 4 : 2}" style="flex:1; width:100%; box-sizing:border-box; padding:8px; border:1px solid #ddd; border-radius:4px; font-family:inherit; resize:vertical;">${IS.escapeHTML(msg)}</textarea>
+      ${messagesArray.length > 1 ? `<button class="btn-remove-block" data-idx="${idx}" style="background:none; border:none; color:red; cursor:pointer; font-size:14px; padding:0 5px;">&times;</button>` : ''}
+    </div>
+  `).join('');
+}
+
+function getMessageBlocksData() {
+  const inputs = document.querySelectorAll('.form-message-input');
+  const texts = Array.from(inputs).map(input => input.value.trim()).filter(val => val.length > 0);
+  return texts.join('\n\n===\n\n');
+}
+
+document.getElementById('btn-add-message-block').addEventListener('click', (e) => {
+  e.preventDefault();
+  const currentTexts = Array.from(document.querySelectorAll('.form-message-input')).map(input => input.value);
+  currentTexts.push("");
+  renderMessageBlocks(currentTexts);
+});
+
+document.getElementById('form-message-blocks').addEventListener('click', (e) => {
+  if (e.target.classList.contains('btn-remove-block')) {
+    e.preventDefault();
+    const idx = parseInt(e.target.getAttribute('data-idx'));
+    const currentTexts = Array.from(document.querySelectorAll('.form-message-input')).map(input => input.value);
+    currentTexts.splice(idx, 1);
+    renderMessageBlocks(currentTexts);
+  }
+});

@@ -114,9 +114,16 @@
         <label for="form-favorite">Marcar como favorito</label>
       </div>
       
-      <div class="form-group">
-        <label>Mensagem</label>
-        <div class="help-text">Vari&aacute;veis: {{nome}}, {{saudacao}}, etc.<br>Dica: Use <b>===</b> em uma nova linha para criar uma sequ&ecirc;ncia.</div>
+            <div class="form-group">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+          <label style="margin:0;">Mensagens (Sequência)</label>
+          <button id="btn-add-message-block" style="background:transparent; border:none; color:#00a884; cursor:pointer; font-size:12px; font-weight:bold;">+ Adicionar Mensagem</button>
+        </div>
+        <div id="form-message-blocks" style="display:flex; flex-direction:column; gap:10px;">
+          <!-- Textareas will be injected here -->
+        </div>
+        <div style="font-size:11px; color:#888; margin-top:5px;">Variáveis: {{nome}}, {{saudacao}}, {{meu_nome}}, {{data}}, {{hora}}</div>
+      </div>
         <textarea id="form-message" rows="5"></textarea>
       </div>
       <div class="form-group">
@@ -151,6 +158,7 @@
   <script src="popup.js"></script>
 </body>
 </html>
+
 
 
 
