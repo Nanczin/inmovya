@@ -117,6 +117,17 @@
     </div>
   </div>
 
+    <!-- MODAL DE CONFIRMACAO -->
+  <div id="modal-confirm" class="modal">
+    <div class="modal-content" style="max-width: 300px; text-align: center;">
+      <h3 id="modal-confirm-title" style="margin-top:0;">Confirma&ccedil;&atilde;o</h3>
+      <p id="modal-confirm-text" style="color: var(--text-secondary); margin-bottom: 20px;">Tem certeza?</p>
+      <div class="modal-actions" style="justify-content: center; gap: 10px;">
+        <button id="btn-confirm-cancel" class="btn btn-outline">Cancelar</button>
+        <button id="btn-confirm-ok" class="btn btn-primary" style="background: #dc3545; border-color: #dc3545;">Confirmar</button>
+      </div>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
 
   <script src="../utils/helpers.js"></script>
@@ -125,3 +136,4 @@
   <script src="popup.js"></script>
 </body>
 </html>
+

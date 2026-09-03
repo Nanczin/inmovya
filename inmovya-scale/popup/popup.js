@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function deleteReply(id) {
-    if (confirm("Deseja realmente excluir esta resposta?")) {
+    if (await showConfirm("Excluir Resposta", "Deseja realmente excluir esta resposta?")) {
       replies = replies.filter(r => r.id !== id);
       await IS.Storage.saveReplies(replies);
       renderReplies(document.getElementById('search-replies').value);
@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const file = e.target.files[0];
     if (!file) return;
     
-    if (confirm("Isto irá substituir seus dados atuais. Deseja continuar?")) {
+    if (await showConfirm("Importar Backup", "Isto irá substituir seus dados atuais. Deseja continuar?")) {
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
@@ -300,6 +300,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.target.value = '';
   });
 
+    function showConfirm(title, text) {
+    return new Promise((resolve) => {
+      document.getElementById('modal-confirm-title').textContent = title;
+      document.getElementById('modal-confirm-text').textContent = text;
+      const modal = document.getElementById('modal-confirm');
+      modal.classList.add('open');
+      
+      const btnCancel = document.getElementById('btn-confirm-cancel');
+      const btnOk = document.getElementById('btn-confirm-ok');
+      
+      const cleanup = () => {
+        modal.classList.remove('open');
+        btnCancel.removeEventListener('click', onCancel);
+        btnOk.removeEventListener('click', onOk);
+      };
+      
+      const onCancel = () => { cleanup(); resolve(false); };
+      const onOk = () => { cleanup(); resolve(true); };
+      
+      btnCancel.addEventListener('click', onCancel);
+      btnOk.addEventListener('click', onOk);
+    });
+  }
+
   function showToast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -307,4 +331,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => t.classList.remove('show'), 3000);
   }
 });
+
 
