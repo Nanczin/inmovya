@@ -151,11 +151,18 @@
   <div id="toast" class="toast"></div>
 
   <script src="../utils/helpers.js"></script>
+    <script>
+    if (window.self === window.top) {
+      document.body.style.width = '500px';
+      document.body.style.height = '600px';
+    }
+  </script>
   <script src="../utils/constants.js"></script>
   <script src="../utils/storage.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
+
 
 
 

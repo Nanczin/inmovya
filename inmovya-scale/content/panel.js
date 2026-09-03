@@ -71,6 +71,11 @@ window.IS.Panel = {
         </div>
         
         <div id="is-replies-list"></div>
+        </div> <!-- End main view -->
+        
+        <div id="is-settings-view" style="display:none; width:100%; height:calc(100% - 50px);">
+          <iframe id="is-settings-iframe" src="" style="width:100%; height:100%; border:none; background:white;"></iframe>
+        </div>
       </div>
     `;
 
@@ -272,6 +277,8 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+
+
 
 
 

@@ -41,5 +41,16 @@
                         ],
     "background":  {
                        "service_worker":  "background.js"
-                   }
+                   },
+    "web_accessible_resources":  [
+                                     {
+                                         "matches":  [
+                                                         "https://web.whatsapp.com/*"
+                                                     ],
+                                         "resources":  [
+                                                           "popup/*",
+                                                           "styles/*"
+                                                       ]
+                                     }
+                                 ]
 }
