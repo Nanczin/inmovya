@@ -2,6 +2,15 @@
 window.IS = window.IS || {};
 
 window.IS.WaScaleUI = {
+    if (!document.getElementById('is-wascale-hover-style')) {
+      const style = document.createElement('style');
+      style.id = 'is-wascale-hover-style';
+      style.textContent = `
+        .is-wascale-item-hover { transition: background 0.2s; }
+        .is-wascale-item-hover:hover { background: var(--inmovya-hover, rgba(0,0,0,0.05)) !important; }
+      `;
+      document.head.appendChild(style);
+    }
   observer: null,
   
   init() {
@@ -121,7 +130,7 @@ window.IS.WaScaleUI = {
     } else {
       replies.forEach(r => {
         html += `
-          <div class="is-wascale-item" data-id="${r.id}" style="padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 4px; transition: background 0.2s;" onmouseover="this.style.background='${hoverColor}'" onmouseout="this.style.background='transparent'">
+          <div class="is-wascale-item is-wascale-item-hover" data-id="${r.id}" style="padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 4px; transition: background 0.2s;" onmouseover="this.style.background='${hoverColor}'" onmouseout="this.style.background='transparent'">
             <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px; color: ${textColor};">${r.favorite ? '⭐ ' : ''}${window.IS.escapeHTML(r.title)}</div>
             <div style="font-size: 13px; color: gray; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${window.IS.escapeHTML(r.message)}</div>
           </div>
@@ -311,6 +320,7 @@ window.IS.WaScaleUI = {
     });
   }
 };
+
 
 
 
