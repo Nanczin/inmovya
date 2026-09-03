@@ -19,6 +19,11 @@ if (document.readyState === 'loading') {
 
 // Lidar com mensagens do popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'toggle_panel') {
+    if (window.IS.Panel) window.IS.Panel.toggle();
+    sendResponse({ success: true });
+    return true;
+  }
   if (request.action === 'insert_message') {
     (async () => {
       const contactName = window.IS.WhatsAppDOM.getCurrentChatName();
@@ -37,4 +42,5 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
 

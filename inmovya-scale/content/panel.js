@@ -219,6 +219,9 @@ window.IS.Panel = {
     });
   },
 
+    toggle() {
+    this.togglePanel(!this.isOpen);
+  },
   togglePanel(open) {
     this.isOpen = open;
     const sidebar = document.getElementById('is-sidebar');
@@ -277,6 +280,7 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+
 
 
 
