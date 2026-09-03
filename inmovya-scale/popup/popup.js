@@ -1,15 +1,13 @@
-﻿// popup/popup.js
+﻿// popup.js
 document.addEventListener('DOMContentLoaded', async () => {
-  const IS = window.IS;
   let replies = [];
   let categories = [];
   let settings = {};
-  
   let currentEditId = null;
 
-  // Init
+  // Initialize
+  await IS.Storage.initDefaults();
   await loadData();
-  renderTabs();
   renderReplies();
   renderCategories();
   renderSettings();
@@ -20,51 +18,69 @@ document.addEventListener('DOMContentLoaded', async () => {
     settings = await IS.Storage.getSettings();
   }
 
-  // --- TABS ---
-  function renderTabs() {
-    const tabs = document.querySelectorAll('.tab-btn');
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        
-        tab.classList.add('active');
-        document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
-      });
+  // --- TABS LOGIC ---
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBtns.forEach(b => b.classList.remove('active'));
+      tabContents.forEach(c => c.classList.remove('active'));
+      
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.getAttribute('data-tab')).classList.add('active');
     });
-  }
+  });
 
   // --- REPLIES ---
-  function renderReplies(filter = "") {
+  function renderReplies(filter = '') {
     const list = document.getElementById('replies-list');
+    
     let filtered = replies;
     if (filter) {
-      const term = IS.removeAccents(filter.toLowerCase());
-      filtered = filtered.filter(r => 
-        IS.removeAccents(r.title.toLowerCase()).includes(term) || 
-        (r.shortcut && IS.removeAccents(r.shortcut.toLowerCase()).includes(term))
+      const f = filter.toLowerCase();
+      filtered = replies.filter(r => 
+        r.title.toLowerCase().includes(f) || 
+        r.message.toLowerCase().includes(f) ||
+        (r.shortcut && r.shortcut.toLowerCase().includes(f))
       );
     }
-
-    if (filtered.length === 0) {
-      list.innerHTML = `<p style="text-align:center;color:var(--text-sec);font-size:13px;margin-top:20px;">Nenhuma resposta encontrada.</p>`;
-      return;
+    
+    if (settings.favoritesFirst) {
+      filtered.sort((a, b) => (b.favorite === a.favorite) ? 0 : b.favorite ? 1 : -1);
     }
 
     list.innerHTML = filtered.map(r => `
       <div class="list-item">
         <div class="item-info">
           <h4>${r.favorite ? '⭐ ' : ''}${IS.escapeHTML(r.title)}</h4>
-          <p>${r.shortcut ? IS.escapeHTML(r.shortcut) : 'Sem atalho'} • Usada: ${r.usageCount || 0}x</p>
+          <p>${IS.escapeHTML(r.message)}</p>
+          ${r.shortcut ? `<span class="shortcut-badge">${IS.escapeHTML(r.shortcut)}</span>` : ''}
         </div>
         <div class="item-actions">
-          <button onclick="editReply('${r.id}')" title="Editar">✏️</button>
-          <button onclick="duplicateReply('${r.id}')" title="Duplicar">📄</button>
-          <button class="delete" onclick="deleteReply('${r.id}')" title="Excluir">🗑️</button>
+          <button class="btn-action btn-edit" data-id="${r.id}" title="Editar">✏️</button>
+          <button class="btn-action btn-duplicate" data-id="${r.id}" title="Duplicar">📑</button>
+          <button class="btn-action delete btn-delete" data-id="${r.id}" title="Excluir">🗑️</button>
         </div>
       </div>
     `).join('');
   }
+
+  // Event Delegation for Replies List
+  document.getElementById('replies-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-action');
+    if (!btn) return;
+    
+    const id = btn.getAttribute('data-id');
+    
+    if (btn.classList.contains('btn-edit')) {
+      editReply(id);
+    } else if (btn.classList.contains('btn-delete')) {
+      deleteReply(id);
+    } else if (btn.classList.contains('btn-duplicate')) {
+      duplicateReply(id);
+    }
+  });
 
   document.getElementById('search-replies').addEventListener('input', (e) => {
     renderReplies(e.target.value);
@@ -78,7 +94,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('form-message').value = '';
     document.getElementById('form-favorite').checked = false;
     
-    // Load categories into select
     const catSelect = document.getElementById('form-category');
     catSelect.innerHTML = categories.map(c => `<option value="${c.id}">${IS.escapeHTML(c.name)}</option>`).join('');
     
@@ -105,7 +120,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       shortcut = '/' + shortcut;
     }
 
-    // Duplicate shortcut check
     if (shortcut) {
       const existing = replies.find(r => r.shortcut && r.shortcut.toLowerCase() === shortcut.toLowerCase() && r.id !== currentEditId);
       if (existing) {
@@ -136,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderReplies(document.getElementById('search-replies').value);
   });
 
-  window.editReply = (id) => {
+  function editReply(id) {
     const r = replies.find(x => x.id === id);
     if (!r) return;
     currentEditId = id;
@@ -150,18 +164,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     catSelect.innerHTML = categories.map(c => `<option value="${c.id}" ${c.id === r.categoryId ? 'selected' : ''}>${IS.escapeHTML(c.name)}</option>`).join('');
     
     document.getElementById('modal-reply').classList.add('open');
-  };
+  }
 
-  window.deleteReply = async (id) => {
+  async function deleteReply(id) {
     if (confirm("Deseja realmente excluir esta resposta?")) {
       replies = replies.filter(r => r.id !== id);
       await IS.Storage.saveReplies(replies);
       renderReplies(document.getElementById('search-replies').value);
       showToast("Resposta excluída.");
     }
-  };
+  }
   
-  window.duplicateReply = async (id) => {
+  async function duplicateReply(id) {
     const r = replies.find(x => x.id === id);
     if (!r) return;
     const newReply = { ...r, id: IS.generateUUID(), title: r.title + " (Cópia)", shortcut: "", createdAt: new Date().toISOString() };
@@ -178,11 +192,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="list-item">
         <div class="item-info"><h4>${IS.escapeHTML(c.name)}</h4></div>
         <div class="item-actions">
-          <button class="delete" onclick="deleteCategory('${c.id}')" title="Excluir">🗑️</button>
+          <button class="btn-action delete btn-delete-cat" data-id="${c.id}" title="Excluir">🗑️</button>
         </div>
       </div>
     `).join('');
   }
+
+  // Event Delegation for Categories
+  document.getElementById('categories-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-delete-cat');
+    if (!btn) return;
+    const id = btn.getAttribute('data-id');
+    deleteCategory(id);
+  });
 
   document.getElementById('btn-add-category').addEventListener('click', async () => {
     const input = document.getElementById('new-category-name');
@@ -196,7 +218,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast("Categoria adicionada.");
   });
 
-  window.deleteCategory = async (id) => {
+  async function deleteCategory(id) {
     if (confirm("Deseja excluir esta categoria? As respostas serão movidas para 'Sem categoria'.")) {
       categories = categories.filter(c => c.id !== id);
       replies = replies.map(r => r.categoryId === id ? { ...r, categoryId: 'default-category' } : r);
@@ -206,7 +228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderReplies();
       showToast("Categoria excluída.");
     }
-  };
+  }
 
   // --- SETTINGS & BACKUP ---
   function renderSettings() {
