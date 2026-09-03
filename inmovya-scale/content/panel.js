@@ -29,7 +29,7 @@ window.IS.Panel = {
     this.updateList();
   },
 
-  render() {
+    render() {
     if (document.getElementById('inmovya-scale-root')) {
       this.container = document.getElementById('inmovya-scale-root');
     } else {
@@ -55,29 +55,30 @@ window.IS.Panel = {
           </button>
         </div>
         
-                <div class="is-filters">
-          <div class="is-search-wrapper" style="display:flex; gap:5px;">
-            <input type="text" id="is-search-input" placeholder="Pesquisar respostas..." style="flex:1;" />
-            <button id="is-btn-new" title="Nova Resposta" style="background:var(--inmovya-primary); color:white; border:none; border-radius:4px; padding:0 10px; cursor:pointer;">+ Nova</button>
+        <div id="is-main-view" style="display:flex; flex-direction:column; height:calc(100% - 50px);">
+          <div class="is-filters">
+            <div class="is-search-wrapper" style="display:flex; gap:5px;">
+              <input type="text" id="is-search-input" placeholder="Pesquisar respostas..." style="flex:1;" />
+              <button id="is-btn-new" title="Nova Resposta" style="background:var(--inmovya-primary); color:white; border:none; border-radius:4px; padding:0 10px; cursor:pointer;">+ Nova</button>
+            </div>
+            <div class="is-filter-actions" style="margin-top: 5px; display: flex; gap: 5px; width: 100%;">
+              <select id="is-category-select" style="flex: 1;">
+                <option value="all">Todas as categorias</option>
+                ${this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('')}
+              </select>
+              <button id="is-settings-btn-main" title="Gerenciar" style="background: var(--inmovya-primary); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; flex-shrink: 0;">
+                ⚙️ Gerenciar
+              </button>
+              <button id="is-fav-filter" class="${this.showFavoritesOnly ? 'active' : ''}" title="Mostrar apenas favoritos">
+                ⭐
+              </button>
+            </div>
           </div>
-                    <div class="is-filter-actions" style="margin-top: 5px; display: flex; gap: 5px; width: 100%;">
-            <select id="is-category-select" style="flex: 1;">
-              <option value="all">Todas as categorias</option>
-              ${this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('')}
-            </select>
-            <button id="is-settings-btn-main" title="Configurações (Adicionar respostas)" style="background: var(--inmovya-primary); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; flex-shrink: 0;">
-              ⚙️ Gerenciar
-            </button>
-            <button id="is-fav-filter" class="${this.showFavoritesOnly ? 'active' : ''}" title="Mostrar apenas favoritos">
-              ⭐
-            </button>
-          </div>
+          
+          <div id="is-replies-list" style="flex:1; overflow-y:auto;"></div>
         </div>
         
-        <div id="is-replies-list"></div>
-        </div> <!-- End main view -->
-        
-                <div id="is-settings-view" style="display:none; width:100%; height:calc(100% - 50px);">
+        <div id="is-settings-view" style="display:none; width:100%; height:calc(100% - 50px);">
           <!-- Settings UI injected here -->
         </div>
       </div>
@@ -205,6 +206,22 @@ window.IS.Panel = {
 
     if (settingsBtnHeader) settingsBtnHeader.addEventListener('click', toggleSettings);
     if (settingsBtnMain) settingsBtnMain.addEventListener('click', toggleSettings);
+    
+    const btnNew = document.getElementById('is-btn-new');
+    if (btnNew) btnNew.addEventListener('click', async (e) => {
+      // First open settings if not open
+      if (!isSettingsOpen) await toggleSettings(e);
+      // Ensure SettingsUI is ready
+      if (window.IS.SettingsUI && window.IS.SettingsUI.initialized) {
+        // Switch to Respostas tab
+        document.querySelectorAll('.is-set-tab').forEach(b => b.classList.remove('active'));
+        document.querySelector('.is-set-tab[data-tab="is-tab-replies"]').classList.add('active');
+        document.querySelectorAll('.is-tab-content').forEach(c => c.style.display = 'none');
+        document.getElementById('is-tab-replies').style.display = 'block';
+        // Open form
+        window.IS.SettingsUI.openReplyForm(null);
+      }
+    });
 
     if (toggleBtn) toggleBtn.addEventListener('click', () => this.togglePanel(true));
     if (closeBtn) closeBtn.addEventListener('click', () => this.togglePanel(false));
@@ -241,8 +258,13 @@ window.IS.Panel = {
         }
         if (changes.categories) {
           this.categories = changes.categories.newValue || [];
-          // Need to re-render to update the category select dropdown
-          this.render(); 
+          const catSelect = document.getElementById('is-category-select');
+          if (catSelect) {
+            const oldVal = catSelect.value;
+            catSelect.innerHTML = `<option value="all">Todas as categorias</option>` + this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('');
+            catSelect.value = oldVal;
+          }
+          changed = true;
         }
         if (changes.settings) {
           this.settings = { ...this.settings, ...changes.settings.newValue };
@@ -314,6 +336,9 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+
+
+
 
 
 
