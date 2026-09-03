@@ -70,8 +70,8 @@ window.IS.WaScaleUI = {
       position: 'absolute',
       bottom: '65px',
       left: '10px',
-      width: '320px',
-      height: '450px',
+      width: '400px',
+      height: '550px',
       background: bgColor,
       border: `1px solid ${borderColor}`,
       borderRadius: '8px',
@@ -311,5 +311,6 @@ window.IS.WaScaleUI = {
     });
   }
 };
+
 
 
