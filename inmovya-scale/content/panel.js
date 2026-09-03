@@ -55,15 +55,19 @@ window.IS.Panel = {
           </button>
         </div>
         
-        <div class="is-filters">
-          <div class="is-search-wrapper">
-            <input type="text" id="is-search-input" placeholder="Pesquisar respostas..." />
+                <div class="is-filters">
+          <div class="is-search-wrapper" style="display:flex; gap:5px;">
+            <input type="text" id="is-search-input" placeholder="Pesquisar respostas..." style="flex:1;" />
+            <button id="is-btn-new" title="Nova Resposta" style="background:var(--inmovya-primary); color:white; border:none; border-radius:4px; padding:0 10px; cursor:pointer;">+ Nova</button>
           </div>
-          <div class="is-filter-actions">
-            <select id="is-category-select">
+                    <div class="is-filter-actions" style="margin-top: 5px; display: flex; gap: 5px; width: 100%;">
+            <select id="is-category-select" style="flex: 1;">
               <option value="all">Todas as categorias</option>
               ${this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('')}
             </select>
+            <button id="is-settings-btn-main" title="Configurações (Adicionar respostas)" style="background: var(--inmovya-primary); color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; flex-shrink: 0;">
+              ⚙️ Gerenciar
+            </button>
             <button id="is-fav-filter" class="${this.showFavoritesOnly ? 'active' : ''}" title="Mostrar apenas favoritos">
               ⭐
             </button>
@@ -280,6 +284,10 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+
+
+
+
 
 
 
