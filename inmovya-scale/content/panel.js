@@ -40,7 +40,7 @@ window.IS.Panel = {
 
     this.container.innerHTML = `
       <div id="is-toggle-button" class="${this.isOpen ? 'is-hidden' : ''}" title="Abrir Inmovya Scale">
-        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
       </div>
       
       <div id="is-sidebar" class="${this.isOpen ? 'is-open' : ''}" style="width: ${this.settings.panelWidth}px">
@@ -272,3 +272,4 @@ window.IS.Panel = {
     }, 2500);
   }
 };
+

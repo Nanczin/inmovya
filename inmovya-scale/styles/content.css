@@ -47,8 +47,8 @@ html[dir] body.dark {
   position: absolute;
   top: 15px;
   right: 15px;
-  width: 40px;
-  height: 40px;
+  width: 55px;
+  height: 55px;
   background: var(--inmovya-primary);
   color: white;
   border-radius: 50%;
@@ -304,3 +304,4 @@ html[dir] body.dark {
   from { opacity: 1; transform: translate(-50%, 0); }
   to { opacity: 0; transform: translate(-50%, -20px); }
 }
+
