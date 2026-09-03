@@ -241,7 +241,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   async function deleteCategory(id) {
-    if (confirm("Deseja excluir esta categoria? As respostas serão movidas para 'Sem categoria'.")) {
+    if (await showConfirm("Excluir Categoria", "Deseja excluir esta categoria?")) {
       categories = categories.filter(c => c.id !== id);
       replies = replies.map(r => r.categoryId === id ? { ...r, categoryId: 'default-category' } : r);
       await IS.Storage.saveCategories(categories);
@@ -331,5 +331,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => t.classList.remove('show'), 3000);
   }
 });
+
 
 
