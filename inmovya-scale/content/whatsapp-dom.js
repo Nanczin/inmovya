@@ -43,6 +43,19 @@ window.IS.WhatsAppDOM = {
   },
 
   findMediaFileInput() {
+    const menuItems = document.querySelectorAll('[role="menuitem"], li, label, div[role="button"]');
+    for (const item of menuItems) {
+      if (item.offsetParent === null || item.closest('#inmovya-scale-root')) continue;
+      const context = `${item.getAttribute('aria-label') || ''} ${item.getAttribute('title') || ''} ${item.textContent || ''}`.toLowerCase();
+      if (!/fotos?.*v[ií]deos?|photos?.*videos?|photos? & videos?/.test(context)) continue;
+      const input = item.querySelector('input[type="file"]');
+      if (input) return input;
+      if (item.tagName === 'LABEL' && item.htmlFor) {
+        const linkedInput = document.getElementById(item.htmlFor);
+        if (linkedInput && linkedInput.type === 'file') return linkedInput;
+      }
+    }
+
     const candidates = document.querySelectorAll('#main input[type="file"], input[type="file"]');
     const ranked = [];
     for (const input of candidates) {
@@ -335,7 +348,6 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
-
 
 
 

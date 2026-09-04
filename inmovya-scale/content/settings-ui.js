@@ -128,9 +128,9 @@ window.IS.SettingsUI = {
         <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Variáveis: {{nome}}, {{saudacao}}, {{meu_nome}}, {{data}}, {{hora}}</div>
       </div>
       <div>
-        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Imagens e anexos da sequência</label>
-        <input type="file" id="is-form-attachments" accept="image/*,.pdf" multiple style="font-size:12px; max-width:100%;">
-        <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Selecione várias imagens de uma vez ou adicione novos lotes. Elas serão enviadas na ordem exibida.</div>
+        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Imagens, vídeos e anexos da sequência</label>
+        <input type="file" id="is-form-attachments" accept="image/*,video/*,.pdf" multiple style="font-size:12px; max-width:100%;">
+        <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Selecione imagens ou vídeos de uma vez ou adicione novos lotes. Eles serão enviados na ordem exibida.</div>
         <div id="is-form-attachments-preview" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
       </div>
     </div>
@@ -560,6 +560,8 @@ window.IS.SettingsUI = {
       let preview = '';
       if (att.type.startsWith('image/')) {
         preview = `<img src="${att.data}" style="width:40px; height:40px; object-fit:cover; border-radius:4px;">`;
+      } else if (att.type.startsWith('video/')) {
+        preview = `<div style="width:40px; height:40px; background:#e8f4ff; display:flex; align-items:center; justify-content:center; border-radius:4px; font-size:20px;">🎬</div>`;
       } else {
         preview = `<div style="width:40px; height:40px; background:#f0f2f5; display:flex; align-items:center; justify-content:center; border-radius:4px; font-size:20px;">📄</div>`;
       }
@@ -593,8 +595,10 @@ window.IS.SettingsUI = {
     let addedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (file.size > 5 * 1024 * 1024) {
-        this.showToast(`Arquivo ${file.name} ignorado (>5MB).`);
+      const maxSize = file.type.startsWith('video/') ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        const limitMb = file.type.startsWith('video/') ? 50 : 10;
+        this.showToast(`Arquivo ${file.name} ignorado (>${limitMb}MB).`);
         continue;
       }
       try {

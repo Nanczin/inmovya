@@ -137,6 +137,11 @@ window.IS.Scraper = {
     const titleNode = row.querySelector('[data-testid="cell-frame-title"] span[title], span[dir="auto"][title], span[title]');
     return titleNode ? (titleNode.getAttribute('title') || '').trim() : '';
   },
+
+  findLabelRowByName(name) {
+    const normalizedName = (name || '').toLocaleLowerCase();
+    return this.getLabelsList().find(row => this.getRowName(row).toLocaleLowerCase() === normalizedName) || null;
+  },
   
   async clickBack() {
     const backBtn = document.querySelector('span[data-icon="back"]');
@@ -210,18 +215,14 @@ window.IS.Scraper = {
          throw new Error("Não encontrei suas etiquetas. Por favor, ABRA O MENU DE ETIQUETAS no seu WhatsApp manualmente, e depois clique em Sincronizar na extensão!");
       }
       
-      let labelsCount = labels.length;
-      window.IS.log(`Encontradas ${labelsCount} etiquetas`);
+      const labelNames = Array.from(new Set(labels.map(row => this.getRowName(row)).filter(Boolean)));
+      window.IS.log(`Encontradas ${labelNames.length} etiquetas`);
       
-      for (let i = 0; i < labelsCount; i++) {
-        labels = await this.getLabelsList(); 
-        if (i >= labels.length) break;
-        
-        const row = labels[i];
+      for (let i = 0; i < labelNames.length; i++) {
+        const labelName = labelNames[i];
+        const row = this.findLabelRowByName(labelName);
         if (!row) continue;
-        
-        const labelName = this.getRowName(row) || `Etiqueta ${i+1}`;
-        
+
         row.click();
         await this.delay(2500); 
         
