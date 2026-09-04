@@ -316,7 +316,7 @@ html[dir] body.dark {
   border-bottom: 2px solid transparent;
   padding: 10px 0;
   cursor: pointer;
-  color: var(--text-secondary);
+  color: var(--inmovya-text-secondary);
   font-weight: 500;
   font-size: 12px;
 }
@@ -326,4 +326,48 @@ html[dir] body.dark {
 }
 .is-set-tab:hover {
   background: rgba(0,0,0,0.05);
+}
+
+/* Keep the settings modal independent from WhatsApp Web's global form styles. */
+#is-modal-overlay {
+  box-sizing: border-box;
+  padding: 16px;
+}
+
+#is-reply-modal,
+#is-confirm-modal,
+#is-reply-modal *,
+#is-confirm-modal * {
+  box-sizing: border-box;
+}
+
+#is-reply-modal input[type="text"],
+#is-reply-modal input[type="file"],
+#is-reply-modal select,
+#is-reply-modal textarea,
+#is-native-settings-container input[type="text"],
+#is-native-settings-container select {
+  background: var(--inmovya-background);
+  color: var(--inmovya-text);
+  border-color: var(--inmovya-border);
+  font-family: inherit;
+  min-width: 0;
+}
+
+#is-reply-modal input::placeholder,
+#is-reply-modal textarea::placeholder,
+#is-native-settings-container input::placeholder {
+  color: var(--inmovya-text-secondary);
+  opacity: 1;
+}
+
+#is-reply-modal button,
+#is-confirm-modal button {
+  color: var(--inmovya-text);
+  font-family: inherit;
+}
+
+#is-reply-modal #is-btn-save-reply,
+#is-confirm-modal #is-btn-confirm-ok {
+  color: #fff;
 }

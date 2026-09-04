@@ -6,18 +6,18 @@ window.IS.SettingsUI = {
   editingId: null,
 
   get htmlTemplate() {
-    return `<div id="is-native-settings-container" style="display:none; flex-direction:column; height:100%; width:100%; background:var(--bg); overflow-y:auto; overflow-x:hidden;">
+    return `<div id="is-native-settings-container" style="display:none; flex-direction:column; height:100%; width:100%; background:var(--inmovya-background); color:var(--inmovya-text); overflow-y:auto; overflow-x:hidden;">
   <div class="is-header" style="flex-shrink:0;">
     <div class="is-brand">
       <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
       <span>Configurações</span>
     </div>
-    <button id="is-settings-close-btn" title="Voltar" style="background:transparent;border:none;cursor:pointer;color:var(--text-secondary);">
+    <button id="is-settings-close-btn" title="Voltar" style="background:transparent;border:none;cursor:pointer;color:var(--inmovya-text-secondary);">
       <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
     </button>
   </div>
   
-  <div style="display:flex; flex-wrap:wrap; background:var(--panel-header); border-bottom:1px solid var(--inmovya-border);">
+  <div style="display:flex; flex-wrap:wrap; background:var(--inmovya-surface); border-bottom:1px solid var(--inmovya-border);">
     <button class="is-set-tab active" data-tab="is-tab-replies">Respostas</button>
     <button class="is-set-tab" data-tab="is-tab-categories">Categorias</button>
     <button class="is-set-tab" data-tab="is-tab-crm">CRM</button>
@@ -47,7 +47,7 @@ window.IS.SettingsUI = {
     <!-- TAB: CRM -->
     <div id="is-tab-crm" class="is-tab-content" style="display:none; text-align:center;">
       <button id="is-btn-sync-labels" style="background:var(--inmovya-primary); color:white; border:none; padding:10px; width:100%; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:15px;">🔄 Sincronizar Etiquetas</button>
-      <div style="font-size:12px; color:var(--text-secondary); margin-bottom:15px;">Isso fará com que a extensão navegue no seu WhatsApp Business para capturar os contatos.</div>
+      <div style="font-size:12px; color:var(--inmovya-text-secondary); margin-bottom:15px;">Isso fará com que a extensão navegue no seu WhatsApp Business para capturar os contatos.</div>
       <div id="is-set-labels-list" style="text-align:left; display:flex; flex-direction:column; gap:10px;"></div>
     </div>
 
@@ -82,7 +82,7 @@ window.IS.SettingsUI = {
 
     <!-- TAB: BACKUP -->
     <div id="is-tab-backup" class="is-tab-content" style="display:none; text-align:center;">
-      <div style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">Exporte todas as suas respostas e configurações, ou importe de um arquivo existente.</div>
+      <div style="font-size:13px; color:var(--inmovya-text-secondary); margin-bottom:20px;">Exporte todas as suas respostas e configurações, ou importe de um arquivo existente.</div>
       <div style="display:flex; flex-direction:column; gap:10px;">
         <button id="is-btn-export" style="background:transparent; border:1px solid var(--inmovya-primary); color:var(--inmovya-primary); padding:10px; border-radius:4px; cursor:pointer; font-weight:bold;">Exportar Backup (JSON)</button>
         <label for="is-file-import" style="background:var(--inmovya-primary); color:white; padding:10px; border-radius:4px; cursor:pointer; font-weight:bold; display:block;">Importar Backup</label>
@@ -96,7 +96,7 @@ window.IS.SettingsUI = {
 <div id="is-modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999999; justify-content:center; align-items:center;">
   
   <!-- Reply Form Modal -->
-  <div id="is-reply-modal" style="display:none; background:var(--bg); width:90%; max-width:400px; max-height:90vh; border-radius:8px; display:flex; flex-direction:column; overflow:hidden;">
+  <div id="is-reply-modal" style="display:none; background:var(--inmovya-background); color:var(--inmovya-text); width:calc(100% - 32px); max-width:400px; max-height:calc(100% - 32px); border-radius:8px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.28);">
     <div style="padding:15px; border-bottom:1px solid var(--inmovya-border);">
       <h3 id="is-modal-title" style="margin:0; font-size:16px;">Nova Resposta</h3>
     </div>
@@ -125,7 +125,7 @@ window.IS.SettingsUI = {
           <button id="is-btn-add-block" style="background:transparent; border:none; color:var(--inmovya-primary); cursor:pointer; font-size:12px; font-weight:bold;">+ Adicionar</button>
         </div>
         <div id="is-form-blocks" style="display:flex; flex-direction:column; gap:10px;"></div>
-        <div style="font-size:11px; color:var(--text-secondary); margin-top:5px;">Variáveis: {{nome}}, {{saudacao}}, {{meu_nome}}, {{data}}, {{hora}}</div>
+        <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Variáveis: {{nome}}, {{saudacao}}, {{meu_nome}}, {{data}}, {{hora}}</div>
       </div>
       <div>
         <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Anexos (Imagens, PDFs...)</label>
@@ -133,16 +133,16 @@ window.IS.SettingsUI = {
         <div id="is-form-attachments-preview" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
       </div>
     </div>
-    <div style="padding:15px; border-top:1px solid var(--inmovya-border); display:flex; justify-content:flex-end; gap:10px; background:var(--panel-header);">
+    <div style="padding:15px; border-top:1px solid var(--inmovya-border); display:flex; justify-content:flex-end; gap:10px; background:var(--inmovya-surface); flex-shrink:0;">
       <button id="is-btn-cancel-reply" style="background:transparent; border:1px solid #ccc; padding:8px 15px; border-radius:4px; cursor:pointer;">Cancelar</button>
       <button id="is-btn-save-reply" style="background:var(--inmovya-primary); color:white; border:none; padding:8px 15px; border-radius:4px; cursor:pointer; font-weight:bold;">Salvar</button>
     </div>
   </div>
 
   <!-- Confirm Modal -->
-  <div id="is-confirm-modal" style="display:none; background:var(--bg); width:90%; max-width:300px; border-radius:8px; padding:20px; text-align:center;">
+  <div id="is-confirm-modal" style="display:none; background:var(--inmovya-background); color:var(--inmovya-text); width:90%; max-width:300px; border-radius:8px; padding:20px; text-align:center; box-shadow:0 8px 28px rgba(0,0,0,0.28);">
     <h3 id="is-confirm-title" style="margin-top:0; font-size:16px;">Confirmação</h3>
-    <p id="is-confirm-text" style="color:var(--text-secondary); margin-bottom:20px; font-size:14px;">Tem certeza?</p>
+    <p id="is-confirm-text" style="color:var(--inmovya-text-secondary); margin-bottom:20px; font-size:14px;">Tem certeza?</p>
     <div style="display:flex; justify-content:center; gap:10px;">
       <button id="is-btn-confirm-cancel" style="background:transparent; border:1px solid #ccc; padding:8px 15px; border-radius:4px; cursor:pointer;">Cancelar</button>
       <button id="is-btn-confirm-ok" style="background:#dc3545; color:white; border:none; padding:8px 15px; border-radius:4px; cursor:pointer; font-weight:bold;">Confirmar</button>
@@ -403,7 +403,7 @@ window.IS.SettingsUI = {
     });
 
     if (grouped['uncategorized'] && grouped['uncategorized'].length > 0) {
-      html += `<div style="font-size:12px; font-weight:bold; color:var(--text-secondary); margin-top:10px;">📁 Geral</div>`;
+      html += `<div style="font-size:12px; font-weight:bold; color:var(--inmovya-text-secondary); margin-top:10px;">📁 Geral</div>`;
       html += grouped['uncategorized'].map(r => renderItem(r)).join('');
     }
 
