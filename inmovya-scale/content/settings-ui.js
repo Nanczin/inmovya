@@ -130,9 +130,8 @@ window.IS.SettingsUI = {
       </div>
       <div>
         <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Imagens, vídeos e anexos da sequência</label>
-        <input type="file" id="is-form-attachments" accept="image/*,video/*,.pdf" multiple style="font-size:12px; max-width:100%;">
         <button type="button" id="is-btn-native-files" style="margin-top:8px; width:100%; padding:8px; border:1px solid var(--inmovya-primary); color:var(--inmovya-primary); background:transparent; border-radius:4px; cursor:pointer; font-weight:bold;">Selecionar arquivo original do computador</button>
-        <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Selecione imagens ou vídeos de uma vez ou adicione novos lotes. Eles serão enviados na ordem exibida.</div>
+        <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">O aplicativo auxiliar lerá os arquivos diretamente da localização original no momento do envio.</div>
         <div id="is-form-attachments-preview" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
       </div>
     </div>
@@ -289,10 +288,6 @@ window.IS.SettingsUI = {
         this.renderMessageBlocks(currentTexts);
         this.renderAttachmentsPreview(this.draftAttachments);
       }
-    });
-
-    document.getElementById('is-form-attachments').addEventListener('change', (e) => {
-      this.handleAttachmentsUpload(e);
     });
 
     document.getElementById('is-btn-native-files').addEventListener('click', () => { this.handleNativeFiles(); });

@@ -59,18 +59,26 @@ window.IS.WhatsAppDOM = {
 
     let parent = item.parentElement;
     for (let level = 0; parent && level < 3; level++, parent = parent.parentElement) {
-      parent.querySelectorAll(':scope > input[type="file"], :scope > label input[type="file"]').forEach(addCandidate);
+      parent.querySelectorAll('input[type="file"]').forEach(addCandidate);
     }
 
     return candidates.find(validator) || null;
   },
 
-  isPhotosAndVideosInput(input) {
+  isPhotosAndVideosInput(input, fromPhotosMenu = false) {
     if (!input || input.closest('#inmovya-scale-root')) return false;
     const accept = (input.getAttribute('accept') || '').toLowerCase();
-    return accept.includes('image') && accept.includes('video') && !/sticker|figurinha/.test(
-      `${input.getAttribute('aria-label') || ''} ${input.getAttribute('title') || ''}`.toLowerCase()
-    );
+    const contextParts = [];
+    let current = input;
+    for (let level = 0; current && level < 5; level++, current = current.parentElement) {
+      contextParts.push(current.getAttribute('aria-label') || '', current.getAttribute('title') || '');
+    }
+    const context = contextParts.join(' ').toLowerCase();
+    const stickerOnly = /sticker|figurinha/.test(context) ||
+      (/webp/.test(accept) && !accept.includes('video') && !accept.includes('jpeg') && !accept.includes('png'));
+    const cameraInput = input.hasAttribute('capture') || /c[aâ]mera|camera/.test(context);
+    const mediaCapability = accept.includes('video') || input.multiple || fromPhotosMenu;
+    return accept.includes('image') && mediaCapability && !stickerOnly && !cameraInput;
   },
 
   isDocumentInput(input) {
@@ -85,7 +93,7 @@ window.IS.WhatsAppDOM = {
       if (item.offsetParent === null || item.closest('#inmovya-scale-root')) continue;
       const context = `${item.getAttribute('aria-label') || ''} ${item.getAttribute('title') || ''} ${item.textContent || ''}`.toLowerCase();
       if (!/fotos?.*v[ií]deos?|photos?.*videos?|photos? & videos?/.test(context)) continue;
-      const input = this.getFileInputFromMenuItem(item, candidate => this.isPhotosAndVideosInput(candidate));
+      const input = this.getFileInputFromMenuItem(item, candidate => this.isPhotosAndVideosInput(candidate, true));
       if (input) return input;
     }
 
@@ -307,9 +315,12 @@ window.IS.WhatsAppDOM = {
 
   async sendAttachmentBatch(attachments, caption = '') {
     try {
-      this.openAttachmentMenu();
-      await this.delay(300);
-      const fileInput = await this.waitForMediaFileInput(3000);
+      if (!this.openAttachmentMenu()) {
+        window.IS.error('Botão de anexos do WhatsApp não encontrado.');
+        return false;
+      }
+      await this.delay(600);
+      const fileInput = await this.waitForMediaFileInput(6000);
       if (!fileInput) {
         window.IS.error('Campo de Fotos e vídeos do WhatsApp não encontrado.');
         return false;
@@ -343,9 +354,12 @@ window.IS.WhatsAppDOM = {
 
   async sendDocumentBatch(attachments) {
     try {
-      this.openAttachmentMenu();
-      await this.delay(300);
-      const fileInput = await this.waitForDocumentFileInput(3000);
+      if (!this.openAttachmentMenu()) {
+        window.IS.error('Botão de anexos do WhatsApp não encontrado.');
+        return false;
+      }
+      await this.delay(600);
+      const fileInput = await this.waitForDocumentFileInput(6000);
       if (!fileInput) {
         window.IS.error('Campo de Documento do WhatsApp não encontrado.');
         return false;
