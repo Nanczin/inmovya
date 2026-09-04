@@ -72,21 +72,31 @@ function scoreFileInput(attributes, kind) {
   return (accept.includes('application/') || accept.includes('*') ? 100 : 20) + (multiple ? 10 : 0);
 }
 
-async function setFilesWithDebugger(tabId, paths, kind) {
+async function setFilesWithDebugger(tabId, paths, kind, targetToken = '') {
   if (!tabId || !Array.isArray(paths) || !paths.length) throw new Error('Lista de arquivos inválida.');
   const target = { tabId };
   await chrome.debugger.attach(target, '1.3');
   try {
     const { root } = await debuggerCommand(target, 'DOM.getDocument', { depth: -1, pierce: true });
-    const { nodeIds = [] } = await debuggerCommand(target, 'DOM.querySelectorAll', {
+    let exactTarget = /^[a-zA-Z0-9_-]+$/.test(targetToken);
+    let { nodeIds = [] } = await debuggerCommand(target, 'DOM.querySelectorAll', {
       nodeId: root.nodeId,
-      selector: 'input[type="file"]'
+      selector: exactTarget
+        ? `input[type="file"][data-inmovya-upload-target="${targetToken}"]`
+        : 'input[type="file"]'
     });
+    if (!nodeIds.length && targetToken) {
+      exactTarget = false;
+      ({ nodeIds = [] } = await debuggerCommand(target, 'DOM.querySelectorAll', {
+        nodeId: root.nodeId,
+        selector: 'input[type="file"]'
+      }));
+    }
     const candidates = [];
     for (const nodeId of nodeIds) {
       const { attributes } = await debuggerCommand(target, 'DOM.getAttributes', { nodeId });
       const parsed = attributesToObject(attributes);
-      const score = scoreFileInput(parsed, kind);
+      const score = exactTarget ? 1000 : scoreFileInput(parsed, kind);
       if (score >= 0) candidates.push({ nodeId, score });
     }
     candidates.sort((left, right) => right.score - left.score);
@@ -100,7 +110,7 @@ async function setFilesWithDebugger(tabId, paths, kind) {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request?.action === 'debugger_set_files') {
-    setFilesWithDebugger(sender.tab?.id, request.paths, request.kind)
+    setFilesWithDebugger(sender.tab?.id, request.paths, request.kind, request.targetToken)
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;

@@ -406,26 +406,33 @@ window.IS.WhatsAppDOM = {
   async attachNativeFiles(attachments, kind) {
     const paths = attachments.map(attachment => attachment.nativePath).filter(Boolean);
     if (paths.length !== attachments.length) return null;
-
-    const tryAttach = async () => {
-      const response = await chrome.runtime.sendMessage({ action: 'debugger_set_files', paths, kind });
-      if (!response?.ok) return { accepted: false, error: response?.error };
-      const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
-      const timeout = containsVideo ? 30000 : (kind === 'media' ? 10000 : 15000);
-      return { accepted: await this.waitForMediaPreview(timeout) };
-    };
-
-    let result = await tryAttach();
-    if (result.accepted) return true;
-
-    if (this.openAttachmentMenu()) {
-      await this.delay(500);
-      result = await tryAttach();
-      if (result.accepted) return true;
+    if (this.hasMediaPreview() && !await this.waitForMediaPreviewClosed()) return false;
+    if (!this.openAttachmentMenu()) {
+      window.IS.error('Botão de anexos do WhatsApp não encontrado.');
+      return false;
     }
 
-    if (result.error) window.IS.error('Falha ao anexar o arquivo original', result.error);
-    return false;
+    const input = kind === 'media'
+      ? await this.waitForMediaFileInput(5000)
+      : await this.waitForDocumentFileInput(5000);
+    if (!input) {
+      window.IS.error(`Campo de ${kind === 'media' ? 'Fotos e vídeos' : 'Documento'} do WhatsApp não encontrado.`);
+      return false;
+    }
+
+    const targetToken = `inmovya-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    input.setAttribute('data-inmovya-upload-target', targetToken);
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'debugger_set_files', paths, kind, targetToken });
+      if (!response?.ok) {
+        window.IS.error('Falha ao anexar o arquivo original', response?.error);
+        return false;
+      }
+      const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
+      return this.waitForMediaPreview(containsVideo ? 45000 : (kind === 'media' ? 15000 : 20000));
+    } finally {
+      input.removeAttribute('data-inmovya-upload-target');
+    }
   },
 
   async sendAttachmentBatch(attachments, caption = '') {
