@@ -244,6 +244,10 @@ window.IS.SettingsUI = {
       const shortcut = document.getElementById('is-form-shortcut').value.trim().replace(/^\//, '');
       const categoryId = document.getElementById('is-form-category').value;
       const favorite = document.getElementById('is-form-favorite').checked;
+      const messageInputs = Array.from(document.querySelectorAll('.is-form-message-input'));
+      if (this.draftAttachments.length && messageInputs.some(input => !input.value.trim())) {
+        return this.showToast("Preencha todas as mensagens que possuem anexos.");
+      }
       const message = this.getMessageBlocksData();
       
       let replies = await window.IS.Storage.getReplies();
@@ -268,6 +272,7 @@ window.IS.SettingsUI = {
       const currentTexts = Array.from(document.querySelectorAll('.is-form-message-input')).map(input => input.value);
       currentTexts.push("");
       this.renderMessageBlocks(currentTexts);
+      this.renderAttachmentsPreview(this.draftAttachments);
     });
 
     document.getElementById('is-form-blocks').addEventListener('click', (e) => {
@@ -275,7 +280,14 @@ window.IS.SettingsUI = {
         const idx = parseInt(e.target.getAttribute('data-idx'));
         const currentTexts = Array.from(document.querySelectorAll('.is-form-message-input')).map(input => input.value);
         currentTexts.splice(idx, 1);
+        this.draftAttachments = this.draftAttachments.map(attachment => ({
+          ...attachment,
+          messageIndex: attachment.messageIndex > idx
+            ? attachment.messageIndex - 1
+            : Math.min(attachment.messageIndex || 0, Math.max(0, currentTexts.length - 1))
+        }));
         this.renderMessageBlocks(currentTexts);
+        this.renderAttachmentsPreview(this.draftAttachments);
       }
     });
 
@@ -291,6 +303,17 @@ window.IS.SettingsUI = {
       }
     });
 
+    document.getElementById('is-form-attachments-preview').addEventListener('change', (e) => {
+      const idx = parseInt(e.target.getAttribute('data-idx'));
+      if (!Number.isInteger(idx) || !this.draftAttachments[idx]) return;
+
+      if (e.target.classList.contains('is-attachment-message')) {
+        this.draftAttachments[idx].messageIndex = parseInt(e.target.value);
+      } else if (e.target.classList.contains('is-attachment-caption')) {
+        this.draftAttachments[idx].useCaption = e.target.value === 'caption';
+      }
+    });
+
     // --- CRM ---
     document.getElementById('is-btn-sync-labels').addEventListener('click', async () => {
       const btn = document.getElementById('is-btn-sync-labels');
@@ -298,18 +321,26 @@ window.IS.SettingsUI = {
       btn.disabled = true;
       
       try {
-        if (window.IS.Scraper) {
-          const result = await window.IS.Scraper.start();
-          this.waLabels = result;
-          await chrome.storage.local.set({ waLabels: this.waLabels });
-          this.renderWaLabels();
-          this.showToast("Etiquetas sincronizadas.");
+        if (!window.IS.Scraper || typeof window.IS.Scraper.run !== 'function') {
+          throw new Error("Sincronizador de etiquetas indisponível.");
         }
+
+        const result = await window.IS.Scraper.run();
+        if (!Array.isArray(result)) {
+          throw new Error(result && result.error ? result.error : "Não foi possível ler as etiquetas.");
+        }
+
+        this.waLabels = result;
+        await chrome.storage.local.set({ waLabels: this.waLabels });
+        this.renderWaLabels();
+        this.showToast(`${result.length} etiqueta${result.length === 1 ? '' : 's'} sincronizada${result.length === 1 ? '' : 's'}.`);
       } catch(e) {
-        this.showToast("Erro ao sincronizar.");
+        window.IS.error("Erro ao sincronizar etiquetas", e);
+        this.showToast(e.message || "Erro ao sincronizar etiquetas.");
+      } finally {
+        btn.textContent = "🔄 Sincronizar Etiquetas";
+        btn.disabled = false;
       }
-      btn.textContent = "🔄 Sincronizar Etiquetas";
-      btn.disabled = false;
     });
 
     // --- CONFIG ---
@@ -466,7 +497,16 @@ window.IS.SettingsUI = {
       const replies = await window.IS.Storage.getReplies();
       const r = replies.find(x => x.id === id);
       if (r) {
-        this.draftAttachments = Array.isArray(r.attachments) ? [...r.attachments] : [];
+        const messageCount = Math.max(1, (r.message || '').split('===').filter(part => part.trim()).length);
+        this.draftAttachments = Array.isArray(r.attachments)
+          ? r.attachments.map(attachment => ({
+              ...attachment,
+              messageIndex: Number.isInteger(attachment.messageIndex)
+                ? Math.min(attachment.messageIndex, messageCount - 1)
+                : messageCount - 1,
+              useCaption: !!attachment.useCaption
+            }))
+          : [];
         document.getElementById('is-form-title').value = r.title || '';
         document.getElementById('is-form-shortcut').value = r.shortcut || '';
         document.getElementById('is-form-category').value = r.categoryId || 'default-category';
@@ -510,6 +550,7 @@ window.IS.SettingsUI = {
       container.innerHTML = '';
       return;
     }
+    const messageCount = Math.max(1, document.querySelectorAll('.is-form-message-input').length);
     container.innerHTML = attachments.map((att, idx) => {
       let preview = '';
       if (att.type.startsWith('image/')) {
@@ -518,9 +559,20 @@ window.IS.SettingsUI = {
         preview = `<div style="width:40px; height:40px; background:#f0f2f5; display:flex; align-items:center; justify-content:center; border-radius:4px; font-size:20px;">📄</div>`;
       }
       return `
-        <div style="position:relative; display:inline-block; border:1px solid #ddd; padding:4px; border-radius:4px;">
-          ${preview}
-          <div style="font-size:10px; max-width:40px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${window.IS.escapeHTML(att.name)}">${window.IS.escapeHTML(att.name)}</div>
+        <div style="position:relative; display:flex; gap:8px; align-items:center; width:100%; border:1px solid var(--inmovya-border); padding:7px; border-radius:6px;">
+          <div style="flex:0 0 auto;">${preview}</div>
+          <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-width:0;">
+            <div style="font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${window.IS.escapeHTML(att.name)}">${idx + 1}. ${window.IS.escapeHTML(att.name)}</div>
+            <div style="display:flex; gap:5px; flex-wrap:wrap;">
+              <select class="is-attachment-message" data-idx="${idx}" style="flex:1; min-width:110px; padding:4px; font-size:10px; border:1px solid var(--inmovya-border); border-radius:4px;">
+                ${Array.from({ length: messageCount }, (_, messageIndex) => `<option value="${messageIndex}" ${messageIndex === (att.messageIndex || 0) ? 'selected' : ''}>Mensagem ${messageIndex + 1}</option>`).join('')}
+              </select>
+              <select class="is-attachment-caption" data-idx="${idx}" style="flex:1; min-width:100px; padding:4px; font-size:10px; border:1px solid var(--inmovya-border); border-radius:4px;">
+                <option value="separate" ${att.useCaption ? '' : 'selected'}>Sem legenda</option>
+                <option value="caption" ${att.useCaption ? 'selected' : ''}>Com legenda</option>
+              </select>
+            </div>
+          </div>
           <button class="is-btn-remove-attachment" data-idx="${idx}" style="position:absolute; top:-5px; right:-5px; background:red; color:white; border:none; border-radius:50%; width:16px; height:16px; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center;">X</button>
         </div>
       `;
@@ -546,7 +598,9 @@ window.IS.SettingsUI = {
           id: window.IS.generateUUID(),
           name: file.name,
           type: file.type,
-          data: base64Data
+          data: base64Data,
+          messageIndex: Math.max(0, document.querySelectorAll('.is-form-message-input').length - 1),
+          useCaption: false
         });
         addedCount++;
       } catch (err) {
