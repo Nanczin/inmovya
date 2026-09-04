@@ -22,8 +22,6 @@ window.IS.SettingsUI = {
     <button class="is-set-tab active" data-tab="is-tab-replies">Respostas</button>
     <button class="is-set-tab" data-tab="is-tab-categories">Categorias</button>
     <button class="is-set-tab" data-tab="is-tab-crm">CRM</button>
-    <button class="is-set-tab" data-tab="is-tab-config">Config</button>
-    <button class="is-set-tab" data-tab="is-tab-backup">Backup</button>
   </div>
 
   <div id="is-settings-body" style="padding:15px; flex:1;">

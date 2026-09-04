@@ -347,45 +347,53 @@ window.IS.WhatsAppDOM = {
     }
   },
 
+  hasMediaPreview() {
+    if (this.findMediaCaptionInput()) return true;
+    return Array.from(document.querySelectorAll('[role="dialog"] span[data-icon="send"], [data-animate-modal-popup] span[data-icon="send"]'))
+      .some(icon => {
+        const button = icon.closest('button, div[role="button"]');
+        return button && button.offsetParent !== null && !button.closest('#inmovya-scale-root');
+      });
+  },
+
+  async waitForMediaPreview(timeoutMs) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      if (this.hasMediaPreview()) return true;
+      await this.delay(200);
+    }
+    return false;
+  },
+
   async injectFilesIntoChat(files) {
     const messageInput = await this.waitForMessageInput();
-    const chatArea = document.getElementById('main');
-    if (!messageInput || !chatArea) return false;
+    if (!messageInput) return false;
     messageInput.focus();
     messageInput.click();
     const dropTransfer = new DataTransfer();
     files.forEach(file => dropTransfer.items.add(file));
-    this.dispatchFileEvent(chatArea, 'dragenter', dropTransfer);
-    this.dispatchFileEvent(chatArea, 'dragover', dropTransfer);
-    this.dispatchFileEvent(chatArea, 'drop', dropTransfer);
-    await this.delay(1200);
-    if (this.findMediaCaptionInput()) return true;
+    this.dispatchFileEvent(messageInput, 'dragenter', dropTransfer);
+    this.dispatchFileEvent(messageInput, 'dragover', dropTransfer);
+    this.dispatchFileEvent(messageInput, 'drop', dropTransfer);
+
+    const fileTypes = files.map(file => (file.type || '').toLowerCase());
+    const onlyImages = fileTypes.every(type => type.startsWith('image/'));
+    const needsLongProcessing = fileTypes.some(type => type.startsWith('video/')) || !onlyImages;
+    if (await this.waitForMediaPreview(needsLongProcessing ? 20000 : 5000)) return true;
+    if (!onlyImages) return false;
+
     const pasteTransfer = new DataTransfer();
     files.forEach(file => pasteTransfer.items.add(file));
     messageInput.dispatchEvent(new ClipboardEvent('paste', { clipboardData: pasteTransfer, bubbles: true, cancelable: true }));
-    await this.delay(1200);
-    return !!this.findMediaCaptionInput();
+    return this.waitForMediaPreview(8000);
   },
 
   async sendAttachmentBatch(attachments, caption = '') {
     try {
       const files = await Promise.all(attachments.map(attachment => this.prepareMediaFile(attachment)));
-      let fileInput = this.findMediaFileInput();
-      const menuOpened = fileInput ? false : this.openAttachmentMenu();
-      if (!fileInput && menuOpened) {
-        await this.delay(600);
-        fileInput = await this.waitForMediaFileInput(6000);
-      }
-      if (!fileInput) {
-        if (!await this.injectFilesIntoChat(files)) {
-          window.IS.error('O WhatsApp não aceitou os arquivos na conversa.');
-          return false;
-        }
-      } else {
-        const transfer = new DataTransfer();
-        files.forEach(file => transfer.items.add(file));
-        fileInput.files = transfer.files;
-        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      if (!await this.injectFilesIntoChat(files)) {
+        window.IS.error('O WhatsApp não aceitou os arquivos na conversa.');
+        return false;
       }
 
       await this.delay(1800);
@@ -410,27 +418,14 @@ window.IS.WhatsAppDOM = {
 
   async sendDocumentBatch(attachments) {
     try {
-      let fileInput = this.findDocumentFileInput();
-      if (!fileInput && !this.openAttachmentMenu()) {
-        window.IS.error('Botão de anexos do WhatsApp não encontrado.');
+      const files = attachments.map(attachment => this.dataUrlToFile(attachment));
+      if (!await this.injectFilesIntoChat(files)) {
+        window.IS.error('O WhatsApp não aceitou os documentos na conversa.');
         return false;
       }
-      if (!fileInput) {
-        await this.delay(600);
-        fileInput = await this.waitForDocumentFileInput(6000);
-      }
-      if (!fileInput) {
-        window.IS.error('Campo de Documento do WhatsApp não encontrado.');
-        return false;
-      }
-
-      const transfer = new DataTransfer();
-      attachments.forEach(attachment => transfer.items.add(this.dataUrlToFile(attachment)));
-      fileInput.files = transfer.files;
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
       await this.delay(1800);
-      if (!await this.triggerMediaSend()) return false;
+      if (!await this.triggerMediaSend(this.findMediaCaptionInput())) return false;
       await this.delay(900);
       return true;
     } catch (error) {
@@ -462,13 +457,9 @@ window.IS.WhatsAppDOM = {
     for (let messageIndex = 0; messageIndex < parts.length; messageIndex++) {
       const message = parts[messageIndex];
       const linked = normalizedAttachments.filter(attachment => attachment.messageIndex === messageIndex);
-      const withCaption = linked.filter(attachment => attachment.useCaption && this.isMediaAttachment(attachment));
-      const withoutCaption = linked.filter(attachment => !attachment.useCaption && this.isMediaAttachment(attachment));
-      const documents = linked.filter(attachment => !this.isMediaAttachment(attachment));
+      const hasCaptionedMedia = linked.some(attachment => attachment.useCaption && this.isMediaAttachment(attachment));
 
-      if (withCaption.length) {
-        if (!await this.sendAttachmentBatch(withCaption, message)) return false;
-      } else if (message) {
+      if (message && !hasCaptionedMedia) {
         if (!await this.insertMessage(message)) return false;
         const mustSendText = parts.length > 1 || normalizedAttachments.length > 0;
         if (mustSendText) {
@@ -478,8 +469,14 @@ window.IS.WhatsAppDOM = {
         }
       }
 
-      if (withoutCaption.length && !await this.sendAttachmentBatch(withoutCaption)) return false;
-      if (documents.length && !await this.sendDocumentBatch(documents)) return false;
+      for (const attachment of linked) {
+        if (this.isMediaAttachment(attachment)) {
+          const caption = attachment.useCaption ? message : '';
+          if (!await this.sendAttachmentBatch([attachment], caption)) return false;
+        } else if (!await this.sendDocumentBatch([attachment])) {
+          return false;
+        }
+      }
     }
 
     return true;
