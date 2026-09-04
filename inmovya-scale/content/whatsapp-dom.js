@@ -337,27 +337,56 @@ window.IS.WhatsAppDOM = {
     return insertedText.length > 0;
   },
 
+  dispatchFileEvent(target, type, transfer) {
+    try {
+      target.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    } catch (_error) {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: transfer });
+      target.dispatchEvent(event);
+    }
+  },
+
+  async injectFilesIntoChat(files) {
+    const messageInput = await this.waitForMessageInput();
+    const chatArea = document.getElementById('main');
+    if (!messageInput || !chatArea) return false;
+    messageInput.focus();
+    messageInput.click();
+    const dropTransfer = new DataTransfer();
+    files.forEach(file => dropTransfer.items.add(file));
+    this.dispatchFileEvent(chatArea, 'dragenter', dropTransfer);
+    this.dispatchFileEvent(chatArea, 'dragover', dropTransfer);
+    this.dispatchFileEvent(chatArea, 'drop', dropTransfer);
+    await this.delay(1200);
+    if (this.findMediaCaptionInput()) return true;
+    const pasteTransfer = new DataTransfer();
+    files.forEach(file => pasteTransfer.items.add(file));
+    messageInput.dispatchEvent(new ClipboardEvent('paste', { clipboardData: pasteTransfer, bubbles: true, cancelable: true }));
+    await this.delay(1200);
+    return !!this.findMediaCaptionInput();
+  },
+
   async sendAttachmentBatch(attachments, caption = '') {
     try {
+      const files = await Promise.all(attachments.map(attachment => this.prepareMediaFile(attachment)));
       let fileInput = this.findMediaFileInput();
-      if (!fileInput && !this.openAttachmentMenu()) {
-        window.IS.error('Botão de anexos do WhatsApp não encontrado.');
-        return false;
-      }
-      if (!fileInput) {
+      const menuOpened = fileInput ? false : this.openAttachmentMenu();
+      if (!fileInput && menuOpened) {
         await this.delay(600);
         fileInput = await this.waitForMediaFileInput(6000);
       }
       if (!fileInput) {
-        window.IS.error('Campo de Fotos e vídeos do WhatsApp não encontrado.');
-        return false;
+        if (!await this.injectFilesIntoChat(files)) {
+          window.IS.error('O WhatsApp não aceitou os arquivos na conversa.');
+          return false;
+        }
+      } else {
+        const transfer = new DataTransfer();
+        files.forEach(file => transfer.items.add(file));
+        fileInput.files = transfer.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
       }
-
-      const transfer = new DataTransfer();
-      const files = await Promise.all(attachments.map(attachment => this.prepareMediaFile(attachment)));
-      files.forEach(file => transfer.items.add(file));
-      fileInput.files = transfer.files;
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
       await this.delay(1800);
       let captionInput = null;
