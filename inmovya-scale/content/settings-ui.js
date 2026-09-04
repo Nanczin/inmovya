@@ -4,6 +4,7 @@ window.IS.SettingsUI = {
   initialized: false,
   waLabels: [],
   editingId: null,
+  draftAttachments: [],
 
   get htmlTemplate() {
     return `<div id="is-native-settings-container" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--inmovya-background); color:var(--inmovya-text); overflow-y:auto; overflow-x:hidden;">
@@ -128,8 +129,9 @@ window.IS.SettingsUI = {
         <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Variáveis: {{nome}}, {{saudacao}}, {{meu_nome}}, {{data}}, {{hora}}</div>
       </div>
       <div>
-        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Anexos (Imagens, PDFs...)</label>
-        <input type="file" id="is-form-attachments" multiple style="font-size:12px;">
+        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Imagens e anexos da sequência</label>
+        <input type="file" id="is-form-attachments" accept="image/*,.pdf" multiple style="font-size:12px; max-width:100%;">
+        <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Selecione várias imagens de uma vez ou adicione novos lotes. Elas serão enviadas na ordem exibida.</div>
         <div id="is-form-attachments-preview" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
       </div>
     </div>
@@ -248,10 +250,10 @@ window.IS.SettingsUI = {
       if (this.editingId) {
         const rIndex = replies.findIndex(r => r.id === this.editingId);
         if (rIndex > -1) {
-          replies[rIndex] = { ...replies[rIndex], title, shortcut, categoryId, favorite, message };
+          replies[rIndex] = { ...replies[rIndex], title, shortcut, categoryId, favorite, message, attachments: [...this.draftAttachments] };
         }
       } else {
-        const newReply = { id: window.IS.generateUUID(), title, shortcut, categoryId, favorite, message, attachments: [], order: replies.length };
+        const newReply = { id: window.IS.generateUUID(), title, shortcut, categoryId, favorite, message, attachments: [...this.draftAttachments], order: replies.length };
         replies.push(newReply);
       }
       
@@ -284,13 +286,8 @@ window.IS.SettingsUI = {
     document.getElementById('is-form-attachments-preview').addEventListener('click', async (e) => {
       if (e.target.classList.contains('is-btn-remove-attachment')) {
         const idx = parseInt(e.target.getAttribute('data-idx'));
-        let replies = await window.IS.Storage.getReplies();
-        const r = replies.find(r => r.id === this.editingId);
-        if (r && r.attachments) {
-          r.attachments.splice(idx, 1);
-          await window.IS.Storage.saveReplies(replies);
-          this.renderAttachmentsPreview(r.attachments);
-        }
+        this.draftAttachments.splice(idx, 1);
+        this.renderAttachmentsPreview(this.draftAttachments);
       }
     });
 
@@ -455,6 +452,7 @@ window.IS.SettingsUI = {
 
   async openReplyForm(id) {
     this.editingId = id;
+    this.draftAttachments = [];
     const modal = document.getElementById('is-reply-modal');
     document.getElementById('is-modal-overlay').style.display = 'flex';
     modal.style.display = 'flex';
@@ -468,12 +466,13 @@ window.IS.SettingsUI = {
       const replies = await window.IS.Storage.getReplies();
       const r = replies.find(x => x.id === id);
       if (r) {
+        this.draftAttachments = Array.isArray(r.attachments) ? [...r.attachments] : [];
         document.getElementById('is-form-title').value = r.title || '';
         document.getElementById('is-form-shortcut').value = r.shortcut || '';
         document.getElementById('is-form-category').value = r.categoryId || 'default-category';
         document.getElementById('is-form-favorite').checked = !!r.favorite;
         this.renderMessageBlocks((r.message || "").split('===').map(s => s.trim()));
-        this.renderAttachmentsPreview(r.attachments || []);
+        this.renderAttachmentsPreview(this.draftAttachments);
       }
     } else {
       document.getElementById('is-modal-title').textContent = "Nova Resposta";
@@ -482,7 +481,7 @@ window.IS.SettingsUI = {
       document.getElementById('is-form-category').value = categories[0] ? categories[0].id : 'default-category';
       document.getElementById('is-form-favorite').checked = false;
       this.renderMessageBlocks([""]);
-      this.renderAttachmentsPreview([]);
+      this.renderAttachmentsPreview(this.draftAttachments);
     }
   },
 
@@ -529,16 +528,12 @@ window.IS.SettingsUI = {
   },
 
   async handleAttachmentsUpload(e) {
-    const files = e.target.files;
+    const files = Array.from(e.target.files || []);
     if (!files || files.length === 0) return;
-    if (!this.editingId) return this.showToast("Salve a resposta primeiro antes de adicionar anexos.");
-    
-    let replies = await window.IS.Storage.getReplies();
-    let r = replies.find(x => x.id === this.editingId);
-    if (!r) return;
-    
+
     this.showToast("Processando anexos...");
-    
+
+    let addedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (file.size > 5 * 1024 * 1024) {
@@ -547,22 +542,21 @@ window.IS.SettingsUI = {
       }
       try {
         const base64Data = await this.fileToBase64(file);
-        if (!r.attachments) r.attachments = [];
-        r.attachments.push({
+        this.draftAttachments.push({
           id: window.IS.generateUUID(),
           name: file.name,
           type: file.type,
           data: base64Data
         });
+        addedCount++;
       } catch (err) {
         console.error("Erro ao ler arquivo", err);
       }
     }
-    
-    await window.IS.Storage.saveReplies(replies);
-    this.renderAttachmentsPreview(r.attachments);
+
+    this.renderAttachmentsPreview(this.draftAttachments);
     e.target.value = '';
-    this.showToast("Anexos adicionados.");
+    this.showToast(addedCount === 1 ? "1 anexo adicionado." : `${addedCount} anexos adicionados.`);
   },
 
   fileToBase64(file) {

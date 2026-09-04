@@ -159,6 +159,8 @@ window.IS.Panel = {
       reply.usageCount = (reply.usageCount || 0) + 1;
       reply.lastUsedAt = new Date().toISOString();
       await window.IS.Storage.saveReplies(this.replies);
+    } else {
+      this.showToast("Abra uma conversa para inserir a mensagem.");
     }
   },
 

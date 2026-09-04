@@ -3,21 +3,37 @@ window.IS = window.IS || {};
 
 window.IS.WhatsAppDOM = {
   findMessageInput() {
-    // O WhatsApp usa divs contenteditable. O campo de digitaÃ§Ã£o fica no #main (a Ã¡rea de conversa)
-    const mainArea = document.getElementById('main');
-    if (mainArea) {
-      const boxes = mainArea.querySelectorAll('div[contenteditable="true"]');
-      // Pega o Ãºltimo contenteditable dentro do #main (evita pegar algo no cabeÃ§alho)
-      if (boxes.length > 0) return boxes[boxes.length - 1];
-    }
-    
-    // Fallback: Procura qualquer contenteditable visÃ­vel que nÃ£o seja a barra de pesquisa
-    const allBoxes = document.querySelectorAll('div[contenteditable="true"]');
-    for (let i = allBoxes.length - 1; i >= 0; i--) {
-      const box = allBoxes[i];
-      if (box.offsetParent !== null && !box.closest('#side')) {
-        return box;
+    const selectors = [
+      '#main footer div[contenteditable="true"][role="textbox"]',
+      '#main footer div[contenteditable="true"][data-lexical-editor="true"]',
+      '#main footer div[contenteditable="true"]',
+      '#main div[contenteditable="true"][role="textbox"]',
+      '#main div[contenteditable="true"][data-tab="10"]'
+    ];
+
+    for (const selector of selectors) {
+      const candidates = document.querySelectorAll(selector);
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        const candidate = candidates[i];
+        if (
+          candidate.offsetParent !== null &&
+          !candidate.closest('#inmovya-scale-root') &&
+          candidate.getAttribute('aria-disabled') !== 'true'
+        ) {
+          return candidate;
+        }
       }
+    }
+
+    return null;
+  },
+
+  async waitForMessageInput(timeoutMs = 3000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const input = this.findMessageInput();
+      if (input) return input;
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     return null;
   },
@@ -40,6 +56,7 @@ window.IS.WhatsAppDOM = {
     const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
     const parts = (text || "").split('===').map(s => s.trim()).filter(s => s.length > 0);
+    const shouldAutoSend = parts.length > 1 || (attachments && attachments.length > 0);
     
     const triggerSend = async () => {
       // Tenta achar o botão de enviar por até 3 segundos
@@ -53,7 +70,7 @@ window.IS.WhatsAppDOM = {
             const btn = icon.closest('div[role="button"]') || icon.closest('button');
             if (btn) {
               btn.click();
-              return;
+              return true;
             }
           }
         }
@@ -64,15 +81,21 @@ window.IS.WhatsAppDOM = {
       const input = this.findMessageInput();
       if (input) {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+        return true;
       }
+      return false;
     };
 
     // Text sequences
     for (let i = 0; i < parts.length; i++) {
-      this.insertMessage(parts[i]);
-      await delay(300);
-      await triggerSend();
-      await delay(800);
+      const inserted = await this.insertMessage(parts[i]);
+      if (!inserted) return false;
+      if (shouldAutoSend) {
+        await delay(300);
+        const sent = await triggerSend();
+        if (!sent) return false;
+        await delay(800);
+      }
     }
 
     // Attachments
@@ -83,8 +106,8 @@ window.IS.WhatsAppDOM = {
                     const blob = b64toBlob(att.data, att.type);
           const file = new File([blob], att.name, { type: att.type });
           
-          const input = this.findMessageInput();
-          if (!input) continue;
+          const input = await this.waitForMessageInput();
+          if (!input) return false;
 
           const dataTransfer = new DataTransfer();
           dataTransfer.items.add(file);
@@ -93,10 +116,12 @@ window.IS.WhatsAppDOM = {
           input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
           
           await delay(2000); // Wait for image preview modal
-          await triggerSend();
+          const sent = await triggerSend();
+          if (!sent) return false;
           await delay(800);
         } catch(e) {
           window.IS.error("Erro ao colar anexo", e);
+          return false;
         }
       }
     }
@@ -116,17 +141,15 @@ window.IS.WhatsAppDOM = {
     return "";
   },
 
-  insertMessage(text) {
-    const input = this.findMessageInput();
+  async insertMessage(text) {
+    const input = await this.waitForMessageInput();
     if (!input) {
-      window.IS.error("Campo de mensagem nÃ£o encontrado. Abra uma conversa primeiro!");
+      window.IS.error("Campo de mensagem não encontrado. Abra uma conversa primeiro!");
       return false;
     }
 
     input.focus();
-
-    // Remove qualquer placeholder que o WhatsApp coloque simulando clique
-    input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+    input.click();
 
     // Coloca o cursor no final
     const selection = window.getSelection();
@@ -138,7 +161,7 @@ window.IS.WhatsAppDOM = {
       selection.addRange(range);
     }
 
-    // Tenta usar execCommand (ainda Ã© o mais suportado para disparar inputs no React/Lexical do WhatsApp)
+    // Mantém o estado interno do editor Lexical sincronizado com o DOM.
     let success = document.execCommand("insertText", false, text);
     
     // Se falhar, tenta o mÃ©todo de ClipboardEvent
@@ -148,14 +171,25 @@ window.IS.WhatsAppDOM = {
       input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dataTransfer, bubbles: true, cancelable: true }));
     }
     
-    // Dispara evento de input manualmente para forÃ§ar o React a acordar o botÃ£o de Enviar
-    input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+    input.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      inputType: 'insertText',
+      data: text
+    }));
     
     // Dispara keydown para forçar o aviso de 'digitando...'
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', bubbles: true, cancelable: true, keyCode: 229 }));
     input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Process', bubbles: true, cancelable: true, keyCode: 229 }));
     
-    return true;
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const insertedText = (input.innerText || input.textContent || '').trim();
+    success = success || insertedText.length > 0;
+
+    if (!success) {
+      window.IS.error("O WhatsApp não aceitou a inserção da mensagem.");
+    }
+
+    return success;
   },
   
   deleteTextBeforeCursor(charsToDelete) {
