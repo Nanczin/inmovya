@@ -138,9 +138,10 @@ window.IS.Scraper = {
     return titleNode ? (titleNode.getAttribute('title') || '').trim() : '';
   },
 
-  findLabelRowByName(name) {
+  async findLabelRowByName(name) {
     const normalizedName = (name || '').toLocaleLowerCase();
-    return this.getLabelsList().find(row => this.getRowName(row).toLocaleLowerCase() === normalizedName) || null;
+    const labels = await this.getLabelsList();
+    return labels.find(row => this.getRowName(row).toLocaleLowerCase() === normalizedName) || null;
   },
   
   async clickBack() {
@@ -220,7 +221,7 @@ window.IS.Scraper = {
       
       for (let i = 0; i < labelNames.length; i++) {
         const labelName = labelNames[i];
-        const row = this.findLabelRowByName(labelName);
+        const row = await this.findLabelRowByName(labelName);
         if (!row) continue;
 
         row.click();

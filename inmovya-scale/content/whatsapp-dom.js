@@ -94,6 +94,37 @@ window.IS.WhatsAppDOM = {
     return null;
   },
 
+  findDocumentFileInput() {
+    const menuItems = document.querySelectorAll('[role="menuitem"], li, label, div[role="button"]');
+    for (const item of menuItems) {
+      if (item.offsetParent === null || item.closest('#inmovya-scale-root')) continue;
+      const context = `${item.getAttribute('aria-label') || ''} ${item.getAttribute('title') || ''} ${item.textContent || ''}`.toLowerCase();
+      if (!/documento|document/.test(context)) continue;
+      const input = item.querySelector('input[type="file"]');
+      if (input) return input;
+      if (item.tagName === 'LABEL' && item.htmlFor) {
+        const linkedInput = document.getElementById(item.htmlFor);
+        if (linkedInput && linkedInput.type === 'file') return linkedInput;
+      }
+    }
+
+    return Array.from(document.querySelectorAll('input[type="file"]')).find(input => {
+      if (input.closest('#inmovya-scale-root')) return false;
+      const accept = (input.getAttribute('accept') || '').toLowerCase();
+      return accept === '*' || accept.includes('application/pdf') || (!accept.includes('image') && !accept.includes('video'));
+    }) || null;
+  },
+
+  async waitForDocumentFileInput(timeoutMs = 3000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const input = this.findDocumentFileInput();
+      if (input) return input;
+      await this.delay(100);
+    }
+    return null;
+  },
+
   openAttachmentMenu() {
     const selectors = [
       '#main footer span[data-icon="plus-rounded"]',
@@ -195,6 +226,13 @@ window.IS.WhatsAppDOM = {
     return new File(chunks, attachment.name || 'anexo', { type: attachment.type || 'application/octet-stream' });
   },
 
+  isMediaAttachment(attachment) {
+    const type = (attachment.type || '').toLowerCase();
+    const name = (attachment.name || '').toLowerCase();
+    return type.startsWith('image/') || type.startsWith('video/') ||
+      /\.(jpe?g|png|gif|webp|heic|heif|mp4|mov|m4v|3gp|webm)$/i.test(name);
+  },
+
   async prepareMediaFile(attachment) {
     const file = this.dataUrlToFile(attachment);
     const mediaType = file.type.toLowerCase();
@@ -271,7 +309,6 @@ window.IS.WhatsAppDOM = {
       const files = await Promise.all(attachments.map(attachment => this.prepareMediaFile(attachment)));
       files.forEach(file => transfer.items.add(file));
       fileInput.files = transfer.files;
-      fileInput.dispatchEvent(new Event('input', { bubbles: true }));
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
       await this.delay(1800);
@@ -294,6 +331,31 @@ window.IS.WhatsAppDOM = {
     }
   },
 
+  async sendDocumentBatch(attachments) {
+    try {
+      this.openAttachmentMenu();
+      await this.delay(300);
+      const fileInput = await this.waitForDocumentFileInput(3000);
+      if (!fileInput) {
+        window.IS.error('Campo de Documento do WhatsApp não encontrado.');
+        return false;
+      }
+
+      const transfer = new DataTransfer();
+      attachments.forEach(attachment => transfer.items.add(this.dataUrlToFile(attachment)));
+      fileInput.files = transfer.files;
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      await this.delay(1800);
+      if (!await this.triggerMediaSend()) return false;
+      await this.delay(900);
+      return true;
+    } catch (error) {
+      window.IS.error('Erro ao enviar documentos', error);
+      return false;
+    }
+  },
+
   async insertSequenceAndAttachments(text, attachments = []) {
     const parts = (text || '').split('===').map(part => part.trim()).filter(Boolean);
     if (!parts.length && attachments.length) parts.push('');
@@ -310,8 +372,9 @@ window.IS.WhatsAppDOM = {
     for (let messageIndex = 0; messageIndex < parts.length; messageIndex++) {
       const message = parts[messageIndex];
       const linked = normalizedAttachments.filter(attachment => attachment.messageIndex === messageIndex);
-      const withCaption = linked.filter(attachment => attachment.useCaption);
-      const withoutCaption = linked.filter(attachment => !attachment.useCaption);
+      const withCaption = linked.filter(attachment => attachment.useCaption && this.isMediaAttachment(attachment));
+      const withoutCaption = linked.filter(attachment => !attachment.useCaption && this.isMediaAttachment(attachment));
+      const documents = linked.filter(attachment => !this.isMediaAttachment(attachment));
 
       if (withCaption.length) {
         if (!await this.sendAttachmentBatch(withCaption, message)) return false;
@@ -326,6 +389,7 @@ window.IS.WhatsAppDOM = {
       }
 
       if (withoutCaption.length && !await this.sendAttachmentBatch(withoutCaption)) return false;
+      if (documents.length && !await this.sendDocumentBatch(documents)) return false;
     }
 
     return true;
@@ -376,5 +440,4 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
-
 
