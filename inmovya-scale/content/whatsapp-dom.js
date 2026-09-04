@@ -137,15 +137,39 @@ window.IS.WhatsAppDOM = {
 
   openAttachmentMenu() {
     const selectors = [
+      '#main footer button[aria-label*="anex" i]',
+      '#main footer [role="button"][aria-label*="anex" i]',
+      '#main footer button[title*="anex" i]',
+      '#main footer [role="button"][title*="anex" i]',
+      '#main footer button[aria-label*="attach" i]',
+      '#main footer [role="button"][aria-label*="attach" i]',
+      '#main footer button[title*="attach" i]',
       '#main footer span[data-icon="plus-rounded"]',
       '#main footer span[data-icon="plus"]',
+      '#main footer span[data-icon="plus-alt"]',
       '#main footer span[data-icon="attach-menu-plus"]',
-      '#main footer span[data-icon="clip"]'
+      '#main footer span[data-icon="clip"]',
+      '#main footer [data-icon*="attach" i]',
+      '#main footer [data-icon*="plus" i]'
     ];
     for (const selector of selectors) {
-      const icon = document.querySelector(selector);
-      const button = icon && icon.closest('button, div[role="button"]');
+      const element = document.querySelector(selector);
+      const button = element && (element.matches('button, div[role="button"]')
+        ? element
+        : element.closest('button, div[role="button"]'));
       if (button && button.offsetParent !== null) {
+        button.click();
+        return true;
+      }
+    }
+
+    const footerButtons = document.querySelectorAll('#main footer button, #main footer div[role="button"]');
+    for (const button of footerButtons) {
+      if (button.offsetParent === null || button.closest('#inmovya-scale-root')) continue;
+      const iconNames = Array.from(button.querySelectorAll('[data-icon]'))
+        .map(icon => icon.getAttribute('data-icon') || '').join(' ');
+      const context = `${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''} ${iconNames}`.toLowerCase();
+      if (/(anex|attach|clip|plus)/.test(context) && !/(figurinha|sticker|emoji)/.test(context)) {
         button.click();
         return true;
       }
@@ -315,12 +339,15 @@ window.IS.WhatsAppDOM = {
 
   async sendAttachmentBatch(attachments, caption = '') {
     try {
-      if (!this.openAttachmentMenu()) {
+      let fileInput = this.findMediaFileInput();
+      if (!fileInput && !this.openAttachmentMenu()) {
         window.IS.error('Botão de anexos do WhatsApp não encontrado.');
         return false;
       }
-      await this.delay(600);
-      const fileInput = await this.waitForMediaFileInput(6000);
+      if (!fileInput) {
+        await this.delay(600);
+        fileInput = await this.waitForMediaFileInput(6000);
+      }
       if (!fileInput) {
         window.IS.error('Campo de Fotos e vídeos do WhatsApp não encontrado.');
         return false;
@@ -354,12 +381,15 @@ window.IS.WhatsAppDOM = {
 
   async sendDocumentBatch(attachments) {
     try {
-      if (!this.openAttachmentMenu()) {
+      let fileInput = this.findDocumentFileInput();
+      if (!fileInput && !this.openAttachmentMenu()) {
         window.IS.error('Botão de anexos do WhatsApp não encontrado.');
         return false;
       }
-      await this.delay(600);
-      const fileInput = await this.waitForDocumentFileInput(6000);
+      if (!fileInput) {
+        await this.delay(600);
+        fileInput = await this.waitForDocumentFileInput(6000);
+      }
       if (!fileInput) {
         window.IS.error('Campo de Documento do WhatsApp não encontrado.');
         return false;
