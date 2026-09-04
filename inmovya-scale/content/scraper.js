@@ -167,17 +167,22 @@ window.IS.Scraper = {
   },
 
   async scrapeAllContacts() {
-    const names = new Set();
+    const contactsByName = new Map();
     const collectVisible = async () => {
       const contacts = await this.scrapeContactsInView();
-      contacts.forEach(contact => names.add(contact.name));
+      contacts.forEach(contact => {
+        const key = contact.name.toLocaleLowerCase();
+        if (!contactsByName.has(key)) {
+          contactsByName.set(key, { id: window.IS.generateUUID(), name: contact.name });
+        }
+      });
     };
 
     let rows = this.getChatRows();
     const pane = this.findScrollableParent(rows[0]);
     if (!pane) {
       await collectVisible();
-      return Array.from(names).map(name => ({ name }));
+      return Array.from(contactsByName.values());
     }
 
     pane.scrollTop = 0;
@@ -191,7 +196,7 @@ window.IS.Scraper = {
       if (pane.scrollTop === previousTop) break;
     }
     await collectVisible();
-    return Array.from(names).map(name => ({ name }));
+    return Array.from(contactsByName.values());
   },
   
   async run() {

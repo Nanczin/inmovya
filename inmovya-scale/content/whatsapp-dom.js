@@ -42,46 +42,55 @@ window.IS.WhatsAppDOM = {
     return new Promise(resolve => setTimeout(resolve, ms));
   },
 
+  getFileInputFromMenuItem(item, validator) {
+    const candidates = [];
+    const addCandidate = input => {
+      if (input && input.type === 'file' && !candidates.includes(input)) candidates.push(input);
+    };
+
+    item.querySelectorAll('input[type="file"]').forEach(addCandidate);
+    if (item.tagName === 'LABEL' && item.htmlFor) addCandidate(document.getElementById(item.htmlFor));
+
+    const label = item.closest('label');
+    if (label) {
+      label.querySelectorAll('input[type="file"]').forEach(addCandidate);
+      if (label.htmlFor) addCandidate(document.getElementById(label.htmlFor));
+    }
+
+    let parent = item.parentElement;
+    for (let level = 0; parent && level < 3; level++, parent = parent.parentElement) {
+      parent.querySelectorAll(':scope > input[type="file"], :scope > label input[type="file"]').forEach(addCandidate);
+    }
+
+    return candidates.find(validator) || null;
+  },
+
+  isPhotosAndVideosInput(input) {
+    if (!input || input.closest('#inmovya-scale-root')) return false;
+    const accept = (input.getAttribute('accept') || '').toLowerCase();
+    return accept.includes('image') && accept.includes('video') && !/sticker|figurinha/.test(
+      `${input.getAttribute('aria-label') || ''} ${input.getAttribute('title') || ''}`.toLowerCase()
+    );
+  },
+
+  isDocumentInput(input) {
+    if (!input || input.closest('#inmovya-scale-root')) return false;
+    const accept = (input.getAttribute('accept') || '').toLowerCase();
+    return accept === '*' || accept.includes('application/') || (!accept.includes('image') && !accept.includes('video'));
+  },
+
   findMediaFileInput() {
     const menuItems = document.querySelectorAll('[role="menuitem"], li, label, div[role="button"]');
     for (const item of menuItems) {
       if (item.offsetParent === null || item.closest('#inmovya-scale-root')) continue;
       const context = `${item.getAttribute('aria-label') || ''} ${item.getAttribute('title') || ''} ${item.textContent || ''}`.toLowerCase();
       if (!/fotos?.*v[ií]deos?|photos?.*videos?|photos? & videos?/.test(context)) continue;
-      const input = item.querySelector('input[type="file"]');
+      const input = this.getFileInputFromMenuItem(item, candidate => this.isPhotosAndVideosInput(candidate));
       if (input) return input;
-      if (item.tagName === 'LABEL' && item.htmlFor) {
-        const linkedInput = document.getElementById(item.htmlFor);
-        if (linkedInput && linkedInput.type === 'file') return linkedInput;
-      }
     }
 
-    const candidates = document.querySelectorAll('#main input[type="file"], input[type="file"]');
-    const ranked = [];
-    for (const input of candidates) {
-      if (input.closest('#inmovya-scale-root')) continue;
-      const accept = (input.getAttribute('accept') || '').toLowerCase();
-      if (!accept.includes('image') && !accept.includes('video')) continue;
-
-      let context = '';
-      let current = input;
-      for (let level = 0; current && level < 4; level++, current = current.parentElement) {
-        context += ` ${current.getAttribute('aria-label') || ''} ${current.getAttribute('title') || ''}`;
-      }
-      context = context.toLowerCase();
-
-      if (/figurinha|sticker/.test(context) || (accept.includes('webp') && !accept.includes('video'))) continue;
-
-      let score = 0;
-      if (/fotos?.*v[ií]deos?|photos?.*videos?|media/.test(context)) score += 100;
-      if (accept.includes('video')) score += 40;
-      if (input.multiple) score += 20;
-      if (accept.includes('image')) score += 10;
-      if (/c[aâ]mera|camera/.test(context)) score -= 50;
-      ranked.push({ input, score });
-    }
-    ranked.sort((a, b) => b.score - a.score);
-    return ranked.length ? ranked[0].input : null;
+    return Array.from(document.querySelectorAll('#main input[type="file"], input[type="file"]'))
+      .find(input => this.isPhotosAndVideosInput(input)) || null;
   },
 
   async waitForMediaFileInput(timeoutMs = 3000) {
@@ -100,19 +109,12 @@ window.IS.WhatsAppDOM = {
       if (item.offsetParent === null || item.closest('#inmovya-scale-root')) continue;
       const context = `${item.getAttribute('aria-label') || ''} ${item.getAttribute('title') || ''} ${item.textContent || ''}`.toLowerCase();
       if (!/documento|document/.test(context)) continue;
-      const input = item.querySelector('input[type="file"]');
+      const input = this.getFileInputFromMenuItem(item, candidate => this.isDocumentInput(candidate));
       if (input) return input;
-      if (item.tagName === 'LABEL' && item.htmlFor) {
-        const linkedInput = document.getElementById(item.htmlFor);
-        if (linkedInput && linkedInput.type === 'file') return linkedInput;
-      }
     }
 
-    return Array.from(document.querySelectorAll('input[type="file"]')).find(input => {
-      if (input.closest('#inmovya-scale-root')) return false;
-      const accept = (input.getAttribute('accept') || '').toLowerCase();
-      return accept === '*' || accept.includes('application/pdf') || (!accept.includes('image') && !accept.includes('video'));
-    }) || null;
+    return Array.from(document.querySelectorAll('input[type="file"]'))
+      .find(input => this.isDocumentInput(input)) || null;
   },
 
   async waitForDocumentFileInput(timeoutMs = 3000) {
@@ -440,4 +442,3 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
-

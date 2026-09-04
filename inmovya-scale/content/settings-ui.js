@@ -3,6 +3,7 @@ window.IS = window.IS || {};
 window.IS.SettingsUI = {
   initialized: false,
   waLabels: [],
+  selectedWaLabelName: null,
   editingId: null,
   draftAttachments: [],
 
@@ -330,6 +331,9 @@ window.IS.SettingsUI = {
         }
 
         this.waLabels = result;
+        if (!this.waLabels.some(label => label.name === this.selectedWaLabelName)) {
+          this.selectedWaLabelName = this.waLabels[0] ? this.waLabels[0].name : null;
+        }
         await chrome.storage.local.set({ waLabels: this.waLabels });
         this.renderWaLabels();
         this.showToast(`${result.length} etiqueta${result.length === 1 ? '' : 's'} sincronizada${result.length === 1 ? '' : 's'}.`);
@@ -340,6 +344,13 @@ window.IS.SettingsUI = {
         btn.textContent = "🔄 Sincronizar Etiquetas";
         btn.disabled = false;
       }
+    });
+
+    document.getElementById('is-set-labels-list').addEventListener('click', (event) => {
+      const button = event.target.closest('.is-label-selector');
+      if (!button) return;
+      this.selectedWaLabelName = button.getAttribute('data-label-name');
+      this.renderWaLabels();
     });
 
     // --- CONFIG ---
@@ -389,6 +400,9 @@ window.IS.SettingsUI = {
     const data = await chrome.storage.local.get('waLabels');
     if(data.waLabels) {
       this.waLabels = data.waLabels;
+      if (!this.waLabels.some(label => label.name === this.selectedWaLabelName)) {
+        this.selectedWaLabelName = this.waLabels[0] ? this.waLabels[0].name : null;
+      }
       this.renderWaLabels();
     }
   },
@@ -473,12 +487,28 @@ window.IS.SettingsUI = {
       list.innerHTML = `<div style="text-align:center; color:#888;">Nenhuma etiqueta.</div>`;
       return;
     }
-    list.innerHTML = this.waLabels.map(label => `
-      <div style="padding:10px; border:1px solid var(--inmovya-border); border-radius:4px;">
-        <h4 style="margin:0 0 5px 0; font-size:13px;">🏷️ ${window.IS.escapeHTML(label.name)} (${label.contacts.length})</h4>
-        <div style="font-size:11px; color:#888;">${label.contacts.map(c => window.IS.escapeHTML(c.name)).join(', ')}</div>
+
+    const selectedLabel = this.waLabels.find(label => label.name === this.selectedWaLabelName) || this.waLabels[0];
+    this.selectedWaLabelName = selectedLabel.name;
+    const contacts = Array.isArray(selectedLabel.contacts) ? selectedLabel.contacts : [];
+
+    list.innerHTML = `
+      <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;">
+        ${this.waLabels.map(label => {
+          const active = label.name === selectedLabel.name;
+          const contactCount = Array.isArray(label.contacts) ? label.contacts.length : 0;
+          return `<button type="button" class="is-label-selector" data-label-name="${window.IS.escapeHTML(label.name)}" style="flex:0 0 auto; padding:8px 10px; border:1px solid ${active ? 'var(--inmovya-primary)' : 'var(--inmovya-border)'}; border-radius:16px; cursor:pointer; background:${active ? 'var(--inmovya-primary)' : 'var(--inmovya-surface)'}; color:${active ? 'white' : 'var(--inmovya-text)'}; font-size:12px;">🏷️ ${window.IS.escapeHTML(label.name)} (${contactCount})</button>`;
+        }).join('')}
       </div>
-    `).join('');
+      <div style="font-size:12px; font-weight:bold; margin-top:6px;">Contatos em ${window.IS.escapeHTML(selectedLabel.name)}</div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        ${contacts.length ? contacts.map(contact => `
+          <div style="padding:9px 10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface); font-size:12px;">
+            ${window.IS.escapeHTML(contact.name)}
+          </div>
+        `).join('') : '<div style="padding:12px; text-align:center; color:#888; font-size:12px;">Nenhum contato nesta etiqueta.</div>'}
+      </div>
+    `;
   },
 
   async openReplyForm(id) {
