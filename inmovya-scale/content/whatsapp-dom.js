@@ -44,16 +44,31 @@ window.IS.WhatsAppDOM = {
 
   findMediaFileInput() {
     const candidates = document.querySelectorAll('#main input[type="file"], input[type="file"]');
-    for (let i = candidates.length - 1; i >= 0; i--) {
-      const input = candidates[i];
+    const ranked = [];
+    for (const input of candidates) {
+      if (input.closest('#inmovya-scale-root')) continue;
       const accept = (input.getAttribute('accept') || '').toLowerCase();
-      // O campo "Fotos e vídeos" aceita ambos. Campos que aceitam somente
-      // imagens pertencem à câmera ou ao criador de figurinhas.
-      if (!input.closest('#inmovya-scale-root') && accept.includes('image') && accept.includes('video')) {
-        return input;
+      if (!accept.includes('image') && !accept.includes('video')) continue;
+
+      let context = '';
+      let current = input;
+      for (let level = 0; current && level < 4; level++, current = current.parentElement) {
+        context += ` ${current.getAttribute('aria-label') || ''} ${current.getAttribute('title') || ''}`;
       }
+      context = context.toLowerCase();
+
+      if (/figurinha|sticker/.test(context) || (accept.includes('webp') && !accept.includes('video'))) continue;
+
+      let score = 0;
+      if (/fotos?.*v[ií]deos?|photos?.*videos?|media/.test(context)) score += 100;
+      if (accept.includes('video')) score += 40;
+      if (input.multiple) score += 20;
+      if (accept.includes('image')) score += 10;
+      if (/c[aâ]mera|camera/.test(context)) score -= 50;
+      ranked.push({ input, score });
     }
-    return null;
+    ranked.sort((a, b) => b.score - a.score);
+    return ranked.length ? ranked[0].input : null;
   },
 
   async waitForMediaFileInput(timeoutMs = 3000) {
@@ -320,7 +335,6 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
-
 
 
 

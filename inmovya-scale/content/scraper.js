@@ -118,7 +118,11 @@ window.IS.Scraper = {
       'div[aria-label*="Lista de chats" i] [role="listitem"]',
       'div[aria-label*="Lista de conversas" i] [role="listitem"]',
       'div[aria-label*="Chat list" i] [role="listitem"]',
-      '#side [role="listitem"]'
+      '#pane-side [role="listitem"]',
+      '#pane-side [role="row"]',
+      '#pane-side [data-testid*="cell-frame" i]',
+      '#side [role="listitem"]',
+      '#side [role="row"]'
     ];
     const rows = [];
     document.querySelectorAll(selectors.join(',')).forEach(row => {
@@ -127,6 +131,11 @@ window.IS.Scraper = {
       }
     });
     return rows;
+  },
+
+  getContactName(row) {
+    const titleNode = row.querySelector('[data-testid="cell-frame-title"] span[title], span[dir="auto"][title], span[title]');
+    return titleNode ? (titleNode.getAttribute('title') || '').trim() : '';
   },
   
   async clickBack() {
@@ -145,12 +154,38 @@ window.IS.Scraper = {
     const contacts = [];
     const chatRows = this.getChatRows();
     for (const row of chatRows) {
-      const titleSpan = row.querySelector('span[title]');
-      if (titleSpan) {
-        contacts.push({ name: titleSpan.title });
-      }
+      const name = this.getContactName(row);
+      if (name) contacts.push({ name });
     }
     return contacts;
+  },
+
+  async scrapeAllContacts() {
+    const names = new Set();
+    const collectVisible = async () => {
+      const contacts = await this.scrapeContactsInView();
+      contacts.forEach(contact => names.add(contact.name));
+    };
+
+    let rows = this.getChatRows();
+    const pane = this.findScrollableParent(rows[0]);
+    if (!pane) {
+      await collectVisible();
+      return Array.from(names).map(name => ({ name }));
+    }
+
+    pane.scrollTop = 0;
+    await this.delay(500);
+    for (let step = 0; step < 30; step++) {
+      await collectVisible();
+      const previousTop = pane.scrollTop;
+      const distance = Math.max(300, Math.floor(pane.clientHeight * 0.8));
+      pane.scrollTop = Math.min(pane.scrollHeight, previousTop + distance);
+      await this.delay(500);
+      if (pane.scrollTop === previousTop) break;
+    }
+    await collectVisible();
+    return Array.from(names).map(name => ({ name }));
   },
   
   async run() {
@@ -190,17 +225,7 @@ window.IS.Scraper = {
         row.click();
         await this.delay(2500); 
         
-        const firstChatRow = this.getChatRows()[0];
-        const pane = this.findScrollableParent(firstChatRow);
-        if (pane) {
-          for (let s = 0; s < 4; s++) {
-            pane.scrollTop = pane.scrollHeight;
-            await this.delay(1500);
-          }
-        }
-        
-        const contacts = await this.scrapeContactsInView();
-        const uniqueContacts = Array.from(new Set(contacts.map(c => c.name))).map(name => ({name}));
+        const uniqueContacts = await this.scrapeAllContacts();
         
         results.push({ id: window.IS.generateUUID(), name: labelName, contacts: uniqueContacts });
         
