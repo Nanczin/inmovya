@@ -131,6 +131,7 @@ window.IS.SettingsUI = {
       <div>
         <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Imagens, vídeos e anexos da sequência</label>
         <input type="file" id="is-form-attachments" accept="image/*,video/*,.pdf" multiple style="font-size:12px; max-width:100%;">
+        <button type="button" id="is-btn-native-files" style="margin-top:8px; width:100%; padding:8px; border:1px solid var(--inmovya-primary); color:var(--inmovya-primary); background:transparent; border-radius:4px; cursor:pointer; font-weight:bold;">Selecionar arquivo original do computador</button>
         <div style="font-size:11px; color:var(--inmovya-text-secondary); margin-top:5px;">Selecione imagens ou vídeos de uma vez ou adicione novos lotes. Eles serão enviados na ordem exibida.</div>
         <div id="is-form-attachments-preview" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;"></div>
       </div>
@@ -244,11 +245,10 @@ window.IS.SettingsUI = {
       const shortcut = document.getElementById('is-form-shortcut').value.trim().replace(/^\//, '');
       const categoryId = document.getElementById('is-form-category').value;
       const favorite = document.getElementById('is-form-favorite').checked;
-      const messageInputs = Array.from(document.querySelectorAll('.is-form-message-input'));
-      if (this.draftAttachments.length && messageInputs.some(input => !input.value.trim())) {
-        return this.showToast("Preencha todas as mensagens que possuem anexos.");
-      }
       const message = this.getMessageBlocksData();
+      if (!message && this.draftAttachments.length === 0) {
+        return this.showToast("Adicione uma mensagem ou uma imagem.");
+      }
       
       let replies = await window.IS.Storage.getReplies();
       if (this.editingId) {
@@ -294,6 +294,8 @@ window.IS.SettingsUI = {
     document.getElementById('is-form-attachments').addEventListener('change', (e) => {
       this.handleAttachmentsUpload(e);
     });
+
+    document.getElementById('is-btn-native-files').addEventListener('click', () => { this.handleNativeFiles(); });
     
     document.getElementById('is-form-attachments-preview').addEventListener('click', async (e) => {
       if (e.target.classList.contains('is-btn-remove-attachment')) {
@@ -588,7 +590,7 @@ window.IS.SettingsUI = {
     const messageCount = Math.max(1, document.querySelectorAll('.is-form-message-input').length);
     container.innerHTML = attachments.map((att, idx) => {
       let preview = '';
-      if (att.type.startsWith('image/')) {
+      if (att.type.startsWith('image/') && att.data) {
         preview = `<img src="${att.data}" style="width:40px; height:40px; object-fit:cover; border-radius:4px;">`;
       } else if (att.type.startsWith('video/')) {
         preview = `<div style="width:40px; height:40px; background:#e8f4ff; display:flex; align-items:center; justify-content:center; border-radius:4px; font-size:20px;">🎬</div>`;
@@ -650,6 +652,21 @@ window.IS.SettingsUI = {
     this.renderAttachmentsPreview(this.draftAttachments);
     e.target.value = '';
     this.showToast(addedCount === 1 ? "1 anexo adicionado." : `${addedCount} anexos adicionados.`);
+  },
+
+  async handleNativeFiles() {
+    this.showToast("Abrindo arquivos do computador...");
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'native_pick_files' });
+      if (!response?.ok) throw new Error(response?.error || 'Aplicativo auxiliar indisponível.');
+      const files = Array.isArray(response.files) ? response.files : [];
+      files.forEach(file => this.draftAttachments.push({ id: window.IS.generateUUID(), name: file.name, type: file.type || 'application/octet-stream', size: file.size || 0, nativePath: file.path, messageIndex: Math.max(0, document.querySelectorAll('.is-form-message-input').length - 1), useCaption: false }));
+      this.renderAttachmentsPreview(this.draftAttachments);
+      this.showToast(files.length === 1 ? "1 arquivo original selecionado." : `${files.length} arquivos originais selecionados.`);
+    } catch (error) {
+      window.IS.error('Erro no aplicativo auxiliar', error);
+      this.showToast(`Aplicativo auxiliar: ${error.message}`);
+    }
   },
 
   fileToBase64(file) {

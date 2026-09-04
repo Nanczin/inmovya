@@ -228,6 +228,14 @@ window.IS.WhatsAppDOM = {
     return new File(chunks, attachment.name || 'anexo', { type: attachment.type || 'application/octet-stream' });
   },
 
+  async resolveNativeAttachment(attachment) {
+    if (!attachment.nativePath) return attachment;
+    const response = await chrome.runtime.sendMessage({ action: 'native_read_file', path: attachment.nativePath });
+    if (!response?.ok || !response.data) throw new Error(response?.error || `Não foi possível ler ${attachment.name}.`);
+    const type = response.type || attachment.type || 'application/octet-stream';
+    return { ...attachment, name: response.name || attachment.name, type, data: `data:${type};base64,${response.data}` };
+  },
+
   isMediaAttachment(attachment) {
     const type = (attachment.type || '').toLowerCase();
     const name = (attachment.name || '').toLowerCase();
@@ -361,6 +369,13 @@ window.IS.WhatsAppDOM = {
   async insertSequenceAndAttachments(text, attachments = []) {
     const parts = (text || '').split('===').map(part => part.trim()).filter(Boolean);
     if (!parts.length && attachments.length) parts.push('');
+
+    try {
+      attachments = await Promise.all(attachments.map(attachment => this.resolveNativeAttachment(attachment)));
+    } catch (error) {
+      window.IS.error('Erro ao ler arquivo original', error);
+      return false;
+    }
 
     const lastMessageIndex = Math.max(0, parts.length - 1);
     const normalizedAttachments = attachments.map(attachment => ({
