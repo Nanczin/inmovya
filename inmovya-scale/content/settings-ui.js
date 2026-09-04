@@ -6,7 +6,7 @@ window.IS.SettingsUI = {
   editingId: null,
 
   get htmlTemplate() {
-    return `<div id="is-native-settings-container" style="display:none; flex-direction:column; height:100%; width:100%; background:var(--inmovya-background); color:var(--inmovya-text); overflow-y:auto; overflow-x:hidden;">
+    return `<div id="is-native-settings-container" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--inmovya-background); color:var(--inmovya-text); overflow-y:auto; overflow-x:hidden;">
   <div class="is-header" style="flex-shrink:0;">
     <div class="is-brand">
       <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
