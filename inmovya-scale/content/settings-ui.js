@@ -595,9 +595,9 @@ window.IS.SettingsUI = {
     let addedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const maxSize = file.type.startsWith('video/') ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+      const maxSize = file.type.startsWith('video/') ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
       if (file.size > maxSize) {
-        const limitMb = file.type.startsWith('video/') ? 50 : 10;
+        const limitMb = file.type.startsWith('video/') ? 200 : 20;
         this.showToast(`Arquivo ${file.name} ignorado (>${limitMb}MB).`);
         continue;
       }

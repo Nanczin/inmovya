@@ -166,6 +166,24 @@ window.IS.WhatsAppDOM = {
     return true;
   },
 
+  async triggerMediaSend(captionInput = null) {
+    const target = captionInput || this.findMediaCaptionInput() || document.activeElement;
+    if (!target || target === document.body) return this.triggerSend(false);
+
+    target.focus();
+    const eventOptions = {
+      key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+      bubbles: true, cancelable: true
+    };
+    target.dispatchEvent(new KeyboardEvent('keydown', eventOptions));
+    target.dispatchEvent(new KeyboardEvent('keypress', eventOptions));
+    target.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
+
+    await this.delay(700);
+    const previewStillOpen = !!this.findMediaCaptionInput();
+    return previewStillOpen ? this.triggerSend(false) : true;
+  },
+
   dataUrlToFile(attachment) {
     const base64 = (attachment.data || '').split(',')[1] || attachment.data || '';
     const bytes = atob(base64);
@@ -179,24 +197,33 @@ window.IS.WhatsAppDOM = {
 
   async prepareMediaFile(attachment) {
     const file = this.dataUrlToFile(attachment);
-    if (file.type.toLowerCase() !== 'image/webp') return file;
+    const mediaType = file.type.toLowerCase();
+    if (!mediaType.startsWith('image/') || mediaType === 'image/gif') return file;
 
     const image = new Image();
     image.src = attachment.data;
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = () => reject(new Error('Não foi possível converter a imagem WebP.'));
+    const loaded = await new Promise(resolve => {
+      image.onload = () => resolve(true);
+      image.onerror = () => resolve(false);
     });
+    // HEIC e outros formatos não decodificados pelo navegador seguem intactos
+    // para que o próprio WhatsApp faça a conversão.
+    if (!loaded || !image.naturalWidth || !image.naturalHeight) return file;
 
     const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    canvas.getContext('2d').drawImage(image, 0, 0);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-    if (!blob) throw new Error('Não foi possível gerar a imagem PNG.');
+    const maxDimension = 1600;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+    if (!blob) return file;
 
-    const pngName = (attachment.name || 'anexo.webp').replace(/\.webp$/i, '') + '.png';
-    return new File([blob], pngName, { type: 'image/png' });
+    const jpegName = (attachment.name || 'imagem').replace(/\.[^.]+$/, '') + '.jpg';
+    return new File([blob], jpegName, { type: 'image/jpeg' });
   },
 
   async insertTextIntoInput(input, text) {
@@ -248,8 +275,9 @@ window.IS.WhatsAppDOM = {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
       await this.delay(1800);
+      let captionInput = null;
       if (caption) {
-        const captionInput = await this.waitForMediaCaptionInput();
+        captionInput = await this.waitForMediaCaptionInput();
         if (!captionInput || !await this.insertTextIntoInput(captionInput, caption)) {
           window.IS.error('Campo de legenda do WhatsApp não encontrado.');
           return false;
@@ -257,7 +285,7 @@ window.IS.WhatsAppDOM = {
         await this.delay(250);
       }
 
-      if (!await this.triggerSend(false)) return false;
+      if (!await this.triggerMediaSend(captionInput)) return false;
       await this.delay(900);
       return true;
     } catch (error) {
@@ -348,7 +376,5 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
-
-
 
 
