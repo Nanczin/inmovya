@@ -10,7 +10,6 @@ window.IS.SettingsUI = {
     return `<div id="is-native-settings-container" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--inmovya-background); color:var(--inmovya-text); overflow-y:auto; overflow-x:hidden;">
   <div class="is-header" style="flex-shrink:0;">
     <div class="is-brand">
-      <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
       <span>Configurações</span>
     </div>
     <button id="is-settings-close-btn" title="Voltar" style="background:transparent;border:none;cursor:pointer;color:var(--inmovya-text-secondary);">
@@ -97,7 +96,7 @@ window.IS.SettingsUI = {
 <div id="is-modal-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999999; justify-content:center; align-items:center;">
   
   <!-- Reply Form Modal -->
-  <div id="is-reply-modal" style="display:none; background:var(--inmovya-background); color:var(--inmovya-text); width:calc(100% - 32px); max-width:400px; max-height:calc(100% - 32px); border-radius:8px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.28);">
+  <div id="is-reply-modal" style="display:none; background:var(--inmovya-background); color:var(--inmovya-text); width:calc(100% - 32px); max-width:400px; max-height:calc(100% - 32px); border-radius:8px; flex-direction:column; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.28);">
     <div style="padding:15px; border-bottom:1px solid var(--inmovya-border);">
       <h3 id="is-modal-title" style="margin:0; font-size:16px;">Nova Resposta</h3>
     </div>
@@ -401,7 +400,7 @@ window.IS.SettingsUI = {
     
     const grouped = {};
     replies.forEach(r => {
-      const catId = r.categoryId || 'uncategorized';
+      const catId = r.categoryId || 'default-category';
       if (!grouped[catId]) grouped[catId] = [];
       grouped[catId].push(r);
     });
@@ -423,6 +422,7 @@ window.IS.SettingsUI = {
     `;
 
     categories.forEach(c => {
+      if (c.id === 'default-category') return;
       if (grouped[c.id] && grouped[c.id].length > 0) {
         html += `<div style="font-size:12px; font-weight:bold; color:var(--inmovya-primary); margin-top:10px;">📁 ${window.IS.escapeHTML(c.name)}</div>`;
         html += grouped[c.id].map(r => renderItem(r)).join('');
@@ -430,9 +430,9 @@ window.IS.SettingsUI = {
       }
     });
 
-    if (grouped['uncategorized'] && grouped['uncategorized'].length > 0) {
-      html += `<div style="font-size:12px; font-weight:bold; color:var(--inmovya-text-secondary); margin-top:10px;">📁 Geral</div>`;
-      html += grouped['uncategorized'].map(r => renderItem(r)).join('');
+    if (grouped['default-category'] && grouped['default-category'].length > 0) {
+      html += `<div style="font-size:12px; font-weight:bold; color:var(--inmovya-text-secondary); margin-top:10px;">📁 Sem categoria</div>`;
+      html += grouped['default-category'].map(r => renderItem(r)).join('');
     }
 
     if (replies.length === 0) {
@@ -485,12 +485,17 @@ window.IS.SettingsUI = {
     this.editingId = id;
     this.draftAttachments = [];
     const modal = document.getElementById('is-reply-modal');
+    document.getElementById('is-confirm-modal').style.display = 'none';
     document.getElementById('is-modal-overlay').style.display = 'flex';
     modal.style.display = 'flex';
     
     const catSelect = document.getElementById('is-form-category');
     const categories = await window.IS.Storage.getCategories();
-    catSelect.innerHTML = categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('');
+    catSelect.innerHTML = `<option value="default-category">Sem categoria</option>` +
+      categories
+        .filter(c => c.id !== 'default-category')
+        .map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`)
+        .join('');
 
     if (id) {
       document.getElementById('is-modal-title').textContent = "Editar Resposta";
@@ -626,6 +631,7 @@ window.IS.SettingsUI = {
     return new Promise((resolve) => {
       document.getElementById('is-confirm-title').textContent = title;
       document.getElementById('is-confirm-text').textContent = text;
+      document.getElementById('is-reply-modal').style.display = 'none';
       document.getElementById('is-modal-overlay').style.display = 'flex';
       document.getElementById('is-confirm-modal').style.display = 'block';
       

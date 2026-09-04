@@ -71,6 +71,13 @@ html[dir] body.dark {
   display: none;
 }
 
+.is-toggle-logo {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
 #is-sidebar {
   position: absolute;
   top: 0;
@@ -118,6 +125,13 @@ html[dir] body.dark {
   font-weight: 600;
   color: var(--inmovya-text);
   font-size: 16px;
+}
+
+.is-brand-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 #is-close-btn {

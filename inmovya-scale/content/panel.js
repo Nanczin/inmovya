@@ -40,14 +40,14 @@ window.IS.Panel = {
 
     this.container.innerHTML = `
       <div id="is-toggle-button" class="${this.isOpen ? 'is-hidden' : ''}" title="Abrir Inmovya Scale">
-        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        <img class="is-toggle-logo" src="${chrome.runtime.getURL('icons/inmovya-logo.png')}" alt="Inmovya Scale">
       </div>
 
       <div id="is-sidebar" class="${this.isOpen ? 'is-open' : ''}" style="width: ${this.settings.panelWidth || 340}px">
         <div id="is-resizer"></div>
         <div class="is-header">
           <div class="is-brand">
-            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+            <img class="is-brand-logo" src="${chrome.runtime.getURL('icons/inmovya-logo.png')}" alt="">
             <span>Inmovya Scale</span>
           </div>
           <button id="is-close-btn" title="Fechar painel">
@@ -64,7 +64,8 @@ window.IS.Panel = {
             <div class="is-filter-actions" style="margin-top:5px; display:flex; gap:5px; width:100%;">
               <select id="is-category-select" style="flex:1;">
                 <option value="all">Todas as categorias</option>
-                ${this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('')}
+                <option value="default-category">Sem categoria</option>
+                ${this.categories.filter(c => c.id !== 'default-category').map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('')}
               </select>
               <button id="is-settings-btn-main" title="Gerenciar" style="background:var(--inmovya-primary); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold; white-space:nowrap;">
                 ⚙️ Gerenciar
@@ -95,7 +96,7 @@ window.IS.Panel = {
       filtered = filtered.filter(r => r.favorite);
     }
     if (this.activeCategory !== 'all') {
-      filtered = filtered.filter(r => r.categoryId === this.activeCategory);
+      filtered = filtered.filter(r => (r.categoryId || 'default-category') === this.activeCategory);
     }
     if (this.searchTerm) {
       const term = window.IS.removeAccents(this.searchTerm.toLowerCase());
@@ -226,7 +227,11 @@ window.IS.Panel = {
           if (sel) {
             const oldVal = sel.value;
             sel.innerHTML = `<option value="all">Todas as categorias</option>` +
-              this.categories.map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`).join('');
+              `<option value="default-category">Sem categoria</option>` +
+              this.categories
+                .filter(c => c.id !== 'default-category')
+                .map(c => `<option value="${c.id}">${window.IS.escapeHTML(c.name)}</option>`)
+                .join('');
             sel.value = oldVal;
           }
           changed = true;

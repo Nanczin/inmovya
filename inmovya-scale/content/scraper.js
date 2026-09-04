@@ -147,7 +147,8 @@ window.IS.Scraper = {
         await this.delay(1500);
       }
       
-      await this.clickBack();
+      // Cada item já retorna para a lista de etiquetas dentro do laço.
+      // Não volte novamente aqui, pois isso fecha a tela de etiquetas.
       window.IS.log("Scraping finalizado", results);
       return results;
       

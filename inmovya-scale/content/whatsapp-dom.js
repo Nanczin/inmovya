@@ -44,14 +44,20 @@ window.IS.WhatsAppDOM = {
 
   findMediaFileInput() {
     const candidates = document.querySelectorAll('#main input[type="file"], input[type="file"]');
+    const mediaInputs = [];
     for (let i = candidates.length - 1; i >= 0; i--) {
       const input = candidates[i];
       const accept = (input.getAttribute('accept') || '').toLowerCase();
-      if (!input.closest('#inmovya-scale-root') && (accept.includes('image') || accept.includes('video'))) {
-        return input;
+      const isStickerInput = accept.includes('webp') && !accept.includes('video');
+      if (!input.closest('#inmovya-scale-root') && !isStickerInput && (accept.includes('image') || accept.includes('video'))) {
+        mediaInputs.push({
+          input,
+          score: (accept.includes('video') ? 2 : 0) + (accept.includes('image/*') ? 1 : 0)
+        });
       }
     }
-    return null;
+    mediaInputs.sort((a, b) => b.score - a.score);
+    return mediaInputs.length ? mediaInputs[0].input : null;
   },
 
   async waitForMediaFileInput(timeoutMs = 3000) {
@@ -84,6 +90,9 @@ window.IS.WhatsAppDOM = {
 
   findMediaCaptionInput() {
     const selectors = [
+      '[role="dialog"] div[contenteditable="true"][aria-label*="legenda" i]',
+      '[role="dialog"] div[contenteditable="true"][aria-placeholder*="legenda" i]',
+      '[role="dialog"] div[contenteditable="true"][data-lexical-editor="true"]',
       '[role="dialog"] div[contenteditable="true"][role="textbox"]',
       '[data-animate-modal-popup] div[contenteditable="true"]',
       'div[contenteditable="true"][role="textbox"]'
@@ -97,6 +106,16 @@ window.IS.WhatsAppDOM = {
           return candidate;
         }
       }
+    }
+    return null;
+  },
+
+  async waitForMediaCaptionInput(timeoutMs = 5000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const input = this.findMediaCaptionInput();
+      if (input) return input;
+      await this.delay(100);
     }
     return null;
   },
@@ -134,6 +153,28 @@ window.IS.WhatsAppDOM = {
     return new File(chunks, attachment.name || 'anexo', { type: attachment.type || 'application/octet-stream' });
   },
 
+  async prepareMediaFile(attachment) {
+    const file = this.dataUrlToFile(attachment);
+    if (file.type.toLowerCase() !== 'image/webp') return file;
+
+    const image = new Image();
+    image.src = attachment.data;
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error('Não foi possível converter a imagem WebP.'));
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    canvas.getContext('2d').drawImage(image, 0, 0);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('Não foi possível gerar a imagem PNG.');
+
+    const pngName = (attachment.name || 'anexo.webp').replace(/\.webp$/i, '') + '.png';
+    return new File([blob], pngName, { type: 'image/png' });
+  },
+
   async insertTextIntoInput(input, text) {
     if (!input || !text) return true;
     input.focus();
@@ -148,15 +189,21 @@ window.IS.WhatsAppDOM = {
       selection.addRange(range);
     }
 
-    let success = document.execCommand('insertText', false, text);
-    if (!success) {
+    document.execCommand('insertText', false, text);
+    await this.delay(120);
+
+    let insertedText = (input.innerText || input.textContent || '').trim();
+    if (!insertedText) {
       const transfer = new DataTransfer();
       transfer.setData('text/plain', text);
       input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+      await this.delay(120);
+      insertedText = (input.innerText || input.textContent || '').trim();
     }
-    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-    await this.delay(80);
-    return success || (input.innerText || input.textContent || '').trim().length > 0;
+    // execCommand and the paste fallback already notify WhatsApp's editor.
+    // Dispatching another input event with the same data makes Lexical insert
+    // every sequence item twice in newer WhatsApp Web versions.
+    return insertedText.length > 0;
   },
 
   async sendAttachmentBatch(attachments, caption = '') {
@@ -171,18 +218,20 @@ window.IS.WhatsAppDOM = {
       }
 
       const transfer = new DataTransfer();
-      attachments.forEach(attachment => transfer.items.add(this.dataUrlToFile(attachment)));
+      const files = await Promise.all(attachments.map(attachment => this.prepareMediaFile(attachment)));
+      files.forEach(file => transfer.items.add(file));
       fileInput.files = transfer.files;
       fileInput.dispatchEvent(new Event('input', { bubbles: true }));
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
       await this.delay(1800);
       if (caption) {
-        const captionInput = this.findMediaCaptionInput();
+        const captionInput = await this.waitForMediaCaptionInput();
         if (!captionInput || !await this.insertTextIntoInput(captionInput, caption)) {
           window.IS.error('Campo de legenda do WhatsApp não encontrado.');
           return false;
         }
+        await this.delay(250);
       }
 
       if (!await this.triggerSend(false)) return false;
@@ -276,9 +325,6 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
-
-
-
 
 
 

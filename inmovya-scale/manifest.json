@@ -12,6 +12,16 @@
     "host_permissions":  [
                              "https://web.whatsapp.com/*"
                          ],
+    "web_accessible_resources":  [
+                                      {
+                                          "resources":  [
+                                                            "icons/inmovya-logo.png"
+                                                        ],
+                                          "matches":  [
+                                                          "https://web.whatsapp.com/*"
+                                                      ]
+                                      }
+                                  ],
     "action":  {
                    "default_title":  "Abrir Inmovya Scale"
                },
