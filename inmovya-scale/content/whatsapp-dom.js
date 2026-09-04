@@ -44,20 +44,16 @@ window.IS.WhatsAppDOM = {
 
   findMediaFileInput() {
     const candidates = document.querySelectorAll('#main input[type="file"], input[type="file"]');
-    const mediaInputs = [];
     for (let i = candidates.length - 1; i >= 0; i--) {
       const input = candidates[i];
       const accept = (input.getAttribute('accept') || '').toLowerCase();
-      const isStickerInput = accept.includes('webp') && !accept.includes('video');
-      if (!input.closest('#inmovya-scale-root') && !isStickerInput && (accept.includes('image') || accept.includes('video'))) {
-        mediaInputs.push({
-          input,
-          score: (accept.includes('video') ? 2 : 0) + (accept.includes('image/*') ? 1 : 0)
-        });
+      // O campo "Fotos e vídeos" aceita ambos. Campos que aceitam somente
+      // imagens pertencem à câmera ou ao criador de figurinhas.
+      if (!input.closest('#inmovya-scale-root') && accept.includes('image') && accept.includes('video')) {
+        return input;
       }
     }
-    mediaInputs.sort((a, b) => b.score - a.score);
-    return mediaInputs.length ? mediaInputs[0].input : null;
+    return null;
   },
 
   async waitForMediaFileInput(timeoutMs = 3000) {
@@ -208,12 +204,11 @@ window.IS.WhatsAppDOM = {
 
   async sendAttachmentBatch(attachments, caption = '') {
     try {
-      let fileInput = await this.waitForMediaFileInput(800);
-      if (!fileInput && this.openAttachmentMenu()) {
-        fileInput = await this.waitForMediaFileInput(2500);
-      }
+      this.openAttachmentMenu();
+      await this.delay(300);
+      const fileInput = await this.waitForMediaFileInput(3000);
       if (!fileInput) {
-        window.IS.error('Seletor de anexos do WhatsApp não encontrado.');
+        window.IS.error('Campo de Fotos e vídeos do WhatsApp não encontrado.');
         return false;
       }
 
@@ -325,7 +320,6 @@ window.IS.WhatsAppDOM = {
     return true;
   }
 };
-
 
 
 

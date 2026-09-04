@@ -6,6 +6,18 @@ window.IS.Scraper = {
     return new Promise(res => setTimeout(res, ms));
   },
 
+  isVisible(element) {
+    return !!element && element.offsetParent !== null && !element.closest('#inmovya-scale-root');
+  },
+
+  getRowName(row) {
+    const titleNode = row && row.querySelector('span[title], [title]');
+    const rawName = titleNode
+      ? titleNode.getAttribute('title')
+      : row && (row.getAttribute('aria-label') || row.getAttribute('title') || row.textContent);
+    return (rawName || '').replace(/\s+/g, ' ').trim();
+  },
+
   async clickMenu() {
     const selectors = [
       'header div[title="Mais opções"]',
@@ -30,8 +42,16 @@ window.IS.Scraper = {
   },
 
   async clickEtiquetas() {
-    const sidebarIcon = document.querySelector('div[aria-label="Etiquetas"], div[title="Etiquetas"], span[data-icon="label"]');
-    if (sidebarIcon && sidebarIcon.closest('header, nav, #side, #app')) {
+    const selectors = [
+      '[aria-label="Etiquetas" i]',
+      '[title="Etiquetas" i]',
+      '[aria-label="Labels" i]',
+      '[title="Labels" i]',
+      'span[data-icon*="label"]',
+      'span[data-icon*="tag"]'
+    ];
+    const sidebarIcon = Array.from(document.querySelectorAll(selectors.join(','))).find(element => this.isVisible(element));
+    if (sidebarIcon) {
       const btn = sidebarIcon.closest('div[role="button"]') || sidebarIcon.closest('button');
       if (btn) {
         btn.click();
@@ -39,32 +59,73 @@ window.IS.Scraper = {
       }
     }
 
-    const uls = document.querySelectorAll('ul');
-    for (let ul of uls) {
-      const items = ul.querySelectorAll('li, div[role="button"]');
-      for (let item of items) {
-        const text = item.textContent.toLowerCase();
-        if (text.includes('etiqueta') || text.includes('label')) {
-          item.click();
-          return true;
-        }
+    const items = document.querySelectorAll('li, button, div[role="button"], [role="menuitem"]');
+    for (const item of items) {
+      const text = `${item.getAttribute('aria-label') || ''} ${item.getAttribute('title') || ''} ${item.textContent || ''}`.toLowerCase();
+      if (this.isVisible(item) && (text.includes('etiqueta') || text.includes('label'))) {
+        item.click();
+        return true;
       }
     }
     return false;
   },
   
   async getLabelsList() {
-    const labelRows = document.querySelectorAll('div[aria-label="Etiquetas"] div[role="button"]');
-    if (labelRows && labelRows.length > 0) return Array.from(labelRows);
-    
-    const labelIcons = document.querySelectorAll('span[data-icon="label"]');
     const rows = [];
-    if (labelIcons && labelIcons.length > 0) {
-      for (let i = 0; i < labelIcons.length; i++) {
-        const btn = labelIcons[i].closest('div[role="button"]') || labelIcons[i].closest('button');
-        if (btn) rows.push(btn);
-      }
+    const addRow = (row) => {
+      if (!row || !this.isVisible(row) || rows.includes(row)) return;
+      const name = this.getRowName(row).toLowerCase();
+      if (!name || /^(etiquetas?|labels?|voltar|back|nova etiqueta|new label)$/.test(name)) return;
+      rows.push(row);
+    };
+
+    document.querySelectorAll('[data-testid*="label" i], [data-testid*="tag" i]').forEach(element => {
+      addRow(element.closest('[role="listitem"], [role="button"], li') || element);
+    });
+
+    document.querySelectorAll('span[data-icon*="label"], span[data-icon*="tag"]').forEach(icon => {
+      addRow(icon.closest('[role="listitem"], [role="button"], li'));
+    });
+
+    const labelsViewOpen = Array.from(document.querySelectorAll('header, [role="heading"], h1, h2, h3'))
+      .some(element => this.isVisible(element) && /^(etiquetas|labels)$/i.test((element.textContent || '').trim()));
+
+    if (labelsViewOpen) {
+      const selectors = [
+        '#side [role="listitem"]',
+        '[aria-label*="etiqueta" i] [role="listitem"]',
+        '[aria-label*="label" i] [role="listitem"]'
+      ];
+      document.querySelectorAll(selectors.join(',')).forEach(addRow);
     }
+
+    return rows.filter(row => {
+      return !rows.some(other => other !== row && row.contains(other));
+    });
+  },
+
+  findScrollableParent(element) {
+    let current = element && element.parentElement;
+    while (current && current !== document.body) {
+      if (current.scrollHeight > current.clientHeight + 20) return current;
+      current = current.parentElement;
+    }
+    return null;
+  },
+
+  getChatRows() {
+    const selectors = [
+      'div[aria-label*="Lista de chats" i] [role="listitem"]',
+      'div[aria-label*="Lista de conversas" i] [role="listitem"]',
+      'div[aria-label*="Chat list" i] [role="listitem"]',
+      '#side [role="listitem"]'
+    ];
+    const rows = [];
+    document.querySelectorAll(selectors.join(',')).forEach(row => {
+      if (this.isVisible(row) && row.querySelector('span[title]') && !rows.includes(row)) {
+        rows.push(row);
+      }
+    });
     return rows;
   },
   
@@ -82,7 +143,7 @@ window.IS.Scraper = {
   
   async scrapeContactsInView() {
     const contacts = [];
-    const chatRows = document.querySelectorAll('div[aria-label="Lista de chats"] div[role="listitem"]');
+    const chatRows = this.getChatRows();
     for (const row of chatRows) {
       const titleSpan = row.querySelector('span[title]');
       if (titleSpan) {
@@ -124,13 +185,13 @@ window.IS.Scraper = {
         const row = labels[i];
         if (!row) continue;
         
-        const nameNode = row.querySelector('span[title]');
-        const labelName = nameNode ? nameNode.title : `Etiqueta ${i+1}`;
+        const labelName = this.getRowName(row) || `Etiqueta ${i+1}`;
         
         row.click();
         await this.delay(2500); 
         
-        const pane = document.querySelector('div[aria-label="Lista de chats"]');
+        const firstChatRow = this.getChatRows()[0];
+        const pane = this.findScrollableParent(firstChatRow);
         if (pane) {
           for (let s = 0; s < 4; s++) {
             pane.scrollTop = pane.scrollHeight;
