@@ -45,7 +45,66 @@ function callNativeFileHost(message) {
   });
 }
 
-chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+function debuggerCommand(target, method, params = {}) {
+  return chrome.debugger.sendCommand(target, method, params);
+}
+
+function attributesToObject(attributes = []) {
+  const result = {};
+  for (let index = 0; index < attributes.length; index += 2) {
+    result[attributes[index]] = attributes[index + 1] || '';
+  }
+  return result;
+}
+
+function scoreFileInput(attributes, kind) {
+  const accept = (attributes.accept || '').toLowerCase();
+  const hasCapture = Object.prototype.hasOwnProperty.call(attributes, 'capture');
+  const multiple = Object.prototype.hasOwnProperty.call(attributes, 'multiple');
+  if (hasCapture) return -1;
+
+  if (kind === 'media') {
+    if (!accept.includes('image/') && !accept.includes('video/')) return -1;
+    return (accept.includes('video/') ? 100 : 0) + (accept.includes('image/') ? 50 : 0) + (multiple ? 10 : 0);
+  }
+
+  if (accept.includes('image/') || accept.includes('video/')) return -1;
+  return (accept.includes('application/') || accept.includes('*') ? 100 : 20) + (multiple ? 10 : 0);
+}
+
+async function setFilesWithDebugger(tabId, paths, kind) {
+  if (!tabId || !Array.isArray(paths) || !paths.length) throw new Error('Lista de arquivos inválida.');
+  const target = { tabId };
+  await chrome.debugger.attach(target, '1.3');
+  try {
+    const { root } = await debuggerCommand(target, 'DOM.getDocument', { depth: -1, pierce: true });
+    const { nodeIds = [] } = await debuggerCommand(target, 'DOM.querySelectorAll', {
+      nodeId: root.nodeId,
+      selector: 'input[type="file"]'
+    });
+    const candidates = [];
+    for (const nodeId of nodeIds) {
+      const { attributes } = await debuggerCommand(target, 'DOM.getAttributes', { nodeId });
+      const parsed = attributesToObject(attributes);
+      const score = scoreFileInput(parsed, kind);
+      if (score >= 0) candidates.push({ nodeId, score });
+    }
+    candidates.sort((left, right) => right.score - left.score);
+    if (!candidates.length) throw new Error(`Campo de ${kind === 'media' ? 'fotos e vídeos' : 'documentos'} não encontrado.`);
+    await debuggerCommand(target, 'DOM.setFileInputFiles', { files: paths, nodeId: candidates[0].nodeId });
+    return { ok: true };
+  } finally {
+    await chrome.debugger.detach(target).catch(() => {});
+  }
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action === 'debugger_set_files') {
+    setFilesWithDebugger(sender.tab?.id, request.paths, request.kind)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (request?.action !== 'native_pick_files' && request?.action !== 'native_read_file') return false;
   const nativeAction = request.action === 'native_pick_files' ? 'pick' : 'read';
   callNativeFileHost({ action: nativeAction, path: request.path || '', multiple: true })

@@ -8,7 +8,8 @@
                         "storage",
                         "declarativeContent",
                         "unlimitedStorage",
-                        "nativeMessaging"
+                        "nativeMessaging",
+                        "debugger"
                     ],
     "host_permissions":  [
                              "https://web.whatsapp.com/*"

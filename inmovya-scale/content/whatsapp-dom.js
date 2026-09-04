@@ -365,6 +365,21 @@ window.IS.WhatsAppDOM = {
     return false;
   },
 
+  async waitForMediaPreviewClosed(timeoutMs = 20000) {
+    const startedAt = Date.now();
+    let consecutiveClosedChecks = 0;
+    while (Date.now() - startedAt < timeoutMs) {
+      if (this.hasMediaPreview()) {
+        consecutiveClosedChecks = 0;
+      } else {
+        consecutiveClosedChecks += 1;
+        if (consecutiveClosedChecks >= 3) return true;
+      }
+      await this.delay(200);
+    }
+    return false;
+  },
+
   async injectFilesIntoChat(files) {
     const messageInput = await this.waitForMessageInput();
     if (!messageInput) return false;
@@ -388,10 +403,41 @@ window.IS.WhatsAppDOM = {
     return this.waitForMediaPreview(8000);
   },
 
+  async attachNativeFiles(attachments, kind) {
+    const paths = attachments.map(attachment => attachment.nativePath).filter(Boolean);
+    if (paths.length !== attachments.length) return null;
+
+    const tryAttach = async () => {
+      const response = await chrome.runtime.sendMessage({ action: 'debugger_set_files', paths, kind });
+      if (!response?.ok) return { accepted: false, error: response?.error };
+      const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
+      const timeout = containsVideo ? 30000 : (kind === 'media' ? 10000 : 15000);
+      return { accepted: await this.waitForMediaPreview(timeout) };
+    };
+
+    let result = await tryAttach();
+    if (result.accepted) return true;
+
+    if (this.openAttachmentMenu()) {
+      await this.delay(500);
+      result = await tryAttach();
+      if (result.accepted) return true;
+    }
+
+    if (result.error) window.IS.error('Falha ao anexar o arquivo original', result.error);
+    return false;
+  },
+
   async sendAttachmentBatch(attachments, caption = '') {
     try {
-      const files = await Promise.all(attachments.map(attachment => this.prepareMediaFile(attachment)));
-      if (!await this.injectFilesIntoChat(files)) {
+      const nativeResult = await this.attachNativeFiles(attachments, 'media');
+      const accepted = nativeResult === null
+        ? await this.injectFilesIntoChat(await Promise.all(attachments.map(async attachment => {
+            const resolved = await this.resolveNativeAttachment(attachment);
+            return this.prepareMediaFile(resolved);
+          })))
+        : nativeResult;
+      if (!accepted) {
         window.IS.error('O WhatsApp não aceitou os arquivos na conversa.');
         return false;
       }
@@ -408,7 +454,11 @@ window.IS.WhatsAppDOM = {
       }
 
       if (!await this.triggerMediaSend(captionInput)) return false;
-      await this.delay(900);
+      const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
+      if (!await this.waitForMediaPreviewClosed(containsVideo ? 45000 : 20000)) {
+        window.IS.error('O WhatsApp não confirmou o envio do anexo antes do próximo item.');
+        return false;
+      }
       return true;
     } catch (error) {
       window.IS.error('Erro ao enviar anexos', error);
@@ -418,15 +468,24 @@ window.IS.WhatsAppDOM = {
 
   async sendDocumentBatch(attachments) {
     try {
-      const files = attachments.map(attachment => this.dataUrlToFile(attachment));
-      if (!await this.injectFilesIntoChat(files)) {
+      const nativeResult = await this.attachNativeFiles(attachments, 'document');
+      const accepted = nativeResult === null
+        ? await this.injectFilesIntoChat(await Promise.all(attachments.map(async attachment => {
+            const resolved = await this.resolveNativeAttachment(attachment);
+            return this.dataUrlToFile(resolved);
+          })))
+        : nativeResult;
+      if (!accepted) {
         window.IS.error('O WhatsApp não aceitou os documentos na conversa.');
         return false;
       }
 
       await this.delay(1800);
       if (!await this.triggerMediaSend(this.findMediaCaptionInput())) return false;
-      await this.delay(900);
+      if (!await this.waitForMediaPreviewClosed(30000)) {
+        window.IS.error('O WhatsApp não confirmou o envio do documento antes do próximo item.');
+        return false;
+      }
       return true;
     } catch (error) {
       window.IS.error('Erro ao enviar documentos', error);
@@ -437,13 +496,6 @@ window.IS.WhatsAppDOM = {
   async insertSequenceAndAttachments(text, attachments = []) {
     const parts = (text || '').split('===').map(part => part.trim()).filter(Boolean);
     if (!parts.length && attachments.length) parts.push('');
-
-    try {
-      attachments = await Promise.all(attachments.map(attachment => this.resolveNativeAttachment(attachment)));
-    } catch (error) {
-      window.IS.error('Erro ao ler arquivo original', error);
-      return false;
-    }
 
     const lastMessageIndex = Math.max(0, parts.length - 1);
     const normalizedAttachments = attachments.map(attachment => ({
