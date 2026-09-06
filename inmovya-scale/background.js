@@ -64,12 +64,16 @@ function scoreFileInput(attributes, kind) {
   if (hasCapture) return -1;
 
   if (kind === 'media') {
-    if (!accept.includes('image/') && !accept.includes('video/')) return -1;
-    return (accept.includes('video/') ? 100 : 0) + (accept.includes('image/') ? 50 : 0) + (multiple ? 10 : 0);
+    const imageAccepted = accept.includes('image/') || /\.(jpe?g|png|gif|webp|heic|heif)/.test(accept);
+    const videoAccepted = accept.includes('video/') || /\.(mp4|mov|m4v|3gp|webm)/.test(accept);
+    if (!imageAccepted && !videoAccepted) return -1;
+    return (videoAccepted ? 100 : 0) + (imageAccepted ? 50 : 0) + (multiple ? 10 : 0);
   }
 
-  if (accept.includes('image/') || accept.includes('video/')) return -1;
-  return (accept.includes('application/') || accept.includes('*') ? 100 : 20) + (multiple ? 10 : 0);
+  if (accept.includes('image/') || accept.includes('video/') || accept.includes('audio/')) return -1;
+  const documentAccepted = accept.includes('application/') || accept.includes('*') ||
+    /\.(pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)/.test(accept);
+  return (documentAccepted ? 100 : 20) + (multiple ? 10 : 0);
 }
 
 async function setFilesWithDebugger(tabId, paths, kind, targetToken = '') {

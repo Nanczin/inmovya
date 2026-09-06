@@ -422,15 +422,16 @@ window.IS.WhatsAppDOM = {
     const input = kind === 'media'
       ? await this.waitForMediaFileInput(5000)
       : await this.waitForDocumentFileInput(5000);
-    if (!input) {
-      window.IS.error(`Campo de ${kind === 'media' ? 'Fotos e vídeos' : 'Documento'} do WhatsApp não encontrado.`);
-      return false;
-    }
 
     const targetToken = `inmovya-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    input.setAttribute('data-inmovya-upload-target', targetToken);
+    if (input) input.setAttribute('data-inmovya-upload-target', targetToken);
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'debugger_set_files', paths, kind, targetToken });
+      const response = await chrome.runtime.sendMessage({
+        action: 'debugger_set_files',
+        paths,
+        kind,
+        targetToken: input ? targetToken : ''
+      });
       if (!response?.ok) {
         window.IS.error('Falha ao anexar o arquivo original', response?.error);
         return false;
@@ -438,7 +439,7 @@ window.IS.WhatsAppDOM = {
       const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
       return this.waitForMediaPreview(containsVideo ? 45000 : (kind === 'media' ? 15000 : 20000));
     } finally {
-      input.removeAttribute('data-inmovya-upload-target');
+      if (input) input.removeAttribute('data-inmovya-upload-target');
     }
   },
 

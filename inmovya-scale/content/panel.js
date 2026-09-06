@@ -161,7 +161,10 @@ window.IS.Panel = {
       reply.lastUsedAt = new Date().toISOString();
       await window.IS.Storage.saveReplies(this.replies);
     } else {
-      this.showToast("Abra uma conversa para inserir a mensagem.");
+      const conversationOpen = !!document.getElementById('main');
+      this.showToast(conversationOpen
+        ? "Não foi possível concluir o envio. Verifique o erro informado pela extensão."
+        : "Abra uma conversa para inserir a mensagem.");
     }
   },
 
