@@ -122,7 +122,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const nativeActions = {
     native_pick_files: 'pick',
     native_read_file: 'read',
-    native_prepare_files: 'prepare'
+    native_prepare_files: 'prepare',
+    native_attach_to_dialog: 'attach'
   };
   const nativeAction = nativeActions[request?.action];
   if (!nativeAction) return false;

@@ -177,6 +177,21 @@ window.IS.WhatsAppDOM = {
     return false;
   },
 
+  openAttachmentOption(kind) {
+    const pattern = kind === 'media'
+      ? /fotos?.*v[ií]deos?|photos?.*videos?|photos? & videos?/
+      : /documento|document/;
+    const candidates = document.querySelectorAll('[role="menuitem"], li, label, div[role="button"]');
+    for (const candidate of candidates) {
+      if (candidate.offsetParent === null || candidate.closest('#inmovya-scale-root')) continue;
+      const text = `${candidate.getAttribute('aria-label') || ''} ${candidate.getAttribute('title') || ''} ${candidate.textContent || ''}`.toLowerCase();
+      if (!pattern.test(text)) continue;
+      candidate.click();
+      return true;
+    }
+    return false;
+  },
+
   findMediaCaptionInput() {
     const selectors = [
       '[role="dialog"] div[contenteditable="true"][aria-label*="legenda" i]',
@@ -419,28 +434,19 @@ window.IS.WhatsAppDOM = {
       return false;
     }
 
-    const input = kind === 'media'
-      ? await this.waitForMediaFileInput(5000)
-      : await this.waitForDocumentFileInput(5000);
-
-    const targetToken = `inmovya-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    if (input) input.setAttribute('data-inmovya-upload-target', targetToken);
-    try {
-      const response = await chrome.runtime.sendMessage({
-        action: 'debugger_set_files',
-        paths,
-        kind,
-        targetToken: input ? targetToken : ''
-      });
-      if (!response?.ok) {
-        window.IS.error('Falha ao anexar o arquivo original', response?.error);
-        return false;
-      }
-      const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
-      return this.waitForMediaPreview(containsVideo ? 45000 : (kind === 'media' ? 15000 : 20000));
-    } finally {
-      if (input) input.removeAttribute('data-inmovya-upload-target');
+    await this.delay(250);
+    if (!this.openAttachmentOption(kind)) {
+      window.IS.error(`Opção de ${kind === 'media' ? 'Fotos e vídeos' : 'Documento'} do WhatsApp não encontrada.`);
+      return false;
     }
+    await this.delay(350);
+    const response = await chrome.runtime.sendMessage({ action: 'native_attach_to_dialog', paths });
+    if (!response?.ok) {
+      window.IS.error('Falha ao selecionar o arquivo no Windows', response?.error);
+      return false;
+    }
+    const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
+    return this.waitForMediaPreview(containsVideo ? 45000 : (kind === 'media' ? 15000 : 20000));
   },
 
   async sendAttachmentBatch(attachments, caption = '') {

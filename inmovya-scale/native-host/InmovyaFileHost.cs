@@ -5,7 +5,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
@@ -23,12 +25,74 @@ internal static class InmovyaFileHost
             if (action == "pick") PickFiles();
             else if (action == "read") ReadFile(Convert.ToString(request["path"]));
             else if (action == "prepare") PrepareFiles(GetPaths(request));
+            else if (action == "attach") AttachFilesToOpenDialog(GetPaths(request));
             else WriteMessage(new { ok = false, error = "Ação inválida." });
         }
         catch (Exception error)
         {
             WriteMessage(new { ok = false, error = error.Message });
         }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr window, StringBuilder className, int maxCount);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    private static void AttachFilesToOpenDialog(List<string> paths)
+    {
+        if (paths.Count != 1) throw new InvalidOperationException("Envie um arquivo por vez para o seletor do Windows.");
+        var dialog = WaitForFileDialog();
+        if (dialog == IntPtr.Zero) throw new InvalidOperationException("O seletor de arquivos do Windows não foi aberto pelo WhatsApp.");
+
+        SetForegroundWindow(dialog);
+        Thread.Sleep(150);
+        SendKeys.SendWait("^l");
+        Thread.Sleep(100);
+        SendKeys.SendWait(EscapeSendKeys(paths[0]));
+        SendKeys.SendWait("{ENTER}");
+        WriteMessage(new { ok = true });
+    }
+
+    private static IntPtr WaitForFileDialog()
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(8);
+        while (DateTime.UtcNow < deadline)
+        {
+            var window = GetForegroundWindow();
+            var className = new StringBuilder(256);
+            GetClassName(window, className, className.Capacity);
+            if (className.ToString() == "#32770") return window;
+            Thread.Sleep(100);
+        }
+        return IntPtr.Zero;
+    }
+
+    private static string EscapeSendKeys(string value)
+    {
+        var escaped = new StringBuilder();
+        foreach (var character in value)
+        {
+            switch (character)
+            {
+                case '+': escaped.Append("{+}"); break;
+                case '^': escaped.Append("{^}"); break;
+                case '%': escaped.Append("{%}"); break;
+                case '~': escaped.Append("{~}"); break;
+                case '(': escaped.Append("{(}"); break;
+                case ')': escaped.Append("{)}"); break;
+                case '[': escaped.Append("{[}"); break;
+                case ']': escaped.Append("{]}"); break;
+                case '{': escaped.Append("{{}"); break;
+                case '}': escaped.Append("{}}"); break;
+                default: escaped.Append(character); break;
+            }
+        }
+        return escaped.ToString();
     }
 
     private static List<string> GetPaths(Dictionary<string, object> request)
