@@ -27,6 +27,7 @@ internal static class InmovyaFileHost
             else if (action == "read") ReadFile(Convert.ToString(request["path"]));
             else if (action == "prepare") PrepareFiles(GetPaths(request));
             else if (action == "attach") AttachFilesToOpenDialog(GetPaths(request));
+            else if (action == "activate_attach") ActivateAndAttachFiles(GetPaths(request));
             else WriteMessage(new { ok = false, error = "Ação inválida." });
         }
         catch (Exception error)
@@ -62,6 +63,16 @@ internal static class InmovyaFileHost
             SendKeys.SendWait("{ENTER}");
         }
         WriteMessage(new { ok = true });
+    }
+
+    private static void ActivateAndAttachFiles(List<string> paths)
+    {
+        if (paths.Count != 1) throw new InvalidOperationException("Envie um arquivo por vez para o seletor do Windows.");
+        // A tecla enviada pelo Windows é uma ativação real; o WhatsApp rejeita
+        // o clique JavaScript no seletor de Fotos e vídeos.
+        SendKeys.SendWait("{ENTER}");
+        Thread.Sleep(150);
+        AttachFilesToOpenDialog(paths);
     }
 
     private static bool SelectFileWithAutomation(IntPtr dialog, string path)

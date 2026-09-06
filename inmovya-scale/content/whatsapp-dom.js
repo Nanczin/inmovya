@@ -177,7 +177,7 @@ window.IS.WhatsAppDOM = {
     return false;
   },
 
-  openAttachmentOption(kind) {
+  openAttachmentOption(kind, focusOnly = false) {
     const pattern = kind === 'media'
       ? /fotos?.*v[ií]deos?|photos?.*videos?|photos? & videos?/
       : /documento|document/;
@@ -186,7 +186,17 @@ window.IS.WhatsAppDOM = {
       if (candidate.offsetParent === null || candidate.closest('#inmovya-scale-root')) continue;
       const text = `${candidate.getAttribute('aria-label') || ''} ${candidate.getAttribute('title') || ''} ${candidate.textContent || ''}`.toLowerCase();
       if (!pattern.test(text)) continue;
-      candidate.click();
+      if (focusOnly) {
+        const focusTarget = candidate.matches('button, [role="menuitem"], [tabindex], label')
+          ? candidate
+          : candidate.querySelector('button, [role="menuitem"], [tabindex], label');
+        if (!focusTarget) return false;
+        if (!focusTarget.hasAttribute('tabindex')) focusTarget.setAttribute('tabindex', '-1');
+        focusTarget.focus({ preventScroll: true });
+        if (document.activeElement !== focusTarget) return false;
+      } else {
+        candidate.click();
+      }
       return true;
     }
     return false;
@@ -435,12 +445,16 @@ window.IS.WhatsAppDOM = {
     }
 
     await this.delay(250);
-    if (!this.openAttachmentOption(kind)) {
+    const activateWithWindows = kind === 'media';
+    if (!this.openAttachmentOption(kind, activateWithWindows)) {
       window.IS.error(`Opção de ${kind === 'media' ? 'Fotos e vídeos' : 'Documento'} do WhatsApp não encontrada.`);
       return false;
     }
-    await this.delay(350);
-    const response = await chrome.runtime.sendMessage({ action: 'native_attach_to_dialog', paths });
+    if (!activateWithWindows) await this.delay(350);
+    const response = await chrome.runtime.sendMessage({
+      action: activateWithWindows ? 'native_activate_and_attach' : 'native_attach_to_dialog',
+      paths
+    });
     if (!response?.ok) {
       window.IS.error('Falha ao selecionar o arquivo no Windows', response?.error);
       return false;
