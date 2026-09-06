@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
+using System.Windows.Automation;
 using System.Windows.Forms;
 
 internal static class InmovyaFileHost
@@ -51,11 +52,111 @@ internal static class InmovyaFileHost
 
         SetForegroundWindow(dialog);
         Thread.Sleep(150);
-        SendKeys.SendWait("^l");
-        Thread.Sleep(100);
-        SendKeys.SendWait(EscapeSendKeys(paths[0]));
-        SendKeys.SendWait("{ENTER}");
+        if (!SelectFileWithAutomation(dialog, paths[0]))
+        {
+            // Atalho nativo do seletor para o campo "Nome do arquivo".
+            SendKeys.SendWait("%n");
+            Thread.Sleep(100);
+            SendKeys.SendWait("^a");
+            SendKeys.SendWait(EscapeSendKeys(paths[0]));
+            SendKeys.SendWait("{ENTER}");
+        }
         WriteMessage(new { ok = true });
+    }
+
+    private static bool SelectFileWithAutomation(IntPtr dialog, string path)
+    {
+        try
+        {
+            var root = AutomationElement.FromHandle(dialog);
+            var edits = root.FindAll(
+                TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
+            AutomationElement fileNameField = null;
+
+            foreach (AutomationElement edit in edits)
+            {
+                var id = edit.Current.AutomationId ?? "";
+                var name = edit.Current.Name ?? "";
+                if (id == "1148" || IsInsideFileNameControl(edit) ||
+                    id.IndexOf("FileName", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("Nome do arquivo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("File name", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    fileNameField = edit;
+                    break;
+                }
+            }
+
+            if (fileNameField == null)
+            {
+                for (var index = edits.Count - 1; index >= 0; index--)
+                {
+                    var edit = edits[index];
+                    var id = edit.Current.AutomationId ?? "";
+                    var name = edit.Current.Name ?? "";
+                    var identity = (id + " " + name).ToLowerInvariant();
+                    if (identity.Contains("address") || identity.Contains("endereço") ||
+                        identity.Contains("search") || identity.Contains("pesquisar")) continue;
+                    object ignoredPattern;
+                    if (edit.TryGetCurrentPattern(ValuePattern.Pattern, out ignoredPattern))
+                    {
+                        fileNameField = edit;
+                        break;
+                    }
+                }
+            }
+
+            object valueObject;
+            if (fileNameField == null ||
+                !fileNameField.TryGetCurrentPattern(ValuePattern.Pattern, out valueObject)) return false;
+            ((ValuePattern)valueObject).SetValue(path);
+            Thread.Sleep(100);
+
+            var buttons = root.FindAll(
+                TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+            AutomationElement openButton = null;
+            foreach (AutomationElement button in buttons)
+            {
+                var id = button.Current.AutomationId ?? "";
+                var name = button.Current.Name ?? "";
+                if (id == "1" || name.Equals("Abrir", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("Open", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("Selecionar", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("Choose", StringComparison.OrdinalIgnoreCase))
+                {
+                    openButton = button;
+                    break;
+                }
+            }
+
+            object invokeObject;
+            if (openButton == null ||
+                !openButton.TryGetCurrentPattern(InvokePattern.Pattern, out invokeObject)) return false;
+            ((InvokePattern)invokeObject).Invoke();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsInsideFileNameControl(AutomationElement element)
+    {
+        var walker = TreeWalker.ControlViewWalker;
+        var current = element;
+        for (var depth = 0; depth < 4 && current != null; depth++)
+        {
+            var id = current.Current.AutomationId ?? "";
+            var name = current.Current.Name ?? "";
+            if (id.IndexOf("FileName", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("Nome do arquivo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("File name", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            current = walker.GetParent(current);
+        }
+        return false;
     }
 
     private static IntPtr WaitForFileDialog()
