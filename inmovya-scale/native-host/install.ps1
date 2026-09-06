@@ -12,6 +12,33 @@ if ($PSVersionTable.PSEdition -eq 'Core') {
 $hostDir = Join-Path $env:LOCALAPPDATA 'InmovyaScale\NativeHost'
 New-Item -ItemType Directory -Force -Path $hostDir | Out-Null
 
+$ffmpegPath = Join-Path $hostDir 'ffmpeg.exe'
+if (-not (Test-Path -LiteralPath $ffmpegPath)) {
+  Write-Host 'Instalando conversor gratuito de vídeos...'
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  $downloadDir = Join-Path ([IO.Path]::GetTempPath()) ("inmovya-ffmpeg-" + [Guid]::NewGuid().ToString('N'))
+  $archivePath = Join-Path $downloadDir 'ffmpeg.zip'
+  $extractPath = Join-Path $downloadDir 'extract'
+  New-Item -ItemType Directory -Force -Path $downloadDir, $extractPath | Out-Null
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $archivePath
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
+    $ffmpegSource = Get-ChildItem -LiteralPath $extractPath -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1
+    $ffprobeSource = Get-ChildItem -LiteralPath $extractPath -Recurse -Filter 'ffprobe.exe' | Select-Object -First 1
+    if (-not $ffmpegSource) { throw 'O pacote baixado não contém ffmpeg.exe.' }
+    Copy-Item -LiteralPath $ffmpegSource.FullName -Destination $ffmpegPath -Force
+    if ($ffprobeSource) { Copy-Item -LiteralPath $ffprobeSource.FullName -Destination (Join-Path $hostDir 'ffprobe.exe') -Force }
+    Set-Content -LiteralPath (Join-Path $hostDir 'FFMPEG_SOURCE.txt') -Encoding UTF8 -Value @(
+      'FFmpeg - https://ffmpeg.org/'
+      'Windows build - https://www.gyan.dev/ffmpeg/builds/'
+      'Instalado para conversão local de vídeos pela Inmovya Scale.'
+    )
+  }
+  finally {
+    if (Test-Path -LiteralPath $downloadDir) { Remove-Item -LiteralPath $downloadDir -Recurse -Force }
+  }
+}
+
 $sourcePath = Join-Path $PSScriptRoot 'InmovyaFileHost.cs'
 $exePath = Join-Path $hostDir 'InmovyaFileHost.exe'
 Add-Type -Path $sourcePath -ReferencedAssemblies 'System.Windows.Forms','System.Web.Extensions' -OutputAssembly $exePath -OutputType ConsoleApplication
@@ -36,4 +63,5 @@ foreach ($registryPath in $registryPaths) {
 }
 
 Write-Host 'Aplicativo auxiliar Inmovya Scale instalado com sucesso.' -ForegroundColor Green
+Write-Host 'Vídeos serão convertidos localmente para MP4 compatível; documentos permanecerão no formato original.'
 Write-Host 'Recarregue a extensão e reabra o WhatsApp Web.'

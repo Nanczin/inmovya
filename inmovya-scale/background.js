@@ -115,9 +115,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
-  if (request?.action !== 'native_pick_files' && request?.action !== 'native_read_file') return false;
-  const nativeAction = request.action === 'native_pick_files' ? 'pick' : 'read';
-  callNativeFileHost({ action: nativeAction, path: request.path || '', multiple: true })
+  const nativeActions = {
+    native_pick_files: 'pick',
+    native_read_file: 'read',
+    native_prepare_files: 'prepare'
+  };
+  const nativeAction = nativeActions[request?.action];
+  if (!nativeAction) return false;
+  callNativeFileHost({ action: nativeAction, path: request.path || '', paths: request.paths || [], multiple: true })
     .then(result => sendResponse({ ok: true, ...result }))
     .catch(error => sendResponse({ ok: false, error: error.message }));
   return true;

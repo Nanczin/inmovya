@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Collections;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
@@ -18,12 +22,28 @@ internal static class InmovyaFileHost
             var action = request.ContainsKey("action") ? Convert.ToString(request["action"]) : "";
             if (action == "pick") PickFiles();
             else if (action == "read") ReadFile(Convert.ToString(request["path"]));
+            else if (action == "prepare") PrepareFiles(GetPaths(request));
             else WriteMessage(new { ok = false, error = "Ação inválida." });
         }
         catch (Exception error)
         {
             WriteMessage(new { ok = false, error = error.Message });
         }
+    }
+
+    private static List<string> GetPaths(Dictionary<string, object> request)
+    {
+        var paths = new List<string>();
+        object value;
+        if (!request.TryGetValue("paths", out value) || value == null) return paths;
+        var enumerable = value as IEnumerable;
+        if (enumerable == null || value is string) return paths;
+        foreach (var item in enumerable)
+        {
+            var path = Convert.ToString(item);
+            if (!String.IsNullOrWhiteSpace(path)) paths.Add(path);
+        }
+        return paths;
     }
 
     private static Dictionary<string, object> ReadMessage()
@@ -77,6 +97,83 @@ internal static class InmovyaFileHost
         WriteMessage(new { ok = true, @event = "complete", name = info.Name, size = info.Length, type = MimeType(info.Extension) });
     }
 
+    private static void PrepareFiles(List<string> paths)
+    {
+        if (paths.Count == 0) throw new InvalidOperationException("Nenhum arquivo foi informado.");
+        CleanupPreparedFiles();
+        var files = new List<object>();
+        foreach (var path in paths)
+        {
+            if (!File.Exists(path)) throw new FileNotFoundException("O arquivo original não foi encontrado.", path);
+            var preparedPath = IsVideo(path) ? ConvertVideo(path) : Path.GetFullPath(path);
+            var info = new FileInfo(preparedPath);
+            files.Add(new { path = info.FullName, name = info.Name, size = info.Length, type = MimeType(info.Extension) });
+        }
+        WriteMessage(new { ok = true, files = files.ToArray() });
+    }
+
+    private static bool IsVideo(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        return new[] { ".mp4", ".mov", ".m4v", ".3gp", ".webm", ".avi", ".mkv" }.Contains(extension);
+    }
+
+    private static string ConvertVideo(string sourcePath)
+    {
+        var hostDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        var ffmpegPath = Path.Combine(hostDirectory, "ffmpeg.exe");
+        if (!File.Exists(ffmpegPath)) throw new FileNotFoundException("Conversor de vídeo não instalado. Execute novamente o instalador da Inmovya Scale.", ffmpegPath);
+
+        var preparedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InmovyaScale", "Prepared");
+        var outputDirectory = Path.Combine(preparedRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outputDirectory);
+        var safeName = String.Join("_", Path.GetFileNameWithoutExtension(sourcePath).Split(Path.GetInvalidFileNameChars()));
+        if (String.IsNullOrWhiteSpace(safeName)) safeName = "video";
+        var outputPath = Path.Combine(outputDirectory, safeName + ".mp4");
+
+        var arguments = "-hide_banner -loglevel error -y -i " + Quote(sourcePath) +
+            " -map 0:v:0 -map 0:a:0? -vf " + Quote("scale=1280:1280:force_original_aspect_ratio=decrease:force_divisible_by=2") +
+            " -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart " + Quote(outputPath);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = ffmpegPath,
+            Arguments = arguments,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true
+        };
+        using (var process = Process.Start(startInfo))
+        {
+            var error = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode != 0 || !File.Exists(outputPath))
+            {
+                try { Directory.Delete(outputDirectory, true); } catch { }
+                throw new InvalidOperationException("Não foi possível converter o vídeo: " + error.Trim());
+            }
+        }
+        return outputPath;
+    }
+
+    private static string Quote(string value)
+    {
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
+    private static void CleanupPreparedFiles()
+    {
+        var preparedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "InmovyaScale", "Prepared");
+        if (!Directory.Exists(preparedRoot)) return;
+        foreach (var directory in Directory.GetDirectories(preparedRoot))
+        {
+            try
+            {
+                if (Directory.GetCreationTimeUtc(directory) < DateTime.UtcNow.AddDays(-2)) Directory.Delete(directory, true);
+            }
+            catch { }
+        }
+    }
+
     private static string MimeType(string extension)
     {
         switch ((extension ?? "").ToLowerInvariant())
@@ -92,6 +189,15 @@ internal static class InmovyaFileHost
             case ".3gp": return "video/3gpp";
             case ".webm": return "video/webm";
             case ".pdf": return "application/pdf";
+            case ".doc": return "application/msword";
+            case ".docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case ".xls": return "application/vnd.ms-excel";
+            case ".xlsx": return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            case ".ppt": return "application/vnd.ms-powerpoint";
+            case ".pptx": return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case ".txt": return "text/plain";
+            case ".csv": return "text/csv";
+            case ".zip": return "application/zip";
             default: return "application/octet-stream";
         }
     }

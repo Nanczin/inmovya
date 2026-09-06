@@ -404,8 +404,15 @@ window.IS.WhatsAppDOM = {
   },
 
   async attachNativeFiles(attachments, kind) {
-    const paths = attachments.map(attachment => attachment.nativePath).filter(Boolean);
+    let paths = attachments.map(attachment => attachment.nativePath).filter(Boolean);
     if (paths.length !== attachments.length) return null;
+    const prepared = await chrome.runtime.sendMessage({ action: 'native_prepare_files', paths, kind });
+    if (!prepared?.ok || !Array.isArray(prepared.files) || prepared.files.length !== paths.length) {
+      window.IS.error('O aplicativo auxiliar não conseguiu preparar os arquivos.', prepared?.error);
+      return false;
+    }
+    paths = prepared.files.map(file => file.path).filter(Boolean);
+    if (paths.length !== attachments.length) return false;
     if (this.hasMediaPreview() && !await this.waitForMediaPreviewClosed()) return false;
     if (!this.openAttachmentMenu()) {
       window.IS.error('Botão de anexos do WhatsApp não encontrado.');
