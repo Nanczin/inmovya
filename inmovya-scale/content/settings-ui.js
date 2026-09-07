@@ -5,6 +5,8 @@ window.IS.SettingsUI = {
   waLabels: [],
   selectedWaLabelName: null,
   selectedCategoryId: 'all',
+  draggedLeadKey: null,
+  suppressLeadClickUntil: 0,
   editingId: null,
   draftAttachments: [],
 
@@ -192,6 +194,13 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
+      const leadButton = e.target.closest('.is-kanban-lead');
+      if (leadButton) {
+        if (Date.now() < this.suppressLeadClickUntil) return;
+        await this.openKanbanLead(decodeURIComponent(leadButton.getAttribute('data-lead-key') || ''));
+        return;
+      }
+
       const filterButton = e.target.closest('.is-category-filter');
       if (filterButton) {
         this.selectedCategoryId = filterButton.getAttribute('data-id') || 'all';
@@ -215,12 +224,53 @@ window.IS.SettingsUI = {
           replies = replies.map(r => r.categoryId === id ? { ...r, categoryId: 'default-category' } : r);
           await window.IS.Storage.saveCategories(categories);
           await window.IS.Storage.saveReplies(replies);
+          const assignmentData = await chrome.storage.local.get('leadCategoryAssignments');
+          const assignments = assignmentData.leadCategoryAssignments || {};
+          Object.keys(assignments).forEach(key => {
+            if (assignments[key] === id) assignments[key] = 'default-category';
+          });
+          await chrome.storage.local.set({ leadCategoryAssignments: assignments });
           if (this.selectedCategoryId === id) this.selectedCategoryId = 'default-category';
           await this.renderCategories();
           await this.renderReplies();
           this.showToast("Excluído.");
         }
       }
+    });
+
+    const categoriesList = document.getElementById('is-set-categories-list');
+    categoriesList.addEventListener('dragstart', event => {
+      const lead = event.target.closest('.is-kanban-lead');
+      if (!lead) return;
+      this.draggedLeadKey = decodeURIComponent(lead.getAttribute('data-lead-key') || '');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', this.draggedLeadKey);
+      lead.style.opacity = '0.55';
+    });
+    categoriesList.addEventListener('dragend', event => {
+      const lead = event.target.closest('.is-kanban-lead');
+      if (lead) lead.style.opacity = '';
+      this.suppressLeadClickUntil = Date.now() + 300;
+      this.draggedLeadKey = null;
+    });
+    categoriesList.addEventListener('dragover', event => {
+      if (!event.target.closest('.is-kanban-column')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    });
+    categoriesList.addEventListener('drop', async event => {
+      const column = event.target.closest('.is-kanban-column');
+      if (!column) return;
+      event.preventDefault();
+      const leadKey = event.dataTransfer.getData('text/plain') || this.draggedLeadKey;
+      const categoryId = column.getAttribute('data-category-id') || 'default-category';
+      if (!leadKey) return;
+      const assignmentData = await chrome.storage.local.get('leadCategoryAssignments');
+      const assignments = assignmentData.leadCategoryAssignments || {};
+      assignments[leadKey] = categoryId;
+      await chrome.storage.local.set({ leadCategoryAssignments: assignments });
+      await this.renderCategories();
+      this.showToast('Lead movido no Kanban.');
     });
 
     // --- FORM MODAL ---
@@ -332,6 +382,7 @@ window.IS.SettingsUI = {
         this.selectedWaLabelName = capturedLabel.name;
         await chrome.storage.local.set({ waLabels: this.waLabels });
         this.renderWaLabels();
+        await this.renderCategories();
         nameInput.value = '';
         this.showToast(`${capturedLabel.name}: ${capturedLabel.contacts.length} contato(s) capturado(s).`);
       } catch(e) {
@@ -355,6 +406,7 @@ window.IS.SettingsUI = {
           }
           await chrome.storage.local.set({ waLabels: this.waLabels });
           this.renderWaLabels();
+          await this.renderCategories();
           this.showToast('Etiqueta removida da extensão.');
         });
         return;
@@ -425,9 +477,8 @@ window.IS.SettingsUI = {
   },
 
   async refreshData() {
-    this.renderReplies();
-    this.renderCategories();
-    this.renderSettings();
+    await this.renderReplies();
+    await this.renderSettings();
     const data = await chrome.storage.local.get('waLabels');
     if(data.waLabels) {
       this.waLabels = data.waLabels;
@@ -436,6 +487,7 @@ window.IS.SettingsUI = {
       }
       this.renderWaLabels();
     }
+    await this.renderCategories();
   },
 
   async renderReplies() {
@@ -491,40 +543,48 @@ window.IS.SettingsUI = {
     const list = document.getElementById('is-set-categories-list');
     const categories = await window.IS.Storage.getCategories();
     const replies = await window.IS.Storage.getReplies();
-    const availableCategories = [
-      { id: 'all', name: 'Todas' },
+    const assignmentData = await chrome.storage.local.get('leadCategoryAssignments');
+    const assignments = assignmentData.leadCategoryAssignments || {};
+    const boardCategories = [
       { id: 'default-category', name: 'Sem categoria' },
       ...categories.filter(category => category.id !== 'default-category')
     ];
-
-    if (!availableCategories.some(category => category.id === this.selectedCategoryId)) {
-      this.selectedCategoryId = 'all';
-    }
-
     const categoryIdForReply = reply => reply.categoryId || 'default-category';
-    const filteredReplies = this.selectedCategoryId === 'all'
-      ? replies
-      : replies.filter(reply => categoryIdForReply(reply) === this.selectedCategoryId);
-    filteredReplies.sort((a, b) => (a.order || 0) - (b.order || 0));
+    const validCategoryIds = new Set(boardCategories.map(category => category.id));
+    const leads = this.getKanbanLeads();
 
-    const selectedCategory = availableCategories.find(category => category.id === this.selectedCategoryId);
-    const filters = availableCategories.map(category => {
-      const count = category.id === 'all'
-        ? replies.length
-        : replies.filter(reply => categoryIdForReply(reply) === category.id).length;
-      const active = category.id === this.selectedCategoryId;
-      return `<button type="button" class="is-category-filter" data-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 auto; padding:7px 10px; border:1px solid ${active ? 'var(--inmovya-primary)' : 'var(--inmovya-border)'}; border-radius:16px; cursor:pointer; background:${active ? 'var(--inmovya-primary)' : 'var(--inmovya-surface)'}; color:${active ? 'white' : 'var(--inmovya-text)'}; font-size:12px;">${window.IS.escapeHTML(category.name)} (${count})</button>`;
+    const columns = boardCategories.map(category => {
+      const categoryReplies = replies
+        .filter(reply => categoryIdForReply(reply) === category.id)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const categoryLeads = leads.filter(lead => {
+        const assignedCategory = validCategoryIds.has(assignments[lead.key]) ? assignments[lead.key] : 'default-category';
+        return assignedCategory === category.id;
+      });
+      const responseCards = categoryReplies.length
+        ? categoryReplies.map(reply => {
+            const preview = (reply.message || '').replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 70);
+            return `<button type="button" class="is-category-reply" data-id="${window.IS.escapeHTML(reply.id)}" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-background); color:var(--inmovya-text); text-align:left; cursor:pointer;">
+              <strong style="display:block; font-size:12px;">${window.IS.escapeHTML(reply.title || 'Sem título')}</strong>
+              <span style="display:block; margin-top:3px; color:var(--inmovya-text-secondary); font-size:10px; line-height:1.3;">${window.IS.escapeHTML(preview || 'Somente anexos')}</span>
+            </button>`;
+          }).join('')
+        : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhuma resposta</div>';
+      const leadCards = categoryLeads.length
+        ? categoryLeads.map(lead => `<button type="button" draggable="true" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; padding:8px; border:1px solid #9cc8be; border-radius:6px; background:#f4fbf9; color:#1f3833; text-align:left; cursor:grab;">
+            <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
+            <span style="display:block; margin-top:3px; color:#607d76; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
+          </button>`).join('')
+        : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhum lead</div>';
+
+      return `<section class="is-kanban-column" data-category-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 235px; padding:9px; border:1px solid var(--inmovya-border); border-radius:8px; background:var(--inmovya-surface); min-height:220px;">
+        <div style="font-size:13px; font-weight:bold; color:var(--inmovya-primary); margin-bottom:9px;">${window.IS.escapeHTML(category.name)}</div>
+        <div style="font-size:10px; font-weight:bold; margin-bottom:5px;">RESPOSTAS (${categoryReplies.length})</div>
+        <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">${responseCards}</div>
+        <div style="font-size:10px; font-weight:bold; margin-bottom:5px;">LEADS (${categoryLeads.length})</div>
+        <div style="display:flex; flex-direction:column; gap:6px; min-height:45px;">${leadCards}</div>
+      </section>`;
     }).join('');
-
-    const replyItems = filteredReplies.length
-      ? filteredReplies.map(reply => {
-          const preview = (reply.message || '').replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 120);
-          return `<button type="button" class="is-category-reply" data-id="${window.IS.escapeHTML(reply.id)}" style="width:100%; padding:10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface); color:var(--inmovya-text); text-align:left; cursor:pointer;">
-            <strong style="display:block; font-size:13px;">${window.IS.escapeHTML(reply.title || 'Sem título')}</strong>
-            <span style="display:block; margin-top:4px; color:var(--inmovya-text-secondary); font-size:11px; line-height:1.35;">${window.IS.escapeHTML(preview || (reply.attachments?.length ? `${reply.attachments.length} anexo(s)` : 'Sem conteúdo'))}</span>
-          </button>`;
-        }).join('')
-      : `<div style="color:#888; text-align:center; padding:18px; border:1px dashed var(--inmovya-border); border-radius:6px;">Nenhuma resposta nesta categoria.</div>`;
 
     const manageableCategories = categories.filter(category => category.id !== 'default-category');
     const categoryManagement = manageableCategories.length
@@ -535,12 +595,40 @@ window.IS.SettingsUI = {
       : `<div style="color:#888; font-size:12px;">Nenhuma categoria personalizada.</div>`;
 
     list.innerHTML = `
-      <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:5px;">${filters}</div>
-      <div style="font-size:12px; font-weight:bold; margin-top:4px;">Respostas em ${window.IS.escapeHTML(selectedCategory.name)}</div>
-      <div style="display:flex; flex-direction:column; gap:7px;">${replyItems}</div>
+      <div style="font-size:11px; color:var(--inmovya-text-secondary);">Arraste os leads entre as colunas. A mudança fica somente na extensão.</div>
+      <div style="display:flex; gap:10px; overflow-x:auto; padding:4px 0 10px; align-items:stretch;">${columns}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
+  },
+
+  getKanbanLeads() {
+    const leadsByKey = new Map();
+    this.waLabels.forEach(label => {
+      (Array.isArray(label.contacts) ? label.contacts : []).forEach(contact => {
+        const normalizedName = window.IS.removeAccents((contact.name || '').toLocaleLowerCase().trim());
+        const key = contact.chatId || normalizedName;
+        if (!key) return;
+        if (!leadsByKey.has(key)) {
+          leadsByKey.set(key, { key, contact, labelName: label.name, labels: [] });
+        }
+        const lead = leadsByKey.get(key);
+        if (!lead.labels.includes(label.name)) lead.labels.push(label.name);
+      });
+    });
+    return Array.from(leadsByKey.values()).sort((a, b) => a.contact.name.localeCompare(b.contact.name, 'pt-BR'));
+  },
+
+  async openKanbanLead(leadKey) {
+    const lead = this.getKanbanLeads().find(item => item.key === leadKey);
+    if (!lead) return;
+    try {
+      await window.IS.Scraper.openContact(lead.labelName, lead.contact);
+      window.IS.Panel.closeSettings();
+    } catch (error) {
+      window.IS.error('Erro ao abrir lead do Kanban', error);
+      this.showToast(error.message || 'Não foi possível abrir a conversa.');
+    }
   },
 
   async addCategory() {
