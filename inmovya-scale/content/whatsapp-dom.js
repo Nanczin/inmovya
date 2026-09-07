@@ -256,7 +256,36 @@ window.IS.WhatsAppDOM = {
     return true;
   },
 
-  async triggerMediaSend(captionInput = null) {
+  findAttachmentSendButton() {
+    const candidates = document.querySelectorAll('button, div[role="button"]');
+    for (let index = candidates.length - 1; index >= 0; index--) {
+      const button = candidates[index];
+      const insidePreview = button.closest('[role="dialog"], [data-animate-modal-popup]');
+      if (button.offsetParent === null || button.closest('#inmovya-scale-root') ||
+          (!insidePreview && button.closest('#main footer'))) continue;
+      const icons = Array.from(button.querySelectorAll('[data-icon]'))
+        .map(icon => icon.getAttribute('data-icon') || '').join(' ');
+      const context = `${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''} ${icons}`.toLowerCase();
+      if (/enviar|send/.test(context)) return button;
+    }
+    return null;
+  },
+
+  async triggerMediaSend(captionInput = null, preferSendButton = false) {
+    if (preferSendButton) {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const sendButton = this.findAttachmentSendButton();
+        if (sendButton) {
+          sendButton.click();
+          return true;
+        }
+        await this.delay(150);
+      }
+      // Sem legenda, Enter poderia abrir a miniatura do documento. Nesse caso,
+      // falhe com segurança em vez de abrir o visualizador do WhatsApp.
+      if (!captionInput) return false;
+    }
+
     const target = captionInput || this.findMediaCaptionInput() || document.activeElement;
     if (!target || target === document.body) return this.triggerSend(false);
 
@@ -533,7 +562,7 @@ window.IS.WhatsAppDOM = {
         }
         await this.delay(250);
       }
-      if (!await this.triggerMediaSend(captionInput || this.findMediaCaptionInput())) return false;
+      if (!await this.triggerMediaSend(captionInput || this.findMediaCaptionInput(), true)) return false;
       if (!await this.waitForMediaPreviewClosed(30000)) {
         window.IS.error('O WhatsApp não confirmou o envio do documento antes do próximo item.');
         return false;
