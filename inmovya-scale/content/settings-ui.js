@@ -9,6 +9,9 @@ window.IS.SettingsUI = {
   suppressLeadClickUntil: 0,
   kanbanFullscreen: false,
   settingsContainerStyle: null,
+  settingsContainerParent: null,
+  settingsContainerNextSibling: null,
+  fullscreenHost: null,
   editingId: null,
   draftAttachments: [],
 
@@ -45,7 +48,7 @@ window.IS.SettingsUI = {
         <input type="text" id="is-new-cat-name" placeholder="Nova categoria..." style="flex:1; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px;">
         <button id="is-btn-add-cat" style="background:var(--inmovya-primary); color:white; border:none; padding:0 15px; border-radius:4px; cursor:pointer; font-weight:bold;">Adicionar</button>
       </div>
-      <button type="button" id="is-btn-kanban-fullscreen" style="width:100%; padding:9px; margin-bottom:12px; border:1px solid var(--inmovya-primary); border-radius:6px; background:transparent; color:var(--inmovya-primary); cursor:pointer; font-weight:bold;">⛶ Abrir Kanban em tela cheia</button>
+      <button type="button" id="is-btn-kanban-fullscreen" style="width:100%; padding:9px; margin-bottom:12px; border:1px solid #0877b5; border-radius:6px; background:#eef8ff; color:#075f91; cursor:pointer; font-weight:bold;">⛶ Abrir Kanban em tela cheia</button>
       <div id="is-set-categories-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     </div>
 
@@ -574,25 +577,30 @@ window.IS.SettingsUI = {
       const responseCards = categoryReplies.length
         ? categoryReplies.map(reply => {
             const preview = (reply.message || '').replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 70);
-            return `<button type="button" class="is-category-reply" data-id="${window.IS.escapeHTML(reply.id)}" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-background); color:var(--inmovya-text); text-align:left; cursor:pointer;">
+            return `<button type="button" class="is-category-reply" data-id="${window.IS.escapeHTML(reply.id)}" style="width:100%; padding:8px; border:1px solid #d2e0ea; border-radius:6px; background:#ffffff; color:#153247; text-align:left; cursor:pointer; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
               <strong style="display:block; font-size:12px;">${window.IS.escapeHTML(reply.title || 'Sem título')}</strong>
-              <span style="display:block; margin-top:3px; color:var(--inmovya-text-secondary); font-size:10px; line-height:1.3;">${window.IS.escapeHTML(preview || 'Somente anexos')}</span>
+              <span style="display:block; margin-top:3px; color:#657b8b; font-size:10px; line-height:1.3;">${window.IS.escapeHTML(preview || 'Somente anexos')}</span>
             </button>`;
           }).join('')
         : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhuma resposta</div>';
       const leadCards = categoryLeads.length
-        ? categoryLeads.map(lead => `<button type="button" draggable="true" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; padding:8px; border:1px solid #9cc8be; border-radius:6px; background:#f4fbf9; color:#1f3833; text-align:left; cursor:grab;">
+        ? categoryLeads.map(lead => `<button type="button" draggable="true" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; text-align:left; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
             <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
-            <span style="display:block; margin-top:3px; color:#607d76; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
+            <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
           </button>`).join('')
         : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhum lead</div>';
 
-      return `<section class="is-kanban-column" data-category-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 235px; padding:9px; border:1px solid var(--inmovya-border); border-radius:8px; background:var(--inmovya-surface); min-height:220px;">
-        <div style="font-size:13px; font-weight:bold; color:var(--inmovya-primary); margin-bottom:9px;">${window.IS.escapeHTML(category.name)}</div>
-        <div style="font-size:10px; font-weight:bold; margin-bottom:5px;">RESPOSTAS (${categoryReplies.length})</div>
-        <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">${responseCards}</div>
-        <div style="font-size:10px; font-weight:bold; margin-bottom:5px;">LEADS (${categoryLeads.length})</div>
-        <div style="display:flex; flex-direction:column; gap:6px; min-height:45px;">${leadCards}</div>
+      return `<section class="is-kanban-column" data-category-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 ${this.kanbanFullscreen ? '270px' : '235px'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 230px)' : '220px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px; background:linear-gradient(135deg,#0877b5,#075f91); color:white;">
+          <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.IS.escapeHTML(category.name)}</strong>
+          <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${categoryLeads.length}</span>
+        </div>
+        <div style="padding:9px;">
+          <div style="font-size:10px; font-weight:bold; color:#36596f; margin-bottom:5px;">RESPOSTAS (${categoryReplies.length})</div>
+          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">${responseCards}</div>
+          <div style="font-size:10px; font-weight:bold; color:#36596f; margin-bottom:5px;">LEADS (${categoryLeads.length})</div>
+          <div style="display:flex; flex-direction:column; gap:6px; min-height:45px;">${leadCards}</div>
+        </div>
       </section>`;
     }).join('');
 
@@ -606,7 +614,7 @@ window.IS.SettingsUI = {
 
     list.innerHTML = `
       <div style="font-size:11px; color:var(--inmovya-text-secondary);">Arraste os leads entre as colunas. A mudança fica somente na extensão.</div>
-      <div style="display:flex; gap:10px; overflow-x:auto; padding:4px 0 10px; align-items:stretch;">${columns}</div>
+      <div style="display:flex; gap:10px; overflow-x:auto; padding:4px 0 10px; align-items:stretch; min-height:${this.kanbanFullscreen ? 'calc(100vh - 205px)' : 'auto'};">${columns}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
@@ -619,19 +627,35 @@ window.IS.SettingsUI = {
 
     if (enabled) {
       this.settingsContainerStyle = container.getAttribute('style') || '';
+      this.settingsContainerParent = container.parentNode;
+      this.settingsContainerNextSibling = container.nextSibling;
+      const host = document.createElement('div');
+      host.id = 'is-kanban-fullscreen-host';
+      host.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483646;background:#eef3f7;pointer-events:auto;overflow:hidden;';
+      host.style.setProperty('--inmovya-primary', '#0877b5');
+      host.style.setProperty('--inmovya-primary-hover', '#075f91');
+      host.style.setProperty('--inmovya-background', '#ffffff');
+      host.style.setProperty('--inmovya-surface', '#f5f8fb');
+      host.style.setProperty('--inmovya-text', '#102f43');
+      host.style.setProperty('--inmovya-text-secondary', '#60788a');
+      host.style.setProperty('--inmovya-border', '#cad8e2');
+      document.body.appendChild(host);
+      host.appendChild(container);
+      this.fullscreenHost = host;
       this.kanbanFullscreen = true;
       Object.assign(container.style, {
-        position: 'fixed',
-        inset: '0',
-        width: '100vw',
-        height: '100vh',
-        zIndex: '999998',
+        position: 'relative',
+        inset: 'auto',
+        width: '100%',
+        height: '100%',
+        zIndex: '1',
         borderRadius: '0',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.35)'
+        boxShadow: 'none'
       });
       button.textContent = '↙ Voltar ao painel lateral';
-      if (container.animate) {
-        container.animate([
+      await this.renderCategories();
+      if (host.animate) {
+        host.animate([
           { opacity: 0.35, transform: 'scale(0.96)' },
           { opacity: 1, transform: 'scale(1)' }
         ], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
@@ -640,16 +664,25 @@ window.IS.SettingsUI = {
     }
 
     this.kanbanFullscreen = false;
-    if (container.animate) {
-      const animation = container.animate([
+    const host = this.fullscreenHost;
+    if (host && host.animate) {
+      const animation = host.animate([
         { opacity: 1, transform: 'scale(1)' },
         { opacity: 0.45, transform: 'scale(0.97)' }
       ], { duration: 180, easing: 'ease-in' });
       try { await animation.finished; } catch (_) {}
     }
+    if (this.settingsContainerParent) {
+      this.settingsContainerParent.insertBefore(container, this.settingsContainerNextSibling);
+    }
     container.setAttribute('style', this.settingsContainerStyle || '');
+    if (host) host.remove();
     this.settingsContainerStyle = null;
+    this.settingsContainerParent = null;
+    this.settingsContainerNextSibling = null;
+    this.fullscreenHost = null;
     button.textContent = '⛶ Abrir Kanban em tela cheia';
+    await this.renderCategories();
   },
 
   getKanbanLeads() {
