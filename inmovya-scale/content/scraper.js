@@ -126,20 +126,33 @@ window.IS.Scraper = {
     });
   },
 
-  async ensureLabelsMenuOpen() {
+  async ensureLabelsMenuOpen(returnFromLabel = false) {
     let labels = await this.getLabelsList();
     if (labels.length > 0) return labels;
 
-    if (await this.clickEtiquetas()) {
-      await this.delay(1000);
-    } else if (await this.clickMenu()) {
-      await this.delay(600);
-      await this.clickEtiquetas();
-      await this.delay(1000);
+    if (returnFromLabel) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (!await this.clickBack()) break;
+        await this.delay(700);
+        labels = await this.getLabelsList();
+        if (labels.length > 0) return labels;
+      }
     }
 
-    labels = await this.getLabelsList();
-    return labels;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (await this.clickEtiquetas()) {
+        await this.delay(1000);
+      } else if (await this.clickMenu()) {
+        await this.delay(600);
+        await this.clickEtiquetas();
+        await this.delay(1000);
+      }
+      labels = await this.getLabelsList();
+      if (labels.length > 0) return labels;
+      await this.delay(400);
+    }
+
+    return [];
   },
 
   findScrollableParent(element) {
@@ -422,10 +435,16 @@ window.IS.Scraper = {
       
       for (let i = 0; i < labelNames.length; i++) {
         const labelName = labelNames[i];
-        await this.ensureLabelsMenuOpen();
-        const row = await this.findLabelRowByName(labelName);
-        if (!row) continue;
+        const currentLabels = await this.ensureLabelsMenuOpen(i > 0);
+        const expectedLabelName = this.normalizeText(labelName);
+        const row = currentLabels.find(candidate => this.normalizeText(this.getRowName(candidate)) === expectedLabelName) || null;
+        if (!row) {
+          window.IS.error(`A etiqueta ${labelName} não foi reencontrada para sincronização.`);
+          results.push({ id: window.IS.generateUUID(), name: labelName, contacts: [] });
+          continue;
+        }
 
+        window.IS.log(`Sincronizando etiqueta ${i + 1}/${labelNames.length}: ${labelName}`);
         this.clickRow(row);
         const labelViewOpened = await this.waitForLabelView(labelName, row);
         const uniqueContacts = labelViewOpened ? await this.scrapeAllContacts() : [];
@@ -433,11 +452,7 @@ window.IS.Scraper = {
         
         results.push({ id: window.IS.generateUUID(), name: labelName, contacts: uniqueContacts });
         
-        if (labelViewOpened) {
-          await this.clickBack();
-          await this.delay(1000);
-          if (i < labelNames.length - 1) await this.ensureLabelsMenuOpen();
-        }
+        if (i === labelNames.length - 1 && labelViewOpened) await this.clickBack();
       }
       
       // Cada item já retorna para a lista de etiquetas dentro do laço.
