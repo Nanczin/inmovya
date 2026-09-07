@@ -126,6 +126,22 @@ window.IS.Scraper = {
     });
   },
 
+  async ensureLabelsMenuOpen() {
+    let labels = await this.getLabelsList();
+    if (labels.length > 0) return labels;
+
+    if (await this.clickEtiquetas()) {
+      await this.delay(1000);
+    } else if (await this.clickMenu()) {
+      await this.delay(600);
+      await this.clickEtiquetas();
+      await this.delay(1000);
+    }
+
+    labels = await this.getLabelsList();
+    return labels;
+  },
+
   findScrollableParent(element) {
     let current = element && element.parentElement;
     while (current && current !== document.body) {
@@ -156,16 +172,28 @@ window.IS.Scraper = {
   },
 
   getContactName(row) {
-    const titleNode = row.querySelector('[data-testid="cell-frame-title"] span[title], span[dir="auto"][title], span[title]');
-    return titleNode ? (titleNode.getAttribute('title') || '').trim() : '';
+    const explicitTitle = row.querySelector('[data-testid="cell-frame-title"] [title], [data-testid="cell-frame-title"][title]');
+    if (explicitTitle) return (explicitTitle.getAttribute('title') || explicitTitle.textContent || '').trim();
+
+    const rowRect = row.getBoundingClientRect();
+    const candidates = Array.from(row.querySelectorAll('span[dir="auto"][title], span[title]'))
+      .filter(node => {
+        if (!this.isVisible(node)) return false;
+        if (node.closest('[data-testid*="last-msg" i], [data-testid*="message" i], [aria-label*="mensagem" i], [aria-label*="message" i]')) return false;
+        const rect = node.getBoundingClientRect();
+        return rect.top < rowRect.top + (rowRect.height * 0.55);
+      })
+      .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top);
+    const titleNode = candidates[0];
+    return titleNode ? (titleNode.getAttribute('title') || titleNode.textContent || '').trim() : '';
   },
 
   isSavedContactName(name) {
     const value = (name || '').replace(/\s+/g, ' ').trim();
     if (!value || value.length > 80) return false;
     if (/economize tempo|respostas r[aá]pidas|mensagens protegidas|criptografia/i.test(value)) return false;
-    const phoneCandidate = value.replace(/[\s()+.\-/]/g, '');
-    if (/^\d{7,}$/.test(phoneCandidate)) return false;
+    const digits = value.replace(/\D/g, '');
+    if (digits.length >= 7 && !/[a-zà-ÿ]/i.test(value)) return false;
     return /[a-zà-ÿ]/i.test(value);
   },
 
@@ -383,18 +411,7 @@ window.IS.Scraper = {
     const results = [];
     
     try {
-      let labels = await this.getLabelsList();
-      
-      if (labels.length === 0) {
-        if (!await this.clickEtiquetas()) {
-          if (await this.clickMenu()) {
-            await this.delay(1000);
-            await this.clickEtiquetas();
-          }
-        }
-        await this.delay(2000);
-        labels = await this.getLabelsList();
-      }
+      let labels = await this.ensureLabelsMenuOpen();
 
       if (labels.length === 0) {
          throw new Error("Não encontrei suas etiquetas. Por favor, ABRA O MENU DE ETIQUETAS no seu WhatsApp manualmente, e depois clique em Sincronizar na extensão!");
@@ -405,6 +422,7 @@ window.IS.Scraper = {
       
       for (let i = 0; i < labelNames.length; i++) {
         const labelName = labelNames[i];
+        await this.ensureLabelsMenuOpen();
         const row = await this.findLabelRowByName(labelName);
         if (!row) continue;
 
@@ -418,6 +436,7 @@ window.IS.Scraper = {
         if (labelViewOpened) {
           await this.clickBack();
           await this.delay(1000);
+          if (i < labelNames.length - 1) await this.ensureLabelsMenuOpen();
         }
       }
       

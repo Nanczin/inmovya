@@ -337,6 +337,22 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-labels-list').addEventListener('click', (event) => {
+      const deleteButton = event.target.closest('.is-delete-synced-label');
+      if (deleteButton) {
+        const labelName = deleteButton.getAttribute('data-label-name');
+        this.showConfirm('Excluir etiqueta', `Remover ${labelName} da extensão?`).then(async confirmed => {
+          if (!confirmed) return;
+          this.waLabels = this.waLabels.filter(label => label.name !== labelName);
+          if (this.selectedWaLabelName === labelName) {
+            this.selectedWaLabelName = this.waLabels[0] ? this.waLabels[0].name : null;
+          }
+          await chrome.storage.local.set({ waLabels: this.waLabels });
+          this.renderWaLabels();
+          this.showToast('Etiqueta removida da extensão.');
+        });
+        return;
+      }
+
       const button = event.target.closest('.is-label-selector');
       if (button) {
         this.selectedWaLabelName = button.getAttribute('data-label-name');
@@ -584,7 +600,10 @@ window.IS.SettingsUI = {
         ${this.waLabels.map(label => {
           const active = label.name === selectedLabel.name;
           const contactCount = Array.isArray(label.contacts) ? label.contacts.length : 0;
-          return `<button type="button" class="is-label-selector" data-label-name="${window.IS.escapeHTML(label.name)}" style="flex:0 0 auto; padding:8px 10px; border:1px solid ${active ? 'var(--inmovya-primary)' : 'var(--inmovya-border)'}; border-radius:16px; cursor:pointer; background:${active ? 'var(--inmovya-primary)' : 'var(--inmovya-surface)'}; color:${active ? 'white' : 'var(--inmovya-text)'}; font-size:12px;">🏷️ ${window.IS.escapeHTML(label.name)} (${contactCount})</button>`;
+          return `<div style="display:flex; flex:0 0 auto; align-items:center; border:1px solid ${active ? 'var(--inmovya-primary)' : 'var(--inmovya-border)'}; border-radius:16px; overflow:hidden; background:${active ? 'var(--inmovya-primary)' : 'var(--inmovya-surface)'};">
+            <button type="button" class="is-label-selector" data-label-name="${window.IS.escapeHTML(label.name)}" style="padding:7px 7px 7px 10px; border:none; cursor:pointer; background:transparent; color:${active ? 'white' : 'var(--inmovya-text)'}; font-size:12px;">🏷️ ${window.IS.escapeHTML(label.name)} (${contactCount})</button>
+            <button type="button" class="is-delete-synced-label" data-label-name="${window.IS.escapeHTML(label.name)}" title="Remover etiqueta da extensão" aria-label="Remover ${window.IS.escapeHTML(label.name)} da extensão" style="padding:7px 9px 7px 5px; border:none; cursor:pointer; background:transparent; color:${active ? 'white' : '#dc3545'}; font-size:14px; font-weight:bold;">×</button>
+          </div>`;
         }).join('')}
       </div>
       <div style="font-size:12px; font-weight:bold; margin-top:6px;">Contatos em ${window.IS.escapeHTML(selectedLabel.name)}</div>
