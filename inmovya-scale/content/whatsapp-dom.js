@@ -261,6 +261,16 @@ window.IS.WhatsAppDOM = {
     if (!target || target === document.body) return this.triggerSend(false);
 
     target.focus();
+    try {
+      const nativeResponse = await chrome.runtime.sendMessage({ action: 'native_press_enter' });
+      if (nativeResponse?.ok) {
+        await this.delay(900);
+        if (!this.hasMediaPreview()) return true;
+      }
+    } catch (error) {
+      window.IS.log('Confirmação nativa indisponível; usando botão do WhatsApp.', error);
+    }
+
     const eventOptions = {
       key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
       bubbles: true, cancelable: true

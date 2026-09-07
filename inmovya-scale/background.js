@@ -124,7 +124,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     native_read_file: 'read',
     native_prepare_files: 'prepare',
     native_attach_to_dialog: 'attach',
-    native_activate_and_attach: 'activate_attach'
+    native_activate_and_attach: 'activate_attach',
+    native_press_enter: 'press_enter'
   };
   const nativeAction = nativeActions[request?.action];
   if (!nativeAction) return false;

@@ -28,6 +28,7 @@ internal static class InmovyaFileHost
             else if (action == "prepare") PrepareFiles(GetPaths(request));
             else if (action == "attach") AttachFilesToOpenDialog(GetPaths(request), IntPtr.Zero);
             else if (action == "activate_attach") ActivateAndAttachFiles(GetPaths(request));
+            else if (action == "press_enter") PressEnter();
             else WriteMessage(new { ok = false, error = "Ação inválida." });
         }
         catch (Exception error)
@@ -88,6 +89,12 @@ internal static class InmovyaFileHost
         SendKeys.SendWait("{ENTER}");
         Thread.Sleep(150);
         AttachFilesToOpenDialog(paths, returnWindow);
+    }
+
+    private static void PressEnter()
+    {
+        SendKeys.SendWait("{ENTER}");
+        WriteMessage(new { ok = true });
     }
 
     private static bool SelectFileWithAutomation(IntPtr dialog, string path)
