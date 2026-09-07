@@ -138,6 +138,15 @@ window.IS.Scraper = {
     return titleNode ? (titleNode.getAttribute('title') || '').trim() : '';
   },
 
+  getContactIdentity(row) {
+    const identityNode = row.matches('[data-id], [data-chat-id]')
+      ? row
+      : row.querySelector('[data-id], [data-chat-id]');
+    return identityNode
+      ? (identityNode.getAttribute('data-chat-id') || identityNode.getAttribute('data-id') || '').trim()
+      : '';
+  },
+
   async findLabelRowByName(name) {
     const normalizedName = (name || '').toLocaleLowerCase();
     const labels = await this.getLabelsList();
@@ -161,7 +170,7 @@ window.IS.Scraper = {
     const chatRows = this.getChatRows();
     for (const row of chatRows) {
       const name = this.getContactName(row);
-      if (name) contacts.push({ name });
+      if (name) contacts.push({ name, chatId: this.getContactIdentity(row) });
     }
     return contacts;
   },
@@ -171,9 +180,13 @@ window.IS.Scraper = {
     const collectVisible = async () => {
       const contacts = await this.scrapeContactsInView();
       contacts.forEach(contact => {
-        const key = contact.name.toLocaleLowerCase();
+        const key = contact.chatId || contact.name.toLocaleLowerCase();
         if (!contactsByName.has(key)) {
-          contactsByName.set(key, { id: window.IS.generateUUID(), name: contact.name });
+          contactsByName.set(key, {
+            id: contact.chatId || window.IS.generateUUID(),
+            chatId: contact.chatId || '',
+            name: contact.name
+          });
         }
       });
     };
@@ -182,7 +195,7 @@ window.IS.Scraper = {
     const pane = this.findScrollableParent(rows[0]);
     if (!pane) {
       await collectVisible();
-      return Array.from(contactsByName.values());
+      return Array.from(contactsByName.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     }
 
     pane.scrollTop = 0;
@@ -196,7 +209,62 @@ window.IS.Scraper = {
       if (pane.scrollTop === previousTop) break;
     }
     await collectVisible();
-    return Array.from(contactsByName.values());
+    return Array.from(contactsByName.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  },
+
+  findContactRow(contact) {
+    const expectedName = (contact && contact.name || '').trim().toLocaleLowerCase();
+    const expectedId = (contact && contact.chatId || '').trim();
+    return this.getChatRows().find(row => {
+      const rowId = this.getContactIdentity(row);
+      if (expectedId && rowId && rowId === expectedId) return true;
+      return this.getContactName(row).trim().toLocaleLowerCase() === expectedName;
+    }) || null;
+  },
+
+  async findContactRowWithScroll(contact) {
+    let rows = this.getChatRows();
+    const pane = this.findScrollableParent(rows[0]);
+    if (!pane) return this.findContactRow(contact);
+
+    pane.scrollTop = 0;
+    await this.delay(350);
+    for (let step = 0; step < 40; step++) {
+      const row = this.findContactRow(contact);
+      if (row) return row;
+      const previousTop = pane.scrollTop;
+      pane.scrollTop = Math.min(pane.scrollHeight, previousTop + Math.max(300, Math.floor(pane.clientHeight * 0.8)));
+      await this.delay(350);
+      if (pane.scrollTop === previousTop) break;
+    }
+    return this.findContactRow(contact);
+  },
+
+  async openContact(labelName, contact) {
+    let labelRow = await this.findLabelRowByName(labelName);
+    if (!labelRow) {
+      if (!await this.clickEtiquetas() && await this.clickMenu()) {
+        await this.delay(600);
+        await this.clickEtiquetas();
+      }
+      await this.delay(1200);
+      labelRow = await this.findLabelRowByName(labelName);
+    }
+    if (!labelRow) throw new Error(`A etiqueta ${labelName} não foi encontrada no WhatsApp.`);
+
+    labelRow.click();
+    await this.delay(1200);
+    const contactRow = await this.findContactRowWithScroll(contact);
+    if (!contactRow) throw new Error(`O contato ${contact.name} não foi encontrado nessa etiqueta.`);
+
+    contactRow.click();
+    const expectedName = contact.name.trim().toLocaleLowerCase();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await this.delay(200);
+      const currentName = window.IS.WhatsAppDOM.getCurrentChatName().trim().toLocaleLowerCase();
+      if (currentName === expectedName) return true;
+    }
+    throw new Error(`A conversa de ${contact.name} não foi aberta.`);
   },
   
   async run() {

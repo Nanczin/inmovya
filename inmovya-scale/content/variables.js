@@ -24,11 +24,11 @@ window.IS.Variables = {
     const myName = settings.userName || "";
     
     let msg = messageTemplate;
-    msg = msg.replace(/{{nome}}/gi, contactName);
-    msg = msg.replace(/{{saudacao}}/gi, this.getGreeting());
-    msg = msg.replace(/{{meu_nome}}/gi, myName);
-    msg = msg.replace(/{{data}}/gi, this.getDate());
-    msg = msg.replace(/{{hora}}/gi, this.getTime());
+    msg = msg.replace(/{{\s*nome\s*}}/gi, contactName);
+    msg = msg.replace(/{{\s*saudacao\s*}}/gi, this.getGreeting());
+    msg = msg.replace(/{{\s*meu_nome\s*}}/gi, myName);
+    msg = msg.replace(/{{\s*data\s*}}/gi, this.getDate());
+    msg = msg.replace(/{{\s*hora\s*}}/gi, this.getTime());
     
     return msg;
   }

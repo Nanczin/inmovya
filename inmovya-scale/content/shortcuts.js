@@ -21,6 +21,21 @@ window.IS.Shortcuts = {
     document.addEventListener('keydown', this.handleKeyDown.bind(this), true);
   },
 
+  normalizeShortcut(value) {
+    return window.IS.removeAccents(String(value || '').trim().replace(/^\/+/, '').toLowerCase());
+  },
+
+  getTextBeforeCursor(input, range) {
+    try {
+      const beforeCursor = document.createRange();
+      beforeCursor.selectNodeContents(input);
+      beforeCursor.setEnd(range.startContainer, range.startOffset);
+      return beforeCursor.toString();
+    } catch (_error) {
+      return '';
+    }
+  },
+
   async handleKeyDown(e) {
     if (!this.active) return;
 
@@ -33,8 +48,8 @@ window.IS.Shortcuts = {
     if (!triggered) return;
 
     const target = e.target;
-    // Ensure target is a contenteditable
-    if (!target || !target.isContentEditable) return;
+    const input = window.IS.WhatsAppDOM.findMessageInput();
+    if (!input || !target || (target !== input && !input.contains(target))) return;
 
     // We need to read the current word before the cursor
     const selection = window.getSelection();
@@ -43,20 +58,15 @@ window.IS.Shortcuts = {
     const range = selection.getRangeAt(0);
     if (!range.collapsed) return; // if text is selected, don't trigger
 
-    const textContent = range.startContainer.textContent;
-    const offset = range.startOffset;
-    
-    // Find the word before cursor
-    const textBeforeCursor = textContent.slice(0, offset);
-    const words = textBeforeCursor.split(/\s+/);
-    const lastWord = words[words.length - 1];
+    const textBeforeCursor = this.getTextBeforeCursor(input, range);
+    const lastWord = textBeforeCursor.match(/\/[^\s/]+$/)?.[0] || '';
 
     if (!lastWord || !lastWord.startsWith('/')) return;
 
     const replies = await window.IS.Storage.getReplies();
-    const normalizedShortcut = window.IS.removeAccents(lastWord.toLowerCase());
+    const normalizedShortcut = this.normalizeShortcut(lastWord);
     
-    const reply = replies.find(r => r.shortcut && window.IS.removeAccents(r.shortcut.toLowerCase()) === normalizedShortcut);
+    const reply = replies.find(r => r.shortcut && this.normalizeShortcut(r.shortcut) === normalizedShortcut);
 
     if (reply) {
       // Prevent default action (typing Space/Enter/Tab)
@@ -79,4 +89,3 @@ window.IS.Shortcuts = {
     }
   }
 };
-

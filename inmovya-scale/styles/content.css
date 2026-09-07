@@ -49,14 +49,14 @@ html[dir] body.dark {
   right: 15px;
   width: 40px;
   height: 40px;
-  background: var(--inmovya-primary);
+  background: transparent;
   color: white;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: var(--inmovya-shadow);
+  box-shadow: none;
   pointer-events: auto;
   transition: transform 0.2s;
   z-index: 10000;
@@ -64,7 +64,7 @@ html[dir] body.dark {
 
 #is-toggle-button:hover {
   transform: scale(1.05);
-  background: var(--inmovya-primary-hover);
+  background: transparent;
 }
 
 #is-toggle-button.is-hidden {

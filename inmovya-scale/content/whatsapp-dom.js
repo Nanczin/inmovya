@@ -293,13 +293,6 @@ window.IS.WhatsAppDOM = {
     for (let attempt = 0; attempt < 30; attempt++) {
       const sendButton = this.findAttachmentSendButton();
       if (sendButton) {
-        sendButton.focus({ preventScroll: true });
-        try {
-          const nativeResponse = await chrome.runtime.sendMessage({ action: 'native_press_enter' });
-          if (nativeResponse?.ok) return true;
-        } catch (error) {
-          window.IS.log('Confirmação nativa do documento indisponível; usando clique.', error);
-        }
         sendButton.click();
         return true;
       }
@@ -701,9 +694,18 @@ window.IS.WhatsAppDOM = {
     const header = mainArea.querySelector('header');
     if (!header) return "";
 
-    const titleSpan = header.querySelector('span[title]');
-    if (titleSpan && titleSpan.title) {
-      return titleSpan.title.trim();
+    const selectors = [
+      '[data-testid="conversation-info-header-chat-title"] span[title]',
+      '[data-testid="conversation-info-header-chat-title"][title]',
+      'span[dir="auto"][title]',
+      'span[title]'
+    ];
+    for (const selector of selectors) {
+      const titleSpan = Array.from(header.querySelectorAll(selector)).find(element => {
+        const title = (element.getAttribute('title') || '').trim();
+        return title && element.offsetParent !== null && !element.closest('button, [role="button"]');
+      });
+      if (titleSpan) return titleSpan.getAttribute('title').trim();
     }
     return "";
   },

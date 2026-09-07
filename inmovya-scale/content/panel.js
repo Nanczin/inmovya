@@ -241,6 +241,7 @@ window.IS.Panel = {
         }
         if (changes.settings) {
           this.settings = { ...this.settings, ...changes.settings.newValue };
+          if (window.IS.Shortcuts) window.IS.Shortcuts.updateSettings(this.settings);
           changed = true;
         }
         if (changed) this.updateList();

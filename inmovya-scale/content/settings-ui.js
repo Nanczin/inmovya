@@ -345,9 +345,29 @@ window.IS.SettingsUI = {
 
     document.getElementById('is-set-labels-list').addEventListener('click', (event) => {
       const button = event.target.closest('.is-label-selector');
-      if (!button) return;
-      this.selectedWaLabelName = button.getAttribute('data-label-name');
-      this.renderWaLabels();
+      if (button) {
+        this.selectedWaLabelName = button.getAttribute('data-label-name');
+        this.renderWaLabels();
+        return;
+      }
+
+      const contactButton = event.target.closest('.is-label-contact');
+      if (!contactButton) return;
+      const labelIndex = Number(contactButton.getAttribute('data-label-index'));
+      const contactIndex = Number(contactButton.getAttribute('data-contact-index'));
+      const label = this.waLabels[labelIndex];
+      const contact = label && Array.isArray(label.contacts) ? label.contacts[contactIndex] : null;
+      if (!label || !contact) return;
+
+      contactButton.disabled = true;
+      contactButton.textContent = `Abrindo ${contact.name}…`;
+      window.IS.Scraper.openContact(label.name, contact)
+        .then(() => window.IS.Panel.closeSettings())
+        .catch(error => {
+          window.IS.error('Erro ao abrir contato da etiqueta', error);
+          this.showToast(error.message || 'Não foi possível abrir a conversa.');
+          this.renderWaLabels();
+        });
     });
 
     // --- CONFIG ---
@@ -485,7 +505,8 @@ window.IS.SettingsUI = {
       return;
     }
 
-    const selectedLabel = this.waLabels.find(label => label.name === this.selectedWaLabelName) || this.waLabels[0];
+    const selectedLabelIndex = Math.max(0, this.waLabels.findIndex(label => label.name === this.selectedWaLabelName));
+    const selectedLabel = this.waLabels[selectedLabelIndex] || this.waLabels[0];
     this.selectedWaLabelName = selectedLabel.name;
     const contacts = Array.isArray(selectedLabel.contacts) ? selectedLabel.contacts : [];
 
@@ -499,10 +520,10 @@ window.IS.SettingsUI = {
       </div>
       <div style="font-size:12px; font-weight:bold; margin-top:6px;">Contatos em ${window.IS.escapeHTML(selectedLabel.name)}</div>
       <div style="display:flex; flex-direction:column; gap:6px;">
-        ${contacts.length ? contacts.map(contact => `
-          <div style="padding:9px 10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface); font-size:12px;">
-            ${window.IS.escapeHTML(contact.name)}
-          </div>
+        ${contacts.length ? contacts.map((contact, contactIndex) => `
+          <button type="button" class="is-label-contact" data-label-index="${selectedLabelIndex}" data-contact-index="${contactIndex}" style="padding:9px 10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface); color:var(--inmovya-text); font-size:12px; text-align:left; cursor:pointer;">
+            💬 ${window.IS.escapeHTML(contact.name)}
+          </button>
         `).join('') : '<div style="padding:12px; text-align:center; color:#888; font-size:12px;">Nenhum contato nesta etiqueta.</div>'}
       </div>
     `;
