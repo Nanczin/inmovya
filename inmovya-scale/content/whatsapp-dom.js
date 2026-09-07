@@ -256,8 +256,9 @@ window.IS.WhatsAppDOM = {
     return true;
   },
 
-  findAttachmentSendButton() {
-    const candidates = document.querySelectorAll('button, div[role="button"]');
+  findSendButtonInside(root) {
+    if (!root) return null;
+    const candidates = root.querySelectorAll('button, div[role="button"]');
     for (let index = candidates.length - 1; index >= 0; index--) {
       const button = candidates[index];
       if (button.offsetParent === null || button.closest('#inmovya-scale-root')) continue;
@@ -265,6 +266,25 @@ window.IS.WhatsAppDOM = {
         .map(icon => icon.getAttribute('data-icon') || '').join(' ');
       const context = `${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''} ${icons}`.toLowerCase();
       if (/enviar|send/.test(context)) return button;
+    }
+    return null;
+  },
+
+  findAttachmentSendButton() {
+    const captionInput = this.findMediaCaptionInput();
+    let previewRoot = captionInput?.parentElement || null;
+    for (let level = 0; previewRoot && level < 10; level++, previewRoot = previewRoot.parentElement) {
+      if (previewRoot.id === 'main' || previewRoot === document.body) break;
+      const button = this.findSendButtonInside(previewRoot);
+      if (button) return button;
+    }
+
+    const modalRoots = document.querySelectorAll('[role="dialog"], [data-animate-modal-popup]');
+    for (let index = modalRoots.length - 1; index >= 0; index--) {
+      const root = modalRoots[index];
+      if (root.offsetParent === null || root.closest('#inmovya-scale-root')) continue;
+      const button = this.findSendButtonInside(root);
+      if (button) return button;
     }
     return null;
   },
@@ -592,7 +612,41 @@ window.IS.WhatsAppDOM = {
     }
   },
 
+  showSendMask(totalFiles) {
+    let mask = document.getElementById('inmovya-send-mask');
+    if (!mask) {
+      mask = document.createElement('div');
+      mask.id = 'inmovya-send-mask';
+      mask.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(255,255,255,.96);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;pointer-events:auto;font-family:Arial,sans-serif;';
+      mask.innerHTML = `
+        <style>@keyframes inmovya-send-spin{to{transform:rotate(360deg)}}</style>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:14px;color:#111b21;text-align:center;padding:24px;">
+          <div style="width:34px;height:34px;border:4px solid #d9fdd3;border-top-color:#00a884;border-radius:50%;animation:inmovya-send-spin .8s linear infinite;"></div>
+          <strong id="inmovya-send-mask-title" style="font-size:16px;">Preparando envio…</strong>
+          <span style="font-size:12px;color:#667781;">Aguarde enquanto os arquivos são enviados.</span>
+        </div>`;
+      document.body.appendChild(mask);
+    }
+    mask.style.display = 'flex';
+    this.updateSendMask(0, totalFiles);
+  },
+
+  updateSendMask(currentFile, totalFiles) {
+    const title = document.getElementById('inmovya-send-mask-title');
+    if (!title) return;
+    title.textContent = currentFile > 0
+      ? `Enviando arquivo ${currentFile} de ${totalFiles}…`
+      : 'Preparando envio…';
+  },
+
+  hideSendMask() {
+    document.getElementById('inmovya-send-mask')?.remove();
+  },
+
   async insertSequenceAndAttachments(text, attachments = []) {
+    if (attachments.length) this.showSendMask(attachments.length);
+    let currentAttachment = 0;
+    try {
     const parts = (text || '').split('===').map(part => part.trim());
     if (!parts.length && attachments.length) parts.push('');
 
@@ -621,6 +675,8 @@ window.IS.WhatsAppDOM = {
       }
 
       for (const attachment of linked) {
+        currentAttachment += 1;
+        this.updateSendMask(currentAttachment, normalizedAttachments.length);
         if (this.isMediaAttachment(attachment)) {
           const caption = attachment.useCaption ? message : '';
           if (!await this.sendAttachmentBatch([attachment], caption)) return false;
@@ -634,6 +690,9 @@ window.IS.WhatsAppDOM = {
     }
 
     return true;
+    } finally {
+      if (attachments.length) this.hideSendMask();
+    }
   },
 
   getCurrentChatName() {
