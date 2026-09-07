@@ -10,6 +10,16 @@ window.IS.Scraper = {
     return !!element && element.offsetParent !== null && !element.closest('#inmovya-scale-root');
   },
 
+  isInteractable(element) {
+    if (!this.isVisible(element)) return false;
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return false;
+    const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + Math.min(rect.width / 2, 120)));
+    const y = Math.max(0, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
+    const topElement = document.elementFromPoint(x, y);
+    return !!topElement && (element.contains(topElement) || topElement.contains(element));
+  },
+
   getRowName(row) {
     const titleNode = row && row.querySelector('span[title], [title]');
     const rawName = titleNode
@@ -73,7 +83,7 @@ window.IS.Scraper = {
   async getLabelsList() {
     const rows = [];
     const addRow = (row) => {
-      if (!row || !this.isVisible(row) || rows.includes(row)) return;
+      if (!row || !this.isInteractable(row) || rows.includes(row)) return;
       const name = this.getRowName(row).toLowerCase();
       if (!name || /^(etiquetas?|labels?|voltar|back|nova etiqueta|new label)$/.test(name)) return;
       rows.push(row);
@@ -126,7 +136,7 @@ window.IS.Scraper = {
     ];
     const rows = [];
     document.querySelectorAll(selectors.join(',')).forEach(row => {
-      if (this.isVisible(row) && row.querySelector('span[title]') && !rows.includes(row)) {
+      if (this.isInteractable(row) && row.querySelector('span[title]') && !rows.includes(row)) {
         rows.push(row);
       }
     });
@@ -142,9 +152,51 @@ window.IS.Scraper = {
     const identityNode = row.matches('[data-id], [data-chat-id]')
       ? row
       : row.querySelector('[data-id], [data-chat-id]');
-    return identityNode
+    const candidate = identityNode
       ? (identityNode.getAttribute('data-chat-id') || identityNode.getAttribute('data-id') || '').trim()
       : '';
+    return /(?:@c\.us|@s\.whatsapp\.net|@g\.us|^\+?\d{7,}$)/i.test(candidate) ? candidate : '';
+  },
+
+  findSearchInput() {
+    const selectors = [
+      '#side [contenteditable="true"][data-tab="3"]',
+      '#side [contenteditable="true"][aria-placeholder*="pesquis" i]',
+      '#side [contenteditable="true"][aria-placeholder*="search" i]',
+      '#side input[placeholder*="pesquis" i]',
+      '#side input[placeholder*="search" i]'
+    ];
+    return selectors.map(selector => document.querySelector(selector)).find(element => this.isInteractable(element)) || null;
+  },
+
+  async returnToChatList() {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const searchInput = this.findSearchInput();
+      if (searchInput) return searchInput;
+      if (!await this.clickBack()) break;
+      await this.delay(500);
+    }
+    return this.findSearchInput();
+  },
+
+  async openContactBySearch(contact) {
+    const searchInput = await this.returnToChatList();
+    if (!searchInput) return false;
+
+    searchInput.focus();
+    if (searchInput.isContentEditable) {
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, contact.name);
+    } else {
+      searchInput.value = contact.name;
+      searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: contact.name }));
+    }
+    await this.delay(1200);
+
+    const contactRow = await this.findContactRowWithScroll(contact);
+    if (!contactRow) return false;
+    contactRow.click();
+    return true;
   },
 
   async findLabelRowByName(name) {
@@ -250,14 +302,19 @@ window.IS.Scraper = {
       await this.delay(1200);
       labelRow = await this.findLabelRowByName(labelName);
     }
-    if (!labelRow) throw new Error(`A etiqueta ${labelName} não foi encontrada no WhatsApp.`);
+    let opened = false;
+    if (labelRow) {
+      labelRow.click();
+      await this.delay(1200);
+      const contactRow = await this.findContactRowWithScroll(contact);
+      if (contactRow) {
+        contactRow.click();
+        opened = true;
+      }
+    }
+    if (!opened) opened = await this.openContactBySearch(contact);
+    if (!opened) throw new Error(`O contato ${contact.name} não foi encontrado no WhatsApp.`);
 
-    labelRow.click();
-    await this.delay(1200);
-    const contactRow = await this.findContactRowWithScroll(contact);
-    if (!contactRow) throw new Error(`O contato ${contact.name} não foi encontrado nessa etiqueta.`);
-
-    contactRow.click();
     const expectedName = contact.name.trim().toLocaleLowerCase();
     for (let attempt = 0; attempt < 20; attempt++) {
       await this.delay(200);
