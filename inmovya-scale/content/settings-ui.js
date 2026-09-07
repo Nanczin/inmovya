@@ -51,7 +51,7 @@ window.IS.SettingsUI = {
     </div>
 
     <!-- TAB: CONFIG -->
-    <div id="is-tab-config" class="is-tab-content" style="display:none; display:flex; flex-direction:column; gap:15px;">
+    <div id="is-tab-config" class="is-tab-content" style="display:none; flex-direction:column; gap:15px;">
       <div>
         <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Seu Nome (usado em {{meu_nome}})</label>
         <input type="text" id="is-set-username" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box;">
@@ -199,16 +199,11 @@ window.IS.SettingsUI = {
     });
 
     // --- CATEGORIES ---
-    document.getElementById('is-btn-add-cat').addEventListener('click', async () => {
-      const input = document.getElementById('is-new-cat-name');
-      const name = input.value.trim();
-      if (!name) return;
-      let categories = await window.IS.Storage.getCategories();
-      categories.push({ id: window.IS.generateUUID(), name, createdAt: new Date().toISOString() });
-      await window.IS.Storage.saveCategories(categories);
-      input.value = '';
-      this.renderCategories();
-      this.showToast("Categoria adicionada.");
+    document.getElementById('is-btn-add-cat').addEventListener('click', () => this.addCategory());
+    document.getElementById('is-new-cat-name').addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      this.addCategory();
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
@@ -486,6 +481,46 @@ window.IS.SettingsUI = {
           ${c.id !== 'default-category' ? `<button class="is-btn-delete-cat" data-id="${c.id}" style="padding:3px 8px; font-size:11px; cursor:pointer; background:#dc3545; color:white; border:none; border-radius:4px;">Excluir</button>` : ''}
         </div>
       `).join('');
+    }
+  },
+
+  async addCategory() {
+    const input = document.getElementById('is-new-cat-name');
+    const button = document.getElementById('is-btn-add-cat');
+    const name = (input?.value || '').replace(/\s+/g, ' ').trim();
+    if (!name) {
+      this.showToast('Digite o nome da categoria.');
+      input?.focus();
+      return false;
+    }
+
+    button.disabled = true;
+    try {
+      const categories = await window.IS.Storage.getCategories();
+      const normalizedName = window.IS.removeAccents(name.toLocaleLowerCase());
+      if (categories.some(category => window.IS.removeAccents((category.name || '').toLocaleLowerCase()) === normalizedName)) {
+        this.showToast('Essa categoria já existe.');
+        return false;
+      }
+
+      const category = { id: window.IS.generateUUID(), name, createdAt: new Date().toISOString() };
+      await window.IS.Storage.saveCategories([...categories, category]);
+      const savedCategories = await window.IS.Storage.getCategories();
+      if (!savedCategories.some(saved => saved.id === category.id)) {
+        throw new Error('A categoria não foi confirmada no armazenamento.');
+      }
+
+      input.value = '';
+      await this.renderCategories();
+      await window.IS.Panel.reloadData();
+      this.showToast('Categoria adicionada.');
+      return true;
+    } catch (error) {
+      window.IS.error('Erro ao adicionar categoria', error);
+      this.showToast(`Não foi possível adicionar: ${error.message}`);
+      return false;
+    } finally {
+      button.disabled = false;
     }
   },
   

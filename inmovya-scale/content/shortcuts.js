@@ -4,14 +4,25 @@ window.IS = window.IS || {};
 window.IS.Shortcuts = {
   active: false,
   triggerKey: "Space",
+  replies: [],
+  storageListenerAttached: false,
 
-  init(settings) {
+  async init(settings) {
     this.updateSettings(settings);
+    this.replies = await window.IS.Storage.getReplies();
     this.attachListener();
+    if (!this.storageListenerAttached) {
+      chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'local' && changes.replies) {
+          this.replies = Array.isArray(changes.replies.newValue) ? changes.replies.newValue : [];
+        }
+      });
+      this.storageListenerAttached = true;
+    }
   },
 
   updateSettings(settings) {
-    this.active = settings.shortcutsEnabled;
+    this.active = true;
     this.triggerKey = settings.shortcutTrigger || "Space";
   },
 
@@ -30,7 +41,7 @@ window.IS.Shortcuts = {
       const beforeCursor = document.createRange();
       beforeCursor.selectNodeContents(input);
       beforeCursor.setEnd(range.startContainer, range.startOffset);
-      return beforeCursor.toString();
+      return beforeCursor.toString().replace(/[\u200B-\u200D\uFEFF]/g, '');
     } catch (_error) {
       return '';
     }
@@ -41,9 +52,9 @@ window.IS.Shortcuts = {
 
     // Check trigger key
     let triggered = false;
-    if (this.triggerKey === "Space" && e.code === "Space") triggered = true;
-    if (this.triggerKey === "Enter" && e.code === "Enter") triggered = true;
-    if (this.triggerKey === "Tab" && e.code === "Tab") triggered = true;
+    if (e.code === "Space" || e.key === " " || e.key === "Spacebar") triggered = true;
+    if (e.code === "Enter" || e.key === "Enter") triggered = true;
+    if (e.code === "Tab" || e.key === "Tab") triggered = true;
 
     if (!triggered) return;
 
@@ -63,10 +74,8 @@ window.IS.Shortcuts = {
 
     if (!lastWord || !lastWord.startsWith('/')) return;
 
-    const replies = await window.IS.Storage.getReplies();
     const normalizedShortcut = this.normalizeShortcut(lastWord);
-    
-    const reply = replies.find(r => r.shortcut && this.normalizeShortcut(r.shortcut) === normalizedShortcut);
+    const reply = this.replies.find(r => r.shortcut && this.normalizeShortcut(r.shortcut) === normalizedShortcut);
 
     if (reply) {
       // Prevent default action (typing Space/Enter/Tab)
@@ -85,7 +94,7 @@ window.IS.Shortcuts = {
       // Update usage
       reply.usageCount = (reply.usageCount || 0) + 1;
       reply.lastUsedAt = new Date().toISOString();
-      await window.IS.Storage.saveReplies(replies);
+      await window.IS.Storage.saveReplies(this.replies);
     }
   }
 };

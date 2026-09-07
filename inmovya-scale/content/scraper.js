@@ -25,7 +25,15 @@ window.IS.Scraper = {
     const rawName = titleNode
       ? titleNode.getAttribute('title')
       : row && (row.getAttribute('aria-label') || row.getAttribute('title') || row.textContent);
-    return (rawName || '').replace(/\s+/g, ' ').trim();
+    return (rawName || '')
+      .replace(/^[🏷️\s]+/u, '')
+      .replace(/\s*\(\s*\d+\s*\)\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  normalizeText(value) {
+    return window.IS.removeAccents(String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase());
   },
 
   async clickMenu() {
@@ -148,6 +156,43 @@ window.IS.Scraper = {
     return titleNode ? (titleNode.getAttribute('title') || '').trim() : '';
   },
 
+  isSavedContactName(name) {
+    const value = (name || '').replace(/\s+/g, ' ').trim();
+    if (!value || value.length > 80) return false;
+    if (/economize tempo|respostas r[aá]pidas|mensagens protegidas|criptografia/i.test(value)) return false;
+    const phoneCandidate = value.replace(/[\s()+.\-/]/g, '');
+    if (/^\d{7,}$/.test(phoneCandidate)) return false;
+    return /[a-zà-ÿ]/i.test(value);
+  },
+
+  clickRow(row) {
+    if (!row) return false;
+    const clickable = Array.from(row.querySelectorAll('button, [role="button"], [role="menuitem"], [tabindex]'))
+      .filter(element => this.isInteractable(element))
+      .sort((left, right) => left.getBoundingClientRect().width - right.getBoundingClientRect().width)[0] || row;
+    clickable.click();
+    return true;
+  },
+
+  isLabelViewActive(labelName) {
+    const expected = this.normalizeText(labelName);
+    const headings = document.querySelectorAll('#side header, #side [role="heading"], #side h1, #side h2, #side h3');
+    return Array.from(headings).some(element => {
+      if (!this.isInteractable(element)) return false;
+      const text = this.normalizeText(element.getAttribute('title') || element.getAttribute('aria-label') || element.textContent);
+      return text === expected || text.includes(expected);
+    });
+  },
+
+  async waitForLabelView(labelName, timeoutMs = 5000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      if (this.isLabelViewActive(labelName)) return true;
+      await this.delay(150);
+    }
+    return false;
+  },
+
   getContactIdentity(row) {
     const identityNode = row.matches('[data-id], [data-chat-id]')
       ? row
@@ -222,7 +267,7 @@ window.IS.Scraper = {
     const chatRows = this.getChatRows();
     for (const row of chatRows) {
       const name = this.getContactName(row);
-      if (name) contacts.push({ name, chatId: this.getContactIdentity(row) });
+      if (this.isSavedContactName(name)) contacts.push({ name, chatId: this.getContactIdentity(row) });
     }
     return contacts;
   },
@@ -304,8 +349,11 @@ window.IS.Scraper = {
     }
     let opened = false;
     if (labelRow) {
-      labelRow.click();
-      await this.delay(1200);
+      this.clickRow(labelRow);
+      if (!await this.waitForLabelView(labelName)) labelRow = null;
+      await this.delay(500);
+    }
+    if (labelRow) {
       const contactRow = await this.findContactRowWithScroll(contact);
       if (contactRow) {
         contactRow.click();
@@ -354,15 +402,17 @@ window.IS.Scraper = {
         const row = await this.findLabelRowByName(labelName);
         if (!row) continue;
 
-        row.click();
-        await this.delay(2500); 
-        
-        const uniqueContacts = await this.scrapeAllContacts();
+        this.clickRow(row);
+        const labelViewOpened = await this.waitForLabelView(labelName);
+        const uniqueContacts = labelViewOpened ? await this.scrapeAllContacts() : [];
+        if (!labelViewOpened) window.IS.error(`A etiqueta ${labelName} não abriu; nenhuma conversa geral foi importada.`);
         
         results.push({ id: window.IS.generateUUID(), name: labelName, contacts: uniqueContacts });
         
-        await this.clickBack();
-        await this.delay(1500);
+        if (labelViewOpened) {
+          await this.clickBack();
+          await this.delay(1000);
+        }
       }
       
       // Cada item já retorna para a lista de etiquetas dentro do laço.

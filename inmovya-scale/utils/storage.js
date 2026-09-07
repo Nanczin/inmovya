@@ -13,7 +13,7 @@ window.IS.Storage = {
 
   async getCategories() {
     const data = await chrome.storage.local.get('categories');
-    return data.categories || [];
+    return Array.isArray(data.categories) ? data.categories : [];
   },
 
   async saveCategories(categories) {
