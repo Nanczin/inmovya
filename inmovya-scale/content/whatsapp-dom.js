@@ -260,15 +260,33 @@ window.IS.WhatsAppDOM = {
     const candidates = document.querySelectorAll('button, div[role="button"]');
     for (let index = candidates.length - 1; index >= 0; index--) {
       const button = candidates[index];
-      const insidePreview = button.closest('[role="dialog"], [data-animate-modal-popup]');
-      if (button.offsetParent === null || button.closest('#inmovya-scale-root') ||
-          (!insidePreview && button.closest('#main footer'))) continue;
+      if (button.offsetParent === null || button.closest('#inmovya-scale-root')) continue;
       const icons = Array.from(button.querySelectorAll('[data-icon]'))
         .map(icon => icon.getAttribute('data-icon') || '').join(' ');
       const context = `${button.getAttribute('aria-label') || ''} ${button.getAttribute('title') || ''} ${icons}`.toLowerCase();
       if (/enviar|send/.test(context)) return button;
     }
     return null;
+  },
+
+  async triggerDocumentSend() {
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const sendButton = this.findAttachmentSendButton();
+      if (sendButton) {
+        sendButton.focus({ preventScroll: true });
+        try {
+          const nativeResponse = await chrome.runtime.sendMessage({ action: 'native_press_enter' });
+          if (nativeResponse?.ok) return true;
+        } catch (error) {
+          window.IS.log('Confirmação nativa do documento indisponível; usando clique.', error);
+        }
+        sendButton.click();
+        return true;
+      }
+      await this.delay(150);
+    }
+    window.IS.error('Botão Enviar da prévia do documento não encontrado.');
+    return false;
   },
 
   async triggerMediaSend(captionInput = null, preferSendButton = false) {
@@ -562,7 +580,7 @@ window.IS.WhatsAppDOM = {
         }
         await this.delay(250);
       }
-      if (!await this.triggerMediaSend(captionInput || this.findMediaCaptionInput(), true)) return false;
+      if (!await this.triggerDocumentSend()) return false;
       if (!await this.waitForMediaPreviewClosed(30000)) {
         window.IS.error('O WhatsApp não confirmou o envio do documento antes do próximo item.');
         return false;

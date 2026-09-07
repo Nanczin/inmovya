@@ -61,19 +61,18 @@ internal static class InmovyaFileHost
 
         SetForegroundWindow(dialog);
         Thread.Sleep(40);
-        if (!SelectFileWithAutomation(dialog, paths[0]))
+        var selectionDeadline = DateTime.UtcNow.AddSeconds(4);
+        var selected = false;
+        while (!selected && DateTime.UtcNow < selectionDeadline)
         {
-            // Se a automação não estiver disponível nesta versão do Windows,
-            // restaura o seletor para não deixar o envio bloqueado.
+            selected = SelectFileWithAutomation(dialog, paths[0]);
+            if (!selected) Thread.Sleep(100);
+        }
+        if (!selected)
+        {
             ShowWindow(dialog, 5);
             SetForegroundWindow(dialog);
-            Thread.Sleep(100);
-            // Atalho nativo do seletor para o campo "Nome do arquivo".
-            SendKeys.SendWait("%n");
-            Thread.Sleep(25);
-            SendKeys.SendWait("^a");
-            SendKeys.SendWait(EscapeSendKeys(paths[0]));
-            SendKeys.SendWait("{ENTER}");
+            throw new InvalidOperationException("O campo Nome do arquivo ou o botão Abrir não ficou disponível. O envio foi interrompido sem digitar o caminho na conversa.");
         }
         Thread.Sleep(150);
         if (returnWindow != IntPtr.Zero && returnWindow != dialog) SetForegroundWindow(returnWindow);
@@ -203,32 +202,9 @@ internal static class InmovyaFileHost
             var className = new StringBuilder(256);
             GetClassName(window, className, className.Capacity);
             if (className.ToString() == "#32770") return window;
-            Thread.Sleep(100);
+            Thread.Sleep(25);
         }
         return IntPtr.Zero;
-    }
-
-    private static string EscapeSendKeys(string value)
-    {
-        var escaped = new StringBuilder();
-        foreach (var character in value)
-        {
-            switch (character)
-            {
-                case '+': escaped.Append("{+}"); break;
-                case '^': escaped.Append("{^}"); break;
-                case '%': escaped.Append("{%}"); break;
-                case '~': escaped.Append("{~}"); break;
-                case '(': escaped.Append("{(}"); break;
-                case ')': escaped.Append("{)}"); break;
-                case '[': escaped.Append("{[}"); break;
-                case ']': escaped.Append("{]}"); break;
-                case '{': escaped.Append("{{}"); break;
-                case '}': escaped.Append("{}}"); break;
-                default: escaped.Append(character); break;
-            }
-        }
-        return escaped.ToString();
     }
 
     private static List<string> GetPaths(Dictionary<string, object> request)
