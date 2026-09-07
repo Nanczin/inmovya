@@ -45,10 +45,10 @@ html[dir] body.dark {
 
 #is-toggle-button {
   position: absolute;
-  top: 50%;
-  right: 8px;
-  width: 40px;
-  height: 40px;
+  top: 4px;
+  right: 420px;
+  width: 52px;
+  height: 52px;
   background: transparent;
   color: white;
   border-radius: 50%;
@@ -59,12 +59,11 @@ html[dir] body.dark {
   box-shadow: none;
   pointer-events: auto;
   transition: transform 0.2s;
-  transform: translateY(-50%);
   z-index: 10000;
 }
 
 #is-toggle-button:hover {
-  transform: translateY(-50%) scale(1.05);
+  transform: scale(1.05);
   background: transparent;
 }
 
@@ -73,10 +72,16 @@ html[dir] body.dark {
 }
 
 .is-toggle-logo {
-  width: 34px;
-  height: 34px;
+  width: 50px;
+  height: 50px;
   object-fit: contain;
   pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  #is-toggle-button {
+    right: 405px;
+  }
 }
 
 #is-sidebar {
