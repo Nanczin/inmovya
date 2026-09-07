@@ -688,23 +688,19 @@ window.IS.SettingsUI = {
       const response = await chrome.runtime.sendMessage({ action: 'native_pick_files' });
       if (!response?.ok) throw new Error(response?.error || 'Aplicativo auxiliar indisponível.');
       const files = Array.isArray(response.files) ? response.files : [];
-      const previousAttachments = this.editingId ? [...this.draftAttachments] : [];
-      if (this.editingId && files.length > 0) this.draftAttachments = [];
-      files.forEach((file, index) => {
-        const previous = previousAttachments[index];
+      files.forEach(file => {
         this.draftAttachments.push({
           id: window.IS.generateUUID(),
           name: file.name,
           type: file.type || 'application/octet-stream',
           size: file.size || 0,
           nativePath: file.path,
-          messageIndex: previous?.messageIndex || 0,
-          useCaption: !!previous?.useCaption
+          messageIndex: this.draftAttachments.length,
+          useCaption: false
         });
       });
       this.syncMessageBlocksWithAttachments();
-      const action = this.editingId && previousAttachments.length ? 'substituído' : 'selecionado';
-      this.showToast(files.length === 1 ? `1 arquivo original ${action}.` : `${files.length} arquivos originais ${action}s.`);
+      this.showToast(files.length === 1 ? '1 arquivo original adicionado.' : `${files.length} arquivos originais adicionados.`);
     } catch (error) {
       window.IS.error('Erro no aplicativo auxiliar', error);
       this.showToast(`Aplicativo auxiliar: ${error.message}`);
