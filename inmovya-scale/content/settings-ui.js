@@ -7,6 +7,8 @@ window.IS.SettingsUI = {
   selectedCategoryId: 'all',
   draggedLeadKey: null,
   suppressLeadClickUntil: 0,
+  kanbanFullscreen: false,
+  settingsContainerStyle: null,
   editingId: null,
   draftAttachments: [],
 
@@ -43,6 +45,7 @@ window.IS.SettingsUI = {
         <input type="text" id="is-new-cat-name" placeholder="Nova categoria..." style="flex:1; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px;">
         <button id="is-btn-add-cat" style="background:var(--inmovya-primary); color:white; border:none; padding:0 15px; border-radius:4px; cursor:pointer; font-weight:bold;">Adicionar</button>
       </div>
+      <button type="button" id="is-btn-kanban-fullscreen" style="width:100%; padding:9px; margin-bottom:12px; border:1px solid var(--inmovya-primary); border-radius:6px; background:transparent; color:var(--inmovya-primary); cursor:pointer; font-weight:bold;">⛶ Abrir Kanban em tela cheia</button>
       <div id="is-set-categories-list" style="display:flex; flex-direction:column; gap:10px;"></div>
     </div>
 
@@ -159,7 +162,8 @@ window.IS.SettingsUI = {
     });
 
     // Close settings view
-    document.getElementById('is-settings-close-btn').addEventListener('click', () => {
+    document.getElementById('is-settings-close-btn').addEventListener('click', async () => {
+      if (this.kanbanFullscreen) await this.toggleKanbanFullscreen(false);
       window.IS.Panel.closeSettings();
     });
 
@@ -187,6 +191,12 @@ window.IS.SettingsUI = {
 
     // --- CATEGORIES ---
     document.getElementById('is-btn-add-cat').addEventListener('click', () => this.addCategory());
+    document.getElementById('is-btn-kanban-fullscreen').addEventListener('click', () => {
+      this.toggleKanbanFullscreen(!this.kanbanFullscreen);
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && this.kanbanFullscreen) this.toggleKanbanFullscreen(false);
+    });
     document.getElementById('is-new-cat-name').addEventListener('keydown', event => {
       if (event.key !== 'Enter') return;
       event.preventDefault();
@@ -600,6 +610,46 @@ window.IS.SettingsUI = {
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
+  },
+
+  async toggleKanbanFullscreen(enabled) {
+    const container = document.getElementById('is-native-settings-container');
+    const button = document.getElementById('is-btn-kanban-fullscreen');
+    if (!container || !button || this.kanbanFullscreen === enabled) return;
+
+    if (enabled) {
+      this.settingsContainerStyle = container.getAttribute('style') || '';
+      this.kanbanFullscreen = true;
+      Object.assign(container.style, {
+        position: 'fixed',
+        inset: '0',
+        width: '100vw',
+        height: '100vh',
+        zIndex: '999998',
+        borderRadius: '0',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.35)'
+      });
+      button.textContent = '↙ Voltar ao painel lateral';
+      if (container.animate) {
+        container.animate([
+          { opacity: 0.35, transform: 'scale(0.96)' },
+          { opacity: 1, transform: 'scale(1)' }
+        ], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      }
+      return;
+    }
+
+    this.kanbanFullscreen = false;
+    if (container.animate) {
+      const animation = container.animate([
+        { opacity: 1, transform: 'scale(1)' },
+        { opacity: 0.45, transform: 'scale(0.97)' }
+      ], { duration: 180, easing: 'ease-in' });
+      try { await animation.finished; } catch (_) {}
+    }
+    container.setAttribute('style', this.settingsContainerStyle || '');
+    this.settingsContainerStyle = null;
+    button.textContent = '⛶ Abrir Kanban em tela cheia';
   },
 
   getKanbanLeads() {
