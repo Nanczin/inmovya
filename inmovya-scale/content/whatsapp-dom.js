@@ -695,17 +695,22 @@ window.IS.WhatsAppDOM = {
     if (!header) return "";
 
     const selectors = [
-      '[data-testid="conversation-info-header-chat-title"] span[title]',
       '[data-testid="conversation-info-header-chat-title"][title]',
+      '[data-testid="conversation-info-header-chat-title"] span[title]',
+      '[data-testid="conversation-info-header-chat-title"]',
+      '[role="button"] span[dir="auto"][title]',
       'span[dir="auto"][title]',
       'span[title]'
     ];
     for (const selector of selectors) {
       const titleSpan = Array.from(header.querySelectorAll(selector)).find(element => {
-        const title = (element.getAttribute('title') || '').trim();
-        return title && element.offsetParent !== null && !element.closest('button, [role="button"]');
+        const title = (element.getAttribute('title') || element.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!title || element.offsetParent === null) return false;
+        return !/^(adicionar à lista|add to list|chamada|ligação|video call|voice call|pesquisar|search|menu|mais opções|more options)$/i.test(title);
       });
-      if (titleSpan) return titleSpan.getAttribute('title').trim();
+      if (titleSpan) {
+        return (titleSpan.getAttribute('title') || titleSpan.textContent || '').replace(/\s+/g, ' ').trim();
+      }
     }
     return "";
   },
