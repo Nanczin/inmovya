@@ -26,7 +26,7 @@ internal static class InmovyaFileHost
             if (action == "pick") PickFiles();
             else if (action == "read") ReadFile(Convert.ToString(request["path"]));
             else if (action == "prepare") PrepareFiles(GetPaths(request));
-            else if (action == "attach") AttachFilesToOpenDialog(GetPaths(request));
+            else if (action == "attach") AttachFilesToOpenDialog(GetPaths(request), IntPtr.Zero);
             else if (action == "activate_attach") ActivateAndAttachFiles(GetPaths(request));
             else WriteMessage(new { ok = false, error = "Ação inválida." });
         }
@@ -45,23 +45,38 @@ internal static class InmovyaFileHost
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr window);
 
-    private static void AttachFilesToOpenDialog(List<string> paths)
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+
+    private static void AttachFilesToOpenDialog(List<string> paths, IntPtr returnWindow)
     {
         if (paths.Count != 1) throw new InvalidOperationException("Envie um arquivo por vez para o seletor do Windows.");
         var dialog = WaitForFileDialog();
         if (dialog == IntPtr.Zero) throw new InvalidOperationException("O seletor de arquivos do Windows não foi aberto pelo WhatsApp.");
+        if (returnWindow == IntPtr.Zero) returnWindow = GetAncestor(dialog, 3);
 
         SetForegroundWindow(dialog);
-        Thread.Sleep(150);
+        Thread.Sleep(40);
+        ShowWindow(dialog, 0);
         if (!SelectFileWithAutomation(dialog, paths[0]))
         {
+            // Se a automação não estiver disponível nesta versão do Windows,
+            // restaura o seletor para não deixar o envio bloqueado.
+            ShowWindow(dialog, 5);
+            SetForegroundWindow(dialog);
+            Thread.Sleep(100);
             // Atalho nativo do seletor para o campo "Nome do arquivo".
             SendKeys.SendWait("%n");
-            Thread.Sleep(100);
+            Thread.Sleep(25);
             SendKeys.SendWait("^a");
             SendKeys.SendWait(EscapeSendKeys(paths[0]));
             SendKeys.SendWait("{ENTER}");
         }
+        Thread.Sleep(150);
+        if (returnWindow != IntPtr.Zero && returnWindow != dialog) SetForegroundWindow(returnWindow);
         WriteMessage(new { ok = true });
     }
 
@@ -70,9 +85,10 @@ internal static class InmovyaFileHost
         if (paths.Count != 1) throw new InvalidOperationException("Envie um arquivo por vez para o seletor do Windows.");
         // A tecla enviada pelo Windows é uma ativação real; o WhatsApp rejeita
         // o clique JavaScript no seletor de Fotos e vídeos.
+        var returnWindow = GetForegroundWindow();
         SendKeys.SendWait("{ENTER}");
         Thread.Sleep(150);
-        AttachFilesToOpenDialog(paths);
+        AttachFilesToOpenDialog(paths, returnWindow);
     }
 
     private static bool SelectFileWithAutomation(IntPtr dialog, string path)

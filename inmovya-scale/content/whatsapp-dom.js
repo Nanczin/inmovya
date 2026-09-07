@@ -450,7 +450,6 @@ window.IS.WhatsAppDOM = {
       window.IS.error(`Opção de ${kind === 'media' ? 'Fotos e vídeos' : 'Documento'} do WhatsApp não encontrada.`);
       return false;
     }
-    if (!activateWithWindows) await this.delay(350);
     const response = await chrome.runtime.sendMessage({
       action: activateWithWindows ? 'native_activate_and_attach' : 'native_attach_to_dialog',
       paths
@@ -529,7 +528,7 @@ window.IS.WhatsAppDOM = {
   },
 
   async insertSequenceAndAttachments(text, attachments = []) {
-    const parts = (text || '').split('===').map(part => part.trim()).filter(Boolean);
+    const parts = (text || '').split('===').map(part => part.trim());
     if (!parts.length && attachments.length) parts.push('');
 
     const lastMessageIndex = Math.max(0, parts.length - 1);
@@ -563,6 +562,9 @@ window.IS.WhatsAppDOM = {
         } else if (!await this.sendDocumentBatch([attachment])) {
           return false;
         }
+        // A prévia pode desaparecer antes de o WhatsApp reconstruir totalmente
+        // o compositor; aguarde antes de iniciar o próximo seletor oculto.
+        await this.delay(700);
       }
     }
 

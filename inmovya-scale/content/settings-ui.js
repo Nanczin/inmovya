@@ -243,7 +243,9 @@ window.IS.SettingsUI = {
       const categoryId = document.getElementById('is-form-category').value;
       const favorite = document.getElementById('is-form-favorite').checked;
       const message = this.getMessageBlocksData();
-      if (!message && this.draftAttachments.length === 0) {
+      const hasMessageText = Array.from(document.querySelectorAll('.is-form-message-input'))
+        .some(input => input.value.trim().length > 0);
+      if (!hasMessageText && this.draftAttachments.length === 0) {
         return this.showToast("Adicione uma mensagem ou uma imagem.");
       }
       
@@ -294,7 +296,7 @@ window.IS.SettingsUI = {
       if (e.target.classList.contains('is-btn-remove-attachment')) {
         const idx = parseInt(e.target.getAttribute('data-idx'));
         this.draftAttachments.splice(idx, 1);
-        this.renderAttachmentsPreview(this.draftAttachments);
+        this.syncMessageBlocksWithAttachments();
       }
     });
 
@@ -527,13 +529,13 @@ window.IS.SettingsUI = {
       const replies = await window.IS.Storage.getReplies();
       const r = replies.find(x => x.id === id);
       if (r) {
-        const messageCount = Math.max(1, (r.message || '').split('===').filter(part => part.trim()).length);
+        const storedMessages = (r.message || '').split('===').map(part => part.trim());
+        const messageCount = Math.max(1, storedMessages.length, Array.isArray(r.attachments) ? r.attachments.length : 0);
+        while (storedMessages.length < messageCount) storedMessages.push('');
         this.draftAttachments = Array.isArray(r.attachments)
-          ? r.attachments.map(attachment => ({
+          ? r.attachments.map((attachment, attachmentIndex) => ({
               ...attachment,
-              messageIndex: Number.isInteger(attachment.messageIndex)
-                ? Math.min(attachment.messageIndex, messageCount - 1)
-                : messageCount - 1,
+              messageIndex: Math.min(attachmentIndex, messageCount - 1),
               useCaption: !!attachment.useCaption
             }))
           : [];
@@ -541,7 +543,7 @@ window.IS.SettingsUI = {
         document.getElementById('is-form-shortcut').value = r.shortcut || '';
         document.getElementById('is-form-category').value = r.categoryId || 'default-category';
         document.getElementById('is-form-favorite').checked = !!r.favorite;
-        this.renderMessageBlocks((r.message || "").split('===').map(s => s.trim()));
+        this.renderMessageBlocks(storedMessages);
         this.renderAttachmentsPreview(this.draftAttachments);
       }
     } else {
@@ -570,8 +572,20 @@ window.IS.SettingsUI = {
 
   getMessageBlocksData() {
     const inputs = document.querySelectorAll('.is-form-message-input');
-    const texts = Array.from(inputs).map(input => input.value.trim()).filter(val => val.length > 0);
+    const texts = Array.from(inputs).map(input => input.value.trim());
     return texts.join('\n\n===\n\n');
+  },
+
+  syncMessageBlocksWithAttachments() {
+    const texts = Array.from(document.querySelectorAll('.is-form-message-input')).map(input => input.value);
+    const requiredCount = Math.max(1, this.draftAttachments.length);
+    while (texts.length < requiredCount) texts.push('');
+    this.draftAttachments = this.draftAttachments.map((attachment, index) => ({
+      ...attachment,
+      messageIndex: Math.min(index, texts.length - 1)
+    }));
+    this.renderMessageBlocks(texts);
+    this.renderAttachmentsPreview(this.draftAttachments);
   },
 
   renderAttachmentsPreview(attachments) {
@@ -642,7 +656,7 @@ window.IS.SettingsUI = {
       }
     }
 
-    this.renderAttachmentsPreview(this.draftAttachments);
+    this.syncMessageBlocksWithAttachments();
     e.target.value = '';
     this.showToast(addedCount === 1 ? "1 anexo adicionado." : `${addedCount} anexos adicionados.`);
   },
@@ -653,8 +667,8 @@ window.IS.SettingsUI = {
       const response = await chrome.runtime.sendMessage({ action: 'native_pick_files' });
       if (!response?.ok) throw new Error(response?.error || 'Aplicativo auxiliar indisponível.');
       const files = Array.isArray(response.files) ? response.files : [];
-      files.forEach(file => this.draftAttachments.push({ id: window.IS.generateUUID(), name: file.name, type: file.type || 'application/octet-stream', size: file.size || 0, nativePath: file.path, messageIndex: Math.max(0, document.querySelectorAll('.is-form-message-input').length - 1), useCaption: false }));
-      this.renderAttachmentsPreview(this.draftAttachments);
+      files.forEach(file => this.draftAttachments.push({ id: window.IS.generateUUID(), name: file.name, type: file.type || 'application/octet-stream', size: file.size || 0, nativePath: file.path, messageIndex: 0, useCaption: false }));
+      this.syncMessageBlocksWithAttachments();
       this.showToast(files.length === 1 ? "1 arquivo original selecionado." : `${files.length} arquivos originais selecionados.`);
     } catch (error) {
       window.IS.error('Erro no aplicativo auxiliar', error);
