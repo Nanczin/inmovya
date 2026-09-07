@@ -60,7 +60,6 @@ internal static class InmovyaFileHost
 
         SetForegroundWindow(dialog);
         Thread.Sleep(40);
-        ShowWindow(dialog, 0);
         if (!SelectFileWithAutomation(dialog, paths[0]))
         {
             // Se a automação não estiver disponível nesta versão do Windows,
@@ -138,7 +137,6 @@ internal static class InmovyaFileHost
             if (fileNameField == null ||
                 !fileNameField.TryGetCurrentPattern(ValuePattern.Pattern, out valueObject)) return false;
             ((ValuePattern)valueObject).SetValue(path);
-            Thread.Sleep(100);
 
             var buttons = root.FindAll(
                 TreeScope.Descendants,
@@ -161,6 +159,9 @@ internal static class InmovyaFileHost
             object invokeObject;
             if (openButton == null ||
                 !openButton.TryGetCurrentPattern(InvokePattern.Pattern, out invokeObject)) return false;
+            // O campo e o botão já foram encontrados. Somente agora esconda a
+            // janela, evitando que o Windows perca os controles do seletor.
+            ShowWindow(dialog, 0);
             ((InvokePattern)invokeObject).Invoke();
             return true;
         }

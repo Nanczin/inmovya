@@ -445,13 +445,12 @@ window.IS.WhatsAppDOM = {
     }
 
     await this.delay(250);
-    const activateWithWindows = kind === 'media';
-    if (!this.openAttachmentOption(kind, activateWithWindows)) {
+    if (!this.openAttachmentOption(kind, true)) {
       window.IS.error(`Opção de ${kind === 'media' ? 'Fotos e vídeos' : 'Documento'} do WhatsApp não encontrada.`);
       return false;
     }
     const response = await chrome.runtime.sendMessage({
-      action: activateWithWindows ? 'native_activate_and_attach' : 'native_attach_to_dialog',
+      action: 'native_activate_and_attach',
       paths
     });
     if (!response?.ok) {
@@ -500,7 +499,7 @@ window.IS.WhatsAppDOM = {
     }
   },
 
-  async sendDocumentBatch(attachments) {
+  async sendDocumentBatch(attachments, caption = '') {
     try {
       const nativeResult = await this.attachNativeFiles(attachments, 'document');
       const accepted = nativeResult === null
@@ -515,7 +514,16 @@ window.IS.WhatsAppDOM = {
       }
 
       await this.delay(1800);
-      if (!await this.triggerMediaSend(this.findMediaCaptionInput())) return false;
+      let captionInput = null;
+      if (caption) {
+        captionInput = await this.waitForMediaCaptionInput();
+        if (!captionInput || !await this.insertTextIntoInput(captionInput, caption)) {
+          window.IS.error('Campo de legenda do documento não encontrado.');
+          return false;
+        }
+        await this.delay(250);
+      }
+      if (!await this.triggerMediaSend(captionInput || this.findMediaCaptionInput())) return false;
       if (!await this.waitForMediaPreviewClosed(30000)) {
         window.IS.error('O WhatsApp não confirmou o envio do documento antes do próximo item.');
         return false;
@@ -543,9 +551,9 @@ window.IS.WhatsAppDOM = {
     for (let messageIndex = 0; messageIndex < parts.length; messageIndex++) {
       const message = parts[messageIndex];
       const linked = normalizedAttachments.filter(attachment => attachment.messageIndex === messageIndex);
-      const hasCaptionedMedia = linked.some(attachment => attachment.useCaption && this.isMediaAttachment(attachment));
+      const hasCaptionedAttachment = linked.some(attachment => attachment.useCaption);
 
-      if (message && !hasCaptionedMedia) {
+      if (message && !hasCaptionedAttachment) {
         if (!await this.insertMessage(message)) return false;
         const mustSendText = parts.length > 1 || normalizedAttachments.length > 0;
         if (mustSendText) {
@@ -559,7 +567,7 @@ window.IS.WhatsAppDOM = {
         if (this.isMediaAttachment(attachment)) {
           const caption = attachment.useCaption ? message : '';
           if (!await this.sendAttachmentBatch([attachment], caption)) return false;
-        } else if (!await this.sendDocumentBatch([attachment])) {
+        } else if (!await this.sendDocumentBatch([attachment], attachment.useCaption ? message : '')) {
           return false;
         }
         // A prévia pode desaparecer antes de o WhatsApp reconstruir totalmente
