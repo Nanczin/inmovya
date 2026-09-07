@@ -21,10 +21,7 @@ window.IS.Scraper = {
   },
 
   getRowName(row) {
-    const titleNode = row && row.querySelector('span[title], [title]');
-    const rawName = titleNode
-      ? titleNode.getAttribute('title')
-      : row && (row.getAttribute('aria-label') || row.getAttribute('title') || row.textContent);
+    const rawName = row && (row.innerText || row.getAttribute('aria-label') || row.getAttribute('title') || '');
     return (rawName || '')
       .replace(/^[🏷️\s]+/u, '')
       .replace(/\s*\(\s*\d+\s*\)\s*$/, '')
@@ -61,6 +58,10 @@ window.IS.Scraper = {
 
   async clickEtiquetas() {
     const selectors = [
+      '[aria-label="Listas" i]',
+      '[title="Listas" i]',
+      '[aria-label="Lists" i]',
+      '[title="Lists" i]',
       '[aria-label="Etiquetas" i]',
       '[title="Etiquetas" i]',
       '[aria-label="Labels" i]',
@@ -87,38 +88,41 @@ window.IS.Scraper = {
     }
     return false;
   },
-  
-  async getLabelsList() {
-    const rows = [];
-    const addRow = (row) => {
-      if (!row || !this.isInteractable(row) || rows.includes(row)) return;
-      const name = this.getRowName(row).toLowerCase();
-      if (!name || /^(etiquetas?|labels?|voltar|back|nova etiqueta|new label)$/.test(name)) return;
-      rows.push(row);
-    };
 
-    document.querySelectorAll('[data-testid*="label" i], [data-testid*="tag" i]').forEach(element => {
-      addRow(element.closest('[role="listitem"], [role="button"], li') || element);
+  getLabelsMenuRoot() {
+    const actionPattern = /^(nova lista|new list|gerenciar listas|manage lists)$/i;
+    const actions = Array.from(document.querySelectorAll('li, button, [role="menuitem"], [role="button"]'));
+    const action = actions.find(element => {
+      const text = (element.innerText || '').replace(/\s+/g, ' ').trim();
+      return this.isInteractable(element) && actionPattern.test(text);
     });
+    if (!action) return null;
 
-    document.querySelectorAll('span[data-icon*="label"], span[data-icon*="tag"]').forEach(icon => {
-      addRow(icon.closest('[role="listitem"], [role="button"], li'));
-    });
-
-    const labelsViewOpen = Array.from(document.querySelectorAll('header, [role="heading"], h1, h2, h3'))
-      .some(element => this.isVisible(element) && /^(etiquetas|labels)$/i.test((element.textContent || '').trim()));
-
-    if (labelsViewOpen) {
-      const selectors = [
-        '#side [role="listitem"]',
-        '[aria-label*="etiqueta" i] [role="listitem"]',
-        '[aria-label*="label" i] [role="listitem"]'
-      ];
-      document.querySelectorAll(selectors.join(',')).forEach(addRow);
+    const semanticRoot = action.closest('[role="menu"], [role="dialog"], [data-animate-dropdown-menu], [data-animate-modal-popup]');
+    if (semanticRoot) return semanticRoot;
+    let root = action.parentElement;
+    for (let level = 0; root && level < 4; level++, root = root.parentElement) {
+      const actionableCount = root.querySelectorAll('li, button, [role="menuitem"], [role="button"]').length;
+      if (actionableCount >= 3) return root;
     }
+    return action.parentElement;
+  },
 
-    return rows.filter(row => {
-      return !rows.some(other => other !== row && row.contains(other));
+  async getLabelsList() {
+    const root = this.getLabelsMenuRoot();
+    if (!root) return [];
+    const excluded = /^(listas?|lists?|etiquetas?|labels?|nova lista|new list|gerenciar listas|manage lists)$/i;
+    const candidates = Array.from(root.querySelectorAll('li, button, [role="menuitem"], [role="button"]'))
+      .filter(row => {
+        if (!this.isInteractable(row)) return false;
+        const name = this.getRowName(row);
+        if (!name || name.length > 80 || excluded.test(name)) return false;
+        return !Array.from(row.querySelectorAll('li, button, [role="menuitem"], [role="button"]'))
+          .some(child => child !== row && this.isInteractable(child) && this.getRowName(child));
+      });
+    return candidates.filter((row, index) => {
+      const name = this.normalizeText(this.getRowName(row));
+      return candidates.findIndex(candidate => this.normalizeText(this.getRowName(candidate)) === name) === index;
     });
   },
 
@@ -174,20 +178,22 @@ window.IS.Scraper = {
     return true;
   },
 
-  isLabelViewActive(labelName) {
+  isLabelViewActive(labelName, clickedRow = null) {
     const expected = this.normalizeText(labelName);
     const headings = document.querySelectorAll('#side header, #side [role="heading"], #side h1, #side h2, #side h3');
-    return Array.from(headings).some(element => {
+    const headingMatches = Array.from(headings).some(element => {
       if (!this.isInteractable(element)) return false;
       const text = this.normalizeText(element.getAttribute('title') || element.getAttribute('aria-label') || element.textContent);
       return text === expected || text.includes(expected);
     });
+    if (headingMatches) return true;
+    return !!clickedRow && !this.isInteractable(clickedRow) && !this.getLabelsMenuRoot();
   },
 
-  async waitForLabelView(labelName, timeoutMs = 5000) {
+  async waitForLabelView(labelName, clickedRow = null, timeoutMs = 5000) {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
-      if (this.isLabelViewActive(labelName)) return true;
+      if (this.isLabelViewActive(labelName, clickedRow)) return true;
       await this.delay(150);
     }
     return false;
@@ -350,7 +356,7 @@ window.IS.Scraper = {
     let opened = false;
     if (labelRow) {
       this.clickRow(labelRow);
-      if (!await this.waitForLabelView(labelName)) labelRow = null;
+      if (!await this.waitForLabelView(labelName, labelRow)) labelRow = null;
       await this.delay(500);
     }
     if (labelRow) {
@@ -403,7 +409,7 @@ window.IS.Scraper = {
         if (!row) continue;
 
         this.clickRow(row);
-        const labelViewOpened = await this.waitForLabelView(labelName);
+        const labelViewOpened = await this.waitForLabelView(labelName, row);
         const uniqueContacts = labelViewOpened ? await this.scrapeAllContacts() : [];
         if (!labelViewOpened) window.IS.error(`A etiqueta ${labelName} não abriu; nenhuma conversa geral foi importada.`);
         

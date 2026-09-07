@@ -40,7 +40,6 @@
                                            "utils/storage.js",
                                            "content/variables.js",
                                            "content/whatsapp-dom.js",
-                                           "content/shortcuts.js",
                                            "content/settings-ui.js",
                                            "content/panel.js",
                                            "content/observer.js",

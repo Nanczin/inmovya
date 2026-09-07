@@ -102,9 +102,8 @@ window.IS.Panel = {
       const term = window.IS.removeAccents(this.searchTerm.toLowerCase());
       filtered = filtered.filter(r => {
         const title = window.IS.removeAccents((r.title || "").toLowerCase());
-        const shortcut = window.IS.removeAccents((r.shortcut || "").toLowerCase());
         const message = window.IS.removeAccents((r.message || "").toLowerCase());
-        return title.includes(term) || shortcut.includes(term) || message.includes(term);
+        return title.includes(term) || message.includes(term);
       });
     }
 
@@ -132,7 +131,6 @@ window.IS.Panel = {
         <div class="is-reply-item" data-id="${reply.id}">
           <div class="is-reply-header">
             <span class="is-reply-title">${reply.favorite ? '⭐ ' : ''}${window.IS.escapeHTML(reply.title)}</span>
-            ${reply.shortcut ? `<span class="is-reply-shortcut">/${window.IS.escapeHTML(reply.shortcut)}</span>` : ''}
           </div>
           <div class="is-reply-category">${window.IS.escapeHTML(cat.name)}</div>
           <div class="is-reply-preview">${preview}${(reply.message || "").length > 100 ? '...' : ''}</div>
@@ -241,7 +239,6 @@ window.IS.Panel = {
         }
         if (changes.settings) {
           this.settings = { ...this.settings, ...changes.settings.newValue };
-          if (window.IS.Shortcuts) window.IS.Shortcuts.updateSettings(this.settings);
           changed = true;
         }
         if (changed) this.updateList();

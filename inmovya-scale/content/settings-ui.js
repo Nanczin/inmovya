@@ -4,6 +4,7 @@ window.IS.SettingsUI = {
   initialized: false,
   waLabels: [],
   selectedWaLabelName: null,
+  selectedCategoryId: 'all',
   editingId: null,
   draftAttachments: [],
 
@@ -57,18 +58,6 @@ window.IS.SettingsUI = {
         <input type="text" id="is-set-username" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box;">
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
-        <input type="checkbox" id="is-set-shortcuts">
-        <label for="is-set-shortcuts" style="font-size:13px;">Ativar atalhos digitados</label>
-      </div>
-      <div>
-        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Tecla para disparar atalho</label>
-        <select id="is-set-trigger" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box;">
-          <option value="Space">Espaço</option>
-          <option value="Enter">Enter</option>
-          <option value="Tab">Tab</option>
-        </select>
-      </div>
-      <div style="display:flex; align-items:center; gap:8px;">
         <input type="checkbox" id="is-set-autoopen">
         <label for="is-set-autoopen" style="font-size:13px;">Abrir painel automaticamente</label>
       </div>
@@ -104,15 +93,9 @@ window.IS.SettingsUI = {
         <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Título</label>
         <input type="text" id="is-form-title" placeholder="Ex: Primeiro Contato" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box;">
       </div>
-      <div style="display:flex; gap:10px;">
-        <div style="flex:1;">
-          <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Atalho (opcional)</label>
-          <input type="text" id="is-form-shortcut" placeholder="Ex: /oi" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box;">
-        </div>
-        <div style="flex:1;">
-          <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Categoria</label>
-          <select id="is-form-category" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box;"></select>
-        </div>
+      <div>
+        <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Categoria</label>
+        <select id="is-form-category" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box;"></select>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
         <input type="checkbox" id="is-form-favorite">
@@ -192,7 +175,8 @@ window.IS.SettingsUI = {
           let replies = await window.IS.Storage.getReplies();
           replies = replies.filter(r => r.id !== id);
           await window.IS.Storage.saveReplies(replies);
-          this.renderReplies();
+          await this.renderReplies();
+          await this.renderCategories();
           this.showToast("Excluído com sucesso.");
         }
       }
@@ -207,8 +191,21 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
-      const target = e.target;
-      if (target.classList.contains('is-btn-delete-cat')) {
+      const filterButton = e.target.closest('.is-category-filter');
+      if (filterButton) {
+        this.selectedCategoryId = filterButton.getAttribute('data-id') || 'all';
+        await this.renderCategories();
+        return;
+      }
+
+      const replyButton = e.target.closest('.is-category-reply');
+      if (replyButton) {
+        await this.openReplyForm(replyButton.getAttribute('data-id'));
+        return;
+      }
+
+      const target = e.target.closest('.is-btn-delete-cat');
+      if (target) {
         const id = target.getAttribute('data-id');
         if (await this.showConfirm("Excluir", "Deseja excluir esta categoria?")) {
           let categories = await window.IS.Storage.getCategories();
@@ -217,8 +214,9 @@ window.IS.SettingsUI = {
           replies = replies.map(r => r.categoryId === id ? { ...r, categoryId: 'default-category' } : r);
           await window.IS.Storage.saveCategories(categories);
           await window.IS.Storage.saveReplies(replies);
-          this.renderCategories();
-          this.renderReplies();
+          if (this.selectedCategoryId === id) this.selectedCategoryId = 'default-category';
+          await this.renderCategories();
+          await this.renderReplies();
           this.showToast("Excluído.");
         }
       }
@@ -234,7 +232,6 @@ window.IS.SettingsUI = {
       const title = document.getElementById('is-form-title').value.trim();
       if (!title) return this.showToast("O título é obrigatório");
       
-      const shortcut = document.getElementById('is-form-shortcut').value.trim().replace(/^\//, '');
       const categoryId = document.getElementById('is-form-category').value;
       const favorite = document.getElementById('is-form-favorite').checked;
       const message = this.getMessageBlocksData();
@@ -248,17 +245,18 @@ window.IS.SettingsUI = {
       if (this.editingId) {
         const rIndex = replies.findIndex(r => r.id === this.editingId);
         if (rIndex > -1) {
-          replies[rIndex] = { ...replies[rIndex], title, shortcut, categoryId, favorite, message, attachments: [...this.draftAttachments] };
+          replies[rIndex] = { ...replies[rIndex], title, categoryId, favorite, message, attachments: [...this.draftAttachments] };
         }
       } else {
-        const newReply = { id: window.IS.generateUUID(), title, shortcut, categoryId, favorite, message, attachments: [...this.draftAttachments], order: replies.length };
+        const newReply = { id: window.IS.generateUUID(), title, categoryId, favorite, message, attachments: [...this.draftAttachments], order: replies.length };
         replies.push(newReply);
       }
       
       await window.IS.Storage.saveReplies(replies);
       document.getElementById('is-modal-overlay').style.display = 'none';
       document.getElementById('is-reply-modal').style.display = 'none';
-      this.renderReplies();
+      await this.renderReplies();
+      await this.renderCategories();
       this.showToast("Resposta salva.");
     });
 
@@ -369,8 +367,6 @@ window.IS.SettingsUI = {
     document.getElementById('is-btn-save-settings').addEventListener('click', async () => {
       let settings = await window.IS.Storage.getSettings();
       settings.userName = document.getElementById('is-set-username').value.trim();
-      settings.shortcutsEnabled = document.getElementById('is-set-shortcuts').checked;
-      settings.shortcutTrigger = document.getElementById('is-set-trigger').value;
       settings.autoOpenPanel = document.getElementById('is-set-autoopen').checked;
       settings.favoritesFirst = document.getElementById('is-set-favfirst').checked;
       await window.IS.Storage.saveSettings(settings);
@@ -471,17 +467,57 @@ window.IS.SettingsUI = {
   async renderCategories() {
     const list = document.getElementById('is-set-categories-list');
     const categories = await window.IS.Storage.getCategories();
-    
-    if (categories.length === 0) {
-      list.innerHTML = `<div style="color:#888; text-align:center; padding:20px;">Nenhuma categoria.</div>`;
-    } else {
-      list.innerHTML = categories.map(c => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border:1px solid var(--inmovya-border); border-radius:4px;">
-          <strong style="font-size:13px;">${window.IS.escapeHTML(c.name)}</strong>
-          ${c.id !== 'default-category' ? `<button class="is-btn-delete-cat" data-id="${c.id}" style="padding:3px 8px; font-size:11px; cursor:pointer; background:#dc3545; color:white; border:none; border-radius:4px;">Excluir</button>` : ''}
-        </div>
-      `).join('');
+    const replies = await window.IS.Storage.getReplies();
+    const availableCategories = [
+      { id: 'all', name: 'Todas' },
+      { id: 'default-category', name: 'Sem categoria' },
+      ...categories.filter(category => category.id !== 'default-category')
+    ];
+
+    if (!availableCategories.some(category => category.id === this.selectedCategoryId)) {
+      this.selectedCategoryId = 'all';
     }
+
+    const categoryIdForReply = reply => reply.categoryId || 'default-category';
+    const filteredReplies = this.selectedCategoryId === 'all'
+      ? replies
+      : replies.filter(reply => categoryIdForReply(reply) === this.selectedCategoryId);
+    filteredReplies.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    const selectedCategory = availableCategories.find(category => category.id === this.selectedCategoryId);
+    const filters = availableCategories.map(category => {
+      const count = category.id === 'all'
+        ? replies.length
+        : replies.filter(reply => categoryIdForReply(reply) === category.id).length;
+      const active = category.id === this.selectedCategoryId;
+      return `<button type="button" class="is-category-filter" data-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 auto; padding:7px 10px; border:1px solid ${active ? 'var(--inmovya-primary)' : 'var(--inmovya-border)'}; border-radius:16px; cursor:pointer; background:${active ? 'var(--inmovya-primary)' : 'var(--inmovya-surface)'}; color:${active ? 'white' : 'var(--inmovya-text)'}; font-size:12px;">${window.IS.escapeHTML(category.name)} (${count})</button>`;
+    }).join('');
+
+    const replyItems = filteredReplies.length
+      ? filteredReplies.map(reply => {
+          const preview = (reply.message || '').replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 120);
+          return `<button type="button" class="is-category-reply" data-id="${window.IS.escapeHTML(reply.id)}" style="width:100%; padding:10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface); color:var(--inmovya-text); text-align:left; cursor:pointer;">
+            <strong style="display:block; font-size:13px;">${window.IS.escapeHTML(reply.title || 'Sem título')}</strong>
+            <span style="display:block; margin-top:4px; color:var(--inmovya-text-secondary); font-size:11px; line-height:1.35;">${window.IS.escapeHTML(preview || (reply.attachments?.length ? `${reply.attachments.length} anexo(s)` : 'Sem conteúdo'))}</span>
+          </button>`;
+        }).join('')
+      : `<div style="color:#888; text-align:center; padding:18px; border:1px dashed var(--inmovya-border); border-radius:6px;">Nenhuma resposta nesta categoria.</div>`;
+
+    const manageableCategories = categories.filter(category => category.id !== 'default-category');
+    const categoryManagement = manageableCategories.length
+      ? manageableCategories.map(category => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border:1px solid var(--inmovya-border); border-radius:4px;">
+          <strong style="font-size:12px;">${window.IS.escapeHTML(category.name)}</strong>
+          <button type="button" class="is-btn-delete-cat" data-id="${window.IS.escapeHTML(category.id)}" style="padding:3px 8px; font-size:11px; cursor:pointer; background:#dc3545; color:white; border:none; border-radius:4px;">Excluir</button>
+        </div>`).join('')
+      : `<div style="color:#888; font-size:12px;">Nenhuma categoria personalizada.</div>`;
+
+    list.innerHTML = `
+      <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:5px;">${filters}</div>
+      <div style="font-size:12px; font-weight:bold; margin-top:4px;">Respostas em ${window.IS.escapeHTML(selectedCategory.name)}</div>
+      <div style="display:flex; flex-direction:column; gap:7px;">${replyItems}</div>
+      <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
+      <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
+    `;
   },
 
   async addCategory() {
@@ -527,8 +563,6 @@ window.IS.SettingsUI = {
   async renderSettings() {
     const settings = await window.IS.Storage.getSettings();
     document.getElementById('is-set-username').value = settings.userName || '';
-    document.getElementById('is-set-shortcuts').checked = !!settings.shortcutsEnabled;
-    document.getElementById('is-set-trigger').value = settings.shortcutTrigger || 'Space';
     document.getElementById('is-set-autoopen').checked = !!settings.autoOpenPanel;
     document.getElementById('is-set-favfirst').checked = !!settings.favoritesFirst;
   },
@@ -596,7 +630,6 @@ window.IS.SettingsUI = {
             }))
           : [];
         document.getElementById('is-form-title').value = r.title || '';
-        document.getElementById('is-form-shortcut').value = r.shortcut || '';
         document.getElementById('is-form-category').value = r.categoryId || 'default-category';
         document.getElementById('is-form-favorite').checked = !!r.favorite;
         this.renderMessageBlocks(storedMessages);
@@ -605,7 +638,6 @@ window.IS.SettingsUI = {
     } else {
       document.getElementById('is-modal-title').textContent = "Nova Resposta";
       document.getElementById('is-form-title').value = '';
-      document.getElementById('is-form-shortcut').value = '';
       document.getElementById('is-form-category').value = categories[0] ? categories[0].id : 'default-category';
       document.getElementById('is-form-favorite').checked = false;
       this.renderMessageBlocks([""]);

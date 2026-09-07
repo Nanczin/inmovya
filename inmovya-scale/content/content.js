@@ -7,7 +7,6 @@ window.IS.init = async function() {
   const settings = await window.IS.Storage.getSettings();
   
   if (window.IS.Observer) window.IS.Observer.init();
-  if (window.IS.Shortcuts) await window.IS.Shortcuts.init(settings);
   if (window.IS.Panel) window.IS.Panel.init();
 };
 
