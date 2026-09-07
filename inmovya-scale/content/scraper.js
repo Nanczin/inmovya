@@ -418,6 +418,24 @@ window.IS.Scraper = {
     }
     throw new Error(`A conversa de ${contact.name} não foi aberta.`);
   },
+
+  async captureOpenLabel(labelName) {
+    const name = String(labelName || '').replace(/\s+/g, ' ').trim();
+    if (!name) throw new Error('Informe o nome da etiqueta aberta.');
+
+    window.IS.log(`Capturando manualmente a etiqueta: ${name}`);
+    await this.delay(300);
+    const contacts = await this.scrapeAllContacts();
+    if (contacts.length === 0) {
+      throw new Error('Nenhum contato salvo foi encontrado. Confirme que a etiqueta está aberta e contém contatos com nome.');
+    }
+
+    return {
+      id: window.IS.generateUUID(),
+      name,
+      contacts
+    };
+  },
   
   async run() {
     window.IS.log("Iniciando scraper de etiquetas...");

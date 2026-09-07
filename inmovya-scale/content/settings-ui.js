@@ -46,8 +46,9 @@ window.IS.SettingsUI = {
 
     <!-- TAB: CRM -->
     <div id="is-tab-crm" class="is-tab-content" style="display:none; text-align:center;">
-      <button id="is-btn-sync-labels" style="background:var(--inmovya-primary); color:white; border:none; padding:10px; width:100%; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:15px;">🔄 Sincronizar Etiquetas</button>
-      <div style="font-size:12px; color:var(--inmovya-text-secondary); margin-bottom:15px;">Isso fará com que a extensão navegue no seu WhatsApp Business para capturar os contatos.</div>
+      <div style="font-size:12px; color:var(--inmovya-text-secondary); margin-bottom:10px; text-align:left; line-height:1.4;">Abra uma etiqueta no WhatsApp Business, informe o nome abaixo e capture. Repita o processo para cada etiqueta.</div>
+      <input type="text" id="is-current-label-name" placeholder="Nome da etiqueta aberta" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box; margin-bottom:8px;">
+      <button id="is-btn-sync-labels" style="background:var(--inmovya-primary); color:white; border:none; padding:10px; width:100%; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:15px;">Capturar etiqueta aberta</button>
       <div id="is-set-labels-list" style="text-align:left; display:flex; flex-direction:column; gap:10px;"></div>
     </div>
 
@@ -307,31 +308,37 @@ window.IS.SettingsUI = {
     // --- CRM ---
     document.getElementById('is-btn-sync-labels').addEventListener('click', async () => {
       const btn = document.getElementById('is-btn-sync-labels');
-      btn.textContent = "Sincronizando... (Não mexa no WA)";
+      const nameInput = document.getElementById('is-current-label-name');
+      const labelName = (nameInput.value || '').replace(/\s+/g, ' ').trim();
+      if (!labelName) {
+        this.showToast('Informe o nome da etiqueta que está aberta.');
+        nameInput.focus();
+        return;
+      }
+
+      btn.textContent = "Capturando etiqueta...";
       btn.disabled = true;
       
       try {
-        if (!window.IS.Scraper || typeof window.IS.Scraper.run !== 'function') {
+        if (!window.IS.Scraper || typeof window.IS.Scraper.captureOpenLabel !== 'function') {
           throw new Error("Sincronizador de etiquetas indisponível.");
         }
 
-        const result = await window.IS.Scraper.run();
-        if (!Array.isArray(result)) {
-          throw new Error(result && result.error ? result.error : "Não foi possível ler as etiquetas.");
-        }
-
-        this.waLabels = result;
-        if (!this.waLabels.some(label => label.name === this.selectedWaLabelName)) {
-          this.selectedWaLabelName = this.waLabels[0] ? this.waLabels[0].name : null;
-        }
+        const capturedLabel = await window.IS.Scraper.captureOpenLabel(labelName);
+        const normalizedName = window.IS.removeAccents(labelName.toLocaleLowerCase());
+        const existingIndex = this.waLabels.findIndex(label => window.IS.removeAccents(label.name.toLocaleLowerCase()) === normalizedName);
+        if (existingIndex >= 0) this.waLabels[existingIndex] = capturedLabel;
+        else this.waLabels.push(capturedLabel);
+        this.selectedWaLabelName = capturedLabel.name;
         await chrome.storage.local.set({ waLabels: this.waLabels });
         this.renderWaLabels();
-        this.showToast(`${result.length} etiqueta${result.length === 1 ? '' : 's'} sincronizada${result.length === 1 ? '' : 's'}.`);
+        nameInput.value = '';
+        this.showToast(`${capturedLabel.name}: ${capturedLabel.contacts.length} contato(s) capturado(s).`);
       } catch(e) {
         window.IS.error("Erro ao sincronizar etiquetas", e);
         this.showToast(e.message || "Erro ao sincronizar etiquetas.");
       } finally {
-        btn.textContent = "🔄 Sincronizar Etiquetas";
+        btn.textContent = "Capturar etiqueta aberta";
         btn.disabled = false;
       }
     });
