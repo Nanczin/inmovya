@@ -207,6 +207,15 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
+      const deleteLeadButton = e.target.closest('.is-delete-kanban-lead');
+      if (deleteLeadButton) {
+        await this.deleteKanbanLead(
+          decodeURIComponent(deleteLeadButton.getAttribute('data-lead-key') || ''),
+          decodeURIComponent(deleteLeadButton.getAttribute('data-lead-name') || '')
+        );
+        return;
+      }
+
       const leadButton = e.target.closest('.is-kanban-lead');
       if (leadButton) {
         if (Date.now() < this.suppressLeadClickUntil) return;
@@ -586,8 +595,9 @@ window.IS.SettingsUI = {
     const list = document.getElementById('is-set-categories-list');
     const categories = await window.IS.Storage.getCategories();
     const replies = await window.IS.Storage.getReplies();
-    const assignmentData = await chrome.storage.local.get('leadCategoryAssignments');
+    const assignmentData = await chrome.storage.local.get(['leadCategoryAssignments', 'hiddenKanbanLeads']);
     const assignments = assignmentData.leadCategoryAssignments || {};
+    const hiddenLeadKeys = new Set(Array.isArray(assignmentData.hiddenKanbanLeads) ? assignmentData.hiddenKanbanLeads : []);
     const stageData = await chrome.storage.local.get('leadStageAssignments');
     const stageAssignments = stageData.leadStageAssignments || {};
     const boardCategories = [
@@ -596,7 +606,7 @@ window.IS.SettingsUI = {
     ];
     const categoryIdForReply = reply => reply.categoryId || 'default-category';
     const validCategoryIds = new Set(boardCategories.map(category => category.id));
-    const leads = this.getKanbanLeads();
+    const leads = this.getKanbanLeads().filter(lead => !hiddenLeadKeys.has(lead.key));
     if (!validCategoryIds.has(this.selectedCategoryId)) this.selectedCategoryId = 'default-category';
     const selectedCategory = boardCategories.find(category => category.id === this.selectedCategoryId) || boardCategories[0];
 
@@ -628,11 +638,14 @@ window.IS.SettingsUI = {
       const preview = stage.message.replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 85);
       const leadCards = stageLeads.length
         ? stageLeads.map(lead => `<div draggable="true" class="is-kanban-lead-card" data-lead-key="${encodeURIComponent(lead.key)}" style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
-            <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="display:block; width:100%; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
+            <div style="display:flex; align-items:flex-start; gap:6px;">
+            <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="display:block; flex:1; min-width:0; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
               <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
               <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
               <span style="display:block; margin-top:5px; color:#0877b5; font-size:9px; font-weight:bold;">${stage.id === 'completed' ? 'Abrir conversa' : 'Enviar resposta e avançar →'}</span>
             </button>
+            <button type="button" class="is-delete-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-lead-name="${encodeURIComponent(lead.contact.name)}" title="Excluir lead do Kanban" style="flex:0 0 auto; width:22px; height:22px; padding:0; border:1px solid #efb2b7; border-radius:50%; background:#fff; color:#c62838; cursor:pointer; font-size:14px; line-height:18px;">×</button>
+            </div>
             <select class="is-kanban-lead-stage" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; margin-top:7px; padding:5px; border:1px solid #b8cfde; border-radius:5px; background:white; color:#254c64; font-size:10px;">
               ${stages.map(option => `<option value="${window.IS.escapeHTML(option.id)}" ${option.id === stage.id ? 'selected' : ''}>Etapa: ${window.IS.escapeHTML(option.title)}</option>`).join('')}
             </select>
@@ -766,7 +779,19 @@ window.IS.SettingsUI = {
       triggerButton.style.opacity = '0.65';
     }
     try {
-      await window.IS.Scraper.openContact(lead.labelName, lead.contact);
+      const normalizeName = value => window.IS.removeAccents(String(value || '').toLocaleLowerCase().replace(/\s+/g, ' ').trim());
+      const expectedName = normalizeName(lead.contact.name);
+      const currentMatches = () => normalizeName(window.IS.WhatsAppDOM.getCurrentChatName()) === expectedName;
+      let opened = currentMatches();
+      if (!opened) opened = await window.IS.Scraper.openContactBySearch(lead.contact);
+      if (!opened) await window.IS.Scraper.openContact(lead.labelName, lead.contact);
+
+      for (let attempt = 0; attempt < 20 && !currentMatches(); attempt++) {
+        await window.IS.Scraper.delay(200);
+      }
+      if (!currentMatches()) {
+        throw new Error(`A conversa correta de ${lead.contact.name} não foi confirmada. O envio foi cancelado.`);
+      }
       if (stageId === 'completed') {
         this.showToast('Conversa aberta. Este lead já concluiu as etapas.');
         return;
@@ -804,6 +829,35 @@ window.IS.SettingsUI = {
         triggerButton.style.opacity = '';
       }
     }
+  },
+
+  async deleteKanbanLead(leadKey, leadName = '') {
+    if (!leadKey) return false;
+    const confirmed = await this.showConfirm(
+      'Excluir lead',
+      `Deseja remover ${leadName || 'este lead'} do Kanban? O contato e as etiquetas do WhatsApp serão preservados.`
+    );
+    if (!confirmed) return false;
+
+    const data = await chrome.storage.local.get(['hiddenKanbanLeads', 'leadCategoryAssignments', 'leadStageAssignments']);
+    const hiddenLeadKeys = Array.isArray(data.hiddenKanbanLeads) ? [...data.hiddenKanbanLeads] : [];
+    if (!hiddenLeadKeys.includes(leadKey)) hiddenLeadKeys.push(leadKey);
+
+    const categoryAssignments = data.leadCategoryAssignments || {};
+    delete categoryAssignments[leadKey];
+    const stageAssignments = data.leadStageAssignments || {};
+    Object.keys(stageAssignments).forEach(key => {
+      if (key.endsWith(`:${leadKey}`)) delete stageAssignments[key];
+    });
+
+    await chrome.storage.local.set({
+      hiddenKanbanLeads: hiddenLeadKeys,
+      leadCategoryAssignments: categoryAssignments,
+      leadStageAssignments: stageAssignments
+    });
+    await this.renderCategories();
+    this.showToast('Lead removido do Kanban.');
+    return true;
   },
 
   async addCategory() {
