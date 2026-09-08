@@ -210,7 +210,11 @@ window.IS.SettingsUI = {
       const leadButton = e.target.closest('.is-kanban-lead');
       if (leadButton) {
         if (Date.now() < this.suppressLeadClickUntil) return;
-        await this.openKanbanLead(decodeURIComponent(leadButton.getAttribute('data-lead-key') || ''));
+        await this.openKanbanLead(
+          decodeURIComponent(leadButton.getAttribute('data-lead-key') || ''),
+          leadButton.getAttribute('data-stage-id') || 'unassigned',
+          leadButton
+        );
         return;
       }
 
@@ -610,8 +614,9 @@ window.IS.SettingsUI = {
       return assignedCategory === selectedCategory.id;
     });
     const stages = [
-      { id: 'unassigned', title: 'Sem etapa', message: 'Leads ainda não classificados' },
-      ...categoryReplies.map(reply => ({ id: reply.id, title: reply.title || 'Sem título', message: reply.message || '' }))
+      { id: 'unassigned', title: 'Sem etapa', message: categoryReplies.length ? 'Clique no lead para enviar a primeira resposta' : 'Nenhuma resposta cadastrada' },
+      ...categoryReplies.map(reply => ({ id: reply.id, title: reply.title || 'Sem título', message: reply.message || '' })),
+      ...(categoryReplies.length ? [{ id: 'completed', title: 'Concluído', message: 'Todas as respostas desta categoria foram enviadas' }] : [])
     ];
     const validStageIds = new Set(stages.map(stage => stage.id));
 
@@ -623,9 +628,10 @@ window.IS.SettingsUI = {
       const preview = stage.message.replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 85);
       const leadCards = stageLeads.length
         ? stageLeads.map(lead => `<div draggable="true" class="is-kanban-lead-card" data-lead-key="${encodeURIComponent(lead.key)}" style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
-            <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" style="display:block; width:100%; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
+            <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="display:block; width:100%; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
               <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
               <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
+              <span style="display:block; margin-top:5px; color:#0877b5; font-size:9px; font-weight:bold;">${stage.id === 'completed' ? 'Abrir conversa' : 'Enviar resposta e avançar →'}</span>
             </button>
             <select class="is-kanban-lead-stage" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; margin-top:7px; padding:5px; border:1px solid #b8cfde; border-radius:5px; background:white; color:#254c64; font-size:10px;">
               ${stages.map(option => `<option value="${window.IS.escapeHTML(option.id)}" ${option.id === stage.id ? 'selected' : ''}>Etapa: ${window.IS.escapeHTML(option.title)}</option>`).join('')}
@@ -747,15 +753,56 @@ window.IS.SettingsUI = {
     return Array.from(leadsByKey.values()).sort((a, b) => a.contact.name.localeCompare(b.contact.name, 'pt-BR'));
   },
 
-  async openKanbanLead(leadKey) {
+  async openKanbanLead(leadKey, stageId = 'unassigned', triggerButton = null) {
     const lead = this.getKanbanLeads().find(item => item.key === leadKey);
     if (!lead) return;
+    const replies = (await window.IS.Storage.getReplies())
+      .filter(reply => (reply.categoryId || 'default-category') === this.selectedCategoryId)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    const replyIndex = stageId === 'unassigned' ? 0 : replies.findIndex(reply => reply.id === stageId);
+
+    if (triggerButton) {
+      triggerButton.disabled = true;
+      triggerButton.style.opacity = '0.65';
+    }
     try {
       await window.IS.Scraper.openContact(lead.labelName, lead.contact);
-      window.IS.Panel.closeSettings();
+      if (stageId === 'completed') {
+        this.showToast('Conversa aberta. Este lead já concluiu as etapas.');
+        return;
+      }
+      if (replyIndex < 0 || !replies[replyIndex]) {
+        throw new Error('Não existe uma resposta rápida disponível para esta etapa.');
+      }
+
+      const reply = replies[replyIndex];
+      const contactName = window.IS.WhatsAppDOM.getCurrentChatName() || lead.contact.name;
+      const finalMessage = await window.IS.Variables.parseMessage(reply.message || '', contactName);
+      const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(finalMessage, reply.attachments || []);
+      if (!sent) throw new Error('A resposta rápida não pôde ser enviada para este lead.');
+
+      const nextStageId = replies[replyIndex + 1] ? replies[replyIndex + 1].id : 'completed';
+      const stageData = await chrome.storage.local.get('leadStageAssignments');
+      const stageAssignments = stageData.leadStageAssignments || {};
+      stageAssignments[`${this.selectedCategoryId}:${lead.key}`] = nextStageId;
+      await chrome.storage.local.set({ leadStageAssignments: stageAssignments });
+
+      reply.usageCount = (reply.usageCount || 0) + 1;
+      reply.lastUsedAt = new Date().toISOString();
+      const allReplies = await window.IS.Storage.getReplies();
+      await window.IS.Storage.saveReplies(allReplies.map(item => item.id === reply.id
+        ? { ...item, usageCount: reply.usageCount, lastUsedAt: reply.lastUsedAt }
+        : item));
+      await this.renderCategories();
+      this.showToast(`Resposta enviada. Lead avançou para ${replies[replyIndex + 1]?.title || 'Concluído'}.`);
     } catch (error) {
-      window.IS.error('Erro ao abrir lead do Kanban', error);
-      this.showToast(error.message || 'Não foi possível abrir a conversa.');
+      window.IS.error('Erro ao enviar etapa do Kanban', error);
+      this.showToast(error.message || 'Não foi possível enviar a resposta.');
+    } finally {
+      if (triggerButton && triggerButton.isConnected) {
+        triggerButton.disabled = false;
+        triggerButton.style.opacity = '';
+      }
     }
   },
 
