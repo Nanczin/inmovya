@@ -357,12 +357,15 @@ window.IS.Scraper = {
   },
 
   findContactRow(contact) {
-    const expectedName = (contact && contact.name || '').trim().toLocaleLowerCase();
+    const expectedName = this.normalizeText(contact && contact.name);
     const expectedId = (contact && contact.chatId || '').trim();
+    const expectedDigits = expectedId.replace(/\D/g, '');
     return this.getChatRows().find(row => {
       const rowId = this.getContactIdentity(row);
       if (expectedId && rowId && rowId === expectedId) return true;
-      return this.getContactName(row).trim().toLocaleLowerCase() === expectedName;
+      const rowDigits = rowId.replace(/\D/g, '');
+      if (expectedDigits.length >= 7 && rowDigits.length >= 7 && rowDigits === expectedDigits) return true;
+      return this.normalizeText(this.getContactName(row)) === expectedName;
     }) || null;
   },
 
@@ -410,10 +413,10 @@ window.IS.Scraper = {
     if (!opened) opened = await this.openContactBySearch(contact);
     if (!opened) throw new Error(`O contato ${contact.name} não foi encontrado no WhatsApp.`);
 
-    const expectedName = contact.name.trim().toLocaleLowerCase();
+    const expectedName = this.normalizeText(contact.name);
     for (let attempt = 0; attempt < 20; attempt++) {
       await this.delay(200);
-      const currentName = window.IS.WhatsAppDOM.getCurrentChatName().trim().toLocaleLowerCase();
+      const currentName = this.normalizeText(window.IS.WhatsAppDOM.getCurrentChatName());
       if (currentName === expectedName) return true;
     }
     throw new Error(`A conversa de ${contact.name} não foi aberta.`);

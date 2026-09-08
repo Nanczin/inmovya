@@ -179,13 +179,24 @@ window.IS.WhatsAppDOM = {
 
   openAttachmentOption(kind, focusOnly = false) {
     const pattern = kind === 'media'
-      ? /fotos?.*v[ií]deos?|photos?.*videos?|photos? & videos?/
-      : /documento|document/;
-    const candidates = document.querySelectorAll('[role="menuitem"], li, label, div[role="button"]');
+      ? /^(fotos?\s*(?:e|&)\s*v[ií]deos?|photos?\s*(?:and|&)\s*videos?)$/
+      : /^(documento|document)$/;
+    const candidates = document.querySelectorAll('[role="menuitem"], li, label, button, div[role="button"]');
     for (const candidate of candidates) {
       if (candidate.offsetParent === null || candidate.closest('#inmovya-scale-root')) continue;
-      const text = `${candidate.getAttribute('aria-label') || ''} ${candidate.getAttribute('title') || ''} ${candidate.textContent || ''}`.toLowerCase();
-      if (!pattern.test(text)) continue;
+      // Nunca considere mensagens ou anexos já enviados. Um PDF com o texto
+      // "Documento" dentro da conversa estava recebendo foco e abrindo o
+      // leitor em vez do seletor de arquivos.
+      if (candidate.closest('#main [data-testid*="msg" i], #main [data-testid*="message" i], #main [role="row"], #main [role="listitem"]')) continue;
+      const texts = [
+        candidate.getAttribute('aria-label'),
+        candidate.getAttribute('title'),
+        candidate.innerText,
+        candidate.textContent
+      ].map(value => String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase());
+      if (!texts.some(text => pattern.test(text))) continue;
+      const menuRoot = candidate.closest('[role="menu"], [data-animate-dropdown-menu], [data-animate-modal-popup]');
+      if (!menuRoot && candidate.closest('#main') && !candidate.closest('#main footer')) continue;
       if (focusOnly) {
         const focusTarget = candidate.matches('button, [role="menuitem"], [tabindex], label')
           ? candidate

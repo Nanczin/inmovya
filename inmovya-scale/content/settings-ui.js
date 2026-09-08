@@ -802,6 +802,7 @@ window.IS.SettingsUI = {
   async openKanbanLead(leadKey, stageId = 'unassigned', triggerButton = null) {
     const lead = this.getKanbanLeads().find(item => item.key === leadKey);
     if (!lead) return;
+    const restoreFullscreen = this.kanbanFullscreen;
     const replies = (await window.IS.Storage.getReplies())
       .filter(reply => (reply.categoryId || 'default-category') === this.selectedCategoryId)
       .sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -812,6 +813,10 @@ window.IS.SettingsUI = {
       triggerButton.style.opacity = '0.65';
     }
     try {
+      // O modo tela cheia cobre o WhatsApp e impede que a busca e o menu de
+      // anexos sejam considerados interativos. Recolha durante o disparo e
+      // restaure o Kanban ao terminar.
+      if (restoreFullscreen) await this.toggleKanbanFullscreen(false);
       const normalizeName = value => window.IS.removeAccents(String(value || '').toLocaleLowerCase().replace(/\s+/g, ' ').trim());
       const expectedName = normalizeName(lead.contact.name);
       const currentMatches = () => normalizeName(window.IS.WhatsAppDOM.getCurrentChatName()) === expectedName;
@@ -857,6 +862,9 @@ window.IS.SettingsUI = {
       window.IS.error('Erro ao enviar etapa do Kanban', error);
       this.showToast(error.message || 'Não foi possível enviar a resposta.');
     } finally {
+      if (restoreFullscreen && !this.kanbanFullscreen) {
+        await this.toggleKanbanFullscreen(true);
+      }
       if (triggerButton && triggerButton.isConnected) {
         triggerButton.disabled = false;
         triggerButton.style.opacity = '';
