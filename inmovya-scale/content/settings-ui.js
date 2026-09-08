@@ -4,7 +4,7 @@ window.IS.SettingsUI = {
   initialized: false,
   waLabels: [],
   selectedWaLabelName: null,
-  selectedCategoryId: 'all',
+  selectedCategoryId: 'default-category',
   draggedLeadKey: null,
   suppressLeadClickUntil: 0,
   kanbanFullscreen: false,
@@ -216,7 +216,7 @@ window.IS.SettingsUI = {
 
       const filterButton = e.target.closest('.is-category-filter');
       if (filterButton) {
-        this.selectedCategoryId = filterButton.getAttribute('data-id') || 'all';
+        this.selectedCategoryId = filterButton.getAttribute('data-id') || 'default-category';
         await this.renderCategories();
         return;
       }
@@ -249,6 +249,19 @@ window.IS.SettingsUI = {
           this.showToast("Excluído.");
         }
       }
+    });
+
+    document.getElementById('is-set-categories-list').addEventListener('change', async event => {
+      const moveSelect = event.target.closest('.is-kanban-lead-category');
+      if (!moveSelect) return;
+      const leadKey = decodeURIComponent(moveSelect.getAttribute('data-lead-key') || '');
+      if (!leadKey) return;
+      const assignmentData = await chrome.storage.local.get('leadCategoryAssignments');
+      const assignments = assignmentData.leadCategoryAssignments || {};
+      assignments[leadKey] = moveSelect.value || 'default-category';
+      await chrome.storage.local.set({ leadCategoryAssignments: assignments });
+      await this.renderCategories();
+      this.showToast('Lead movido para outra categoria.');
     });
 
     const categoriesList = document.getElementById('is-set-categories-list');
@@ -565,8 +578,16 @@ window.IS.SettingsUI = {
     const categoryIdForReply = reply => reply.categoryId || 'default-category';
     const validCategoryIds = new Set(boardCategories.map(category => category.id));
     const leads = this.getKanbanLeads();
+    if (!validCategoryIds.has(this.selectedCategoryId)) this.selectedCategoryId = 'default-category';
+    const selectedCategory = boardCategories.find(category => category.id === this.selectedCategoryId) || boardCategories[0];
 
-    const columns = boardCategories.map(category => {
+    const categorySelectors = boardCategories.map(category => {
+      const active = category.id === selectedCategory.id;
+      const responseCount = replies.filter(reply => categoryIdForReply(reply) === category.id).length;
+      return `<button type="button" class="is-category-filter" data-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 auto; padding:8px 12px; border:1px solid ${active ? '#0877b5' : '#c9d9e5'}; border-radius:18px; background:${active ? 'linear-gradient(135deg,#0877b5,#075f91)' : '#ffffff'}; color:${active ? 'white' : '#36596f'}; cursor:pointer; font-size:11px; font-weight:bold;">${window.IS.escapeHTML(category.name)} (${responseCount})</button>`;
+    }).join('');
+
+    const columns = [selectedCategory].map(category => {
       const categoryReplies = replies
         .filter(reply => categoryIdForReply(reply) === category.id)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -584,13 +605,18 @@ window.IS.SettingsUI = {
           }).join('')
         : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhuma resposta</div>';
       const leadCards = categoryLeads.length
-        ? categoryLeads.map(lead => `<button type="button" draggable="true" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; text-align:left; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
-            <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
-            <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
-          </button>`).join('')
+        ? categoryLeads.map(lead => `<div style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
+            <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" style="display:block; width:100%; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
+              <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
+              <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
+            </button>
+            <select class="is-kanban-lead-category" data-lead-key="${encodeURIComponent(lead.key)}" aria-label="Mover ${window.IS.escapeHTML(lead.contact.name)} para outra categoria" style="width:100%; margin-top:7px; padding:5px; border:1px solid #b8cfde; border-radius:5px; background:white; color:#254c64; font-size:10px;">
+              ${boardCategories.map(option => `<option value="${window.IS.escapeHTML(option.id)}" ${option.id === category.id ? 'selected' : ''}>Mover para: ${window.IS.escapeHTML(option.name)}</option>`).join('')}
+            </select>
+          </div>`).join('')
         : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhum lead</div>';
 
-      return `<section class="is-kanban-column" data-category-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 ${this.kanbanFullscreen ? '270px' : '235px'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 230px)' : '220px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
+      return `<section class="is-kanban-column" data-category-id="${window.IS.escapeHTML(category.id)}" style="width:100%; max-width:${this.kanbanFullscreen ? '1100px' : 'none'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 250px)' : '220px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px; background:linear-gradient(135deg,#0877b5,#075f91); color:white;">
           <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.IS.escapeHTML(category.name)}</strong>
           <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${categoryLeads.length}</span>
@@ -613,8 +639,9 @@ window.IS.SettingsUI = {
       : `<div style="color:#888; font-size:12px;">Nenhuma categoria personalizada.</div>`;
 
     list.innerHTML = `
-      <div style="font-size:11px; color:var(--inmovya-text-secondary);">Arraste os leads entre as colunas. A mudança fica somente na extensão.</div>
-      <div style="display:flex; gap:10px; overflow-x:auto; padding:4px 0 10px; align-items:stretch; min-height:${this.kanbanFullscreen ? 'calc(100vh - 205px)' : 'auto'};">${columns}</div>
+      <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria para visualizar suas respostas rápidas e seus leads.</div>
+      <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
+      <div style="display:flex; justify-content:center; padding:0 0 10px; min-height:${this.kanbanFullscreen ? 'calc(100vh - 225px)' : 'auto'};">${columns}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
