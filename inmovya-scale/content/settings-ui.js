@@ -252,6 +252,19 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('change', async event => {
+      const stageSelect = event.target.closest('.is-kanban-lead-stage');
+      if (stageSelect) {
+        const leadKey = decodeURIComponent(stageSelect.getAttribute('data-lead-key') || '');
+        if (!leadKey) return;
+        const stageData = await chrome.storage.local.get('leadStageAssignments');
+        const stageAssignments = stageData.leadStageAssignments || {};
+        stageAssignments[`${this.selectedCategoryId}:${leadKey}`] = stageSelect.value || 'unassigned';
+        await chrome.storage.local.set({ leadStageAssignments: stageAssignments });
+        await this.renderCategories();
+        this.showToast('Lead movido para outra etapa.');
+        return;
+      }
+
       const moveSelect = event.target.closest('.is-kanban-lead-category');
       if (!moveSelect) return;
       const leadKey = decodeURIComponent(moveSelect.getAttribute('data-lead-key') || '');
@@ -266,7 +279,7 @@ window.IS.SettingsUI = {
 
     const categoriesList = document.getElementById('is-set-categories-list');
     categoriesList.addEventListener('dragstart', event => {
-      const lead = event.target.closest('.is-kanban-lead');
+      const lead = event.target.closest('.is-kanban-lead-card');
       if (!lead) return;
       this.draggedLeadKey = decodeURIComponent(lead.getAttribute('data-lead-key') || '');
       event.dataTransfer.effectAllowed = 'move';
@@ -274,7 +287,7 @@ window.IS.SettingsUI = {
       lead.style.opacity = '0.55';
     });
     categoriesList.addEventListener('dragend', event => {
-      const lead = event.target.closest('.is-kanban-lead');
+      const lead = event.target.closest('.is-kanban-lead-card');
       if (lead) lead.style.opacity = '';
       this.suppressLeadClickUntil = Date.now() + 300;
       this.draggedLeadKey = null;
@@ -289,14 +302,14 @@ window.IS.SettingsUI = {
       if (!column) return;
       event.preventDefault();
       const leadKey = event.dataTransfer.getData('text/plain') || this.draggedLeadKey;
-      const categoryId = column.getAttribute('data-category-id') || 'default-category';
+      const stageId = column.getAttribute('data-stage-id') || 'unassigned';
       if (!leadKey) return;
-      const assignmentData = await chrome.storage.local.get('leadCategoryAssignments');
-      const assignments = assignmentData.leadCategoryAssignments || {};
-      assignments[leadKey] = categoryId;
-      await chrome.storage.local.set({ leadCategoryAssignments: assignments });
+      const assignmentData = await chrome.storage.local.get('leadStageAssignments');
+      const assignments = assignmentData.leadStageAssignments || {};
+      assignments[`${this.selectedCategoryId}:${leadKey}`] = stageId;
+      await chrome.storage.local.set({ leadStageAssignments: assignments });
       await this.renderCategories();
-      this.showToast('Lead movido no Kanban.');
+      this.showToast('Lead movido para outra etapa.');
     });
 
     // --- FORM MODAL ---
@@ -571,6 +584,8 @@ window.IS.SettingsUI = {
     const replies = await window.IS.Storage.getReplies();
     const assignmentData = await chrome.storage.local.get('leadCategoryAssignments');
     const assignments = assignmentData.leadCategoryAssignments || {};
+    const stageData = await chrome.storage.local.get('leadStageAssignments');
+    const stageAssignments = stageData.leadStageAssignments || {};
     const boardCategories = [
       { id: 'default-category', name: 'Sem categoria' },
       ...categories.filter(category => category.id !== 'default-category')
@@ -587,46 +602,49 @@ window.IS.SettingsUI = {
       return `<button type="button" class="is-category-filter" data-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 auto; padding:8px 12px; border:1px solid ${active ? '#0877b5' : '#c9d9e5'}; border-radius:18px; background:${active ? 'linear-gradient(135deg,#0877b5,#075f91)' : '#ffffff'}; color:${active ? 'white' : '#36596f'}; cursor:pointer; font-size:11px; font-weight:bold;">${window.IS.escapeHTML(category.name)} (${responseCount})</button>`;
     }).join('');
 
-    const columns = [selectedCategory].map(category => {
-      const categoryReplies = replies
-        .filter(reply => categoryIdForReply(reply) === category.id)
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
-      const categoryLeads = leads.filter(lead => {
-        const assignedCategory = validCategoryIds.has(assignments[lead.key]) ? assignments[lead.key] : 'default-category';
-        return assignedCategory === category.id;
+    const categoryReplies = replies
+      .filter(reply => categoryIdForReply(reply) === selectedCategory.id)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    const categoryLeads = leads.filter(lead => {
+      const assignedCategory = validCategoryIds.has(assignments[lead.key]) ? assignments[lead.key] : 'default-category';
+      return assignedCategory === selectedCategory.id;
+    });
+    const stages = [
+      { id: 'unassigned', title: 'Sem etapa', message: 'Leads ainda não classificados' },
+      ...categoryReplies.map(reply => ({ id: reply.id, title: reply.title || 'Sem título', message: reply.message || '' }))
+    ];
+    const validStageIds = new Set(stages.map(stage => stage.id));
+
+    const columns = stages.map(stage => {
+      const stageLeads = categoryLeads.filter(lead => {
+        const assignedStage = stageAssignments[`${selectedCategory.id}:${lead.key}`] || 'unassigned';
+        return (validStageIds.has(assignedStage) ? assignedStage : 'unassigned') === stage.id;
       });
-      const responseCards = categoryReplies.length
-        ? categoryReplies.map(reply => {
-            const preview = (reply.message || '').replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 70);
-            return `<button type="button" class="is-category-reply" data-id="${window.IS.escapeHTML(reply.id)}" style="width:100%; padding:8px; border:1px solid #d2e0ea; border-radius:6px; background:#ffffff; color:#153247; text-align:left; cursor:pointer; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
-              <strong style="display:block; font-size:12px;">${window.IS.escapeHTML(reply.title || 'Sem título')}</strong>
-              <span style="display:block; margin-top:3px; color:#657b8b; font-size:10px; line-height:1.3;">${window.IS.escapeHTML(preview || 'Somente anexos')}</span>
-            </button>`;
-          }).join('')
-        : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhuma resposta</div>';
-      const leadCards = categoryLeads.length
-        ? categoryLeads.map(lead => `<div style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
+      const preview = stage.message.replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 85);
+      const leadCards = stageLeads.length
+        ? stageLeads.map(lead => `<div draggable="true" class="is-kanban-lead-card" data-lead-key="${encodeURIComponent(lead.key)}" style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
             <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" style="display:block; width:100%; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
               <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
               <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
             </button>
-            <select class="is-kanban-lead-category" data-lead-key="${encodeURIComponent(lead.key)}" aria-label="Mover ${window.IS.escapeHTML(lead.contact.name)} para outra categoria" style="width:100%; margin-top:7px; padding:5px; border:1px solid #b8cfde; border-radius:5px; background:white; color:#254c64; font-size:10px;">
-              ${boardCategories.map(option => `<option value="${window.IS.escapeHTML(option.id)}" ${option.id === category.id ? 'selected' : ''}>Mover para: ${window.IS.escapeHTML(option.name)}</option>`).join('')}
+            <select class="is-kanban-lead-stage" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; margin-top:7px; padding:5px; border:1px solid #b8cfde; border-radius:5px; background:white; color:#254c64; font-size:10px;">
+              ${stages.map(option => `<option value="${window.IS.escapeHTML(option.id)}" ${option.id === stage.id ? 'selected' : ''}>Etapa: ${window.IS.escapeHTML(option.title)}</option>`).join('')}
+            </select>
+            <select class="is-kanban-lead-category" data-lead-key="${encodeURIComponent(lead.key)}" style="width:100%; margin-top:5px; padding:5px; border:1px solid #b8cfde; border-radius:5px; background:white; color:#254c64; font-size:10px;">
+              ${boardCategories.map(option => `<option value="${window.IS.escapeHTML(option.id)}" ${option.id === selectedCategory.id ? 'selected' : ''}>Categoria: ${window.IS.escapeHTML(option.name)}</option>`).join('')}
             </select>
           </div>`).join('')
-        : '<div style="font-size:10px; color:#888; padding:5px 0;">Nenhum lead</div>';
+        : '<div style="font-size:10px; color:#7a8d99; padding:7px; text-align:center;">Nenhum lead nesta etapa</div>';
 
-      return `<section class="is-kanban-column" data-category-id="${window.IS.escapeHTML(category.id)}" style="width:100%; max-width:${this.kanbanFullscreen ? '1100px' : 'none'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 250px)' : '220px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px; background:linear-gradient(135deg,#0877b5,#075f91); color:white;">
-          <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.IS.escapeHTML(category.name)}</strong>
-          <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${categoryLeads.length}</span>
+      return `<section class="is-kanban-column" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="flex:0 0 ${this.kanbanFullscreen ? '270px' : '225px'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 250px)' : '250px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
+        <div style="padding:10px; background:linear-gradient(135deg,#0877b5,#075f91); color:white;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.IS.escapeHTML(stage.title)}</strong>
+            <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${stageLeads.length}</span>
+          </div>
+          <div style="margin-top:4px; font-size:9px; line-height:1.3; opacity:0.84;">${window.IS.escapeHTML(preview || 'Etapa da resposta rápida')}</div>
         </div>
-        <div style="padding:9px;">
-          <div style="font-size:10px; font-weight:bold; color:#36596f; margin-bottom:5px;">RESPOSTAS (${categoryReplies.length})</div>
-          <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;">${responseCards}</div>
-          <div style="font-size:10px; font-weight:bold; color:#36596f; margin-bottom:5px;">LEADS (${categoryLeads.length})</div>
-          <div style="display:flex; flex-direction:column; gap:6px; min-height:45px;">${leadCards}</div>
-        </div>
+        <div style="display:flex; flex-direction:column; gap:7px; min-height:80px; padding:9px;">${leadCards}</div>
       </section>`;
     }).join('');
 
@@ -639,9 +657,9 @@ window.IS.SettingsUI = {
       : `<div style="color:#888; font-size:12px;">Nenhuma categoria personalizada.</div>`;
 
     list.innerHTML = `
-      <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria para visualizar suas respostas rápidas e seus leads.</div>
+      <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria. Cada resposta rápida aparece como uma etapa do Kanban.</div>
       <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
-      <div style="display:flex; justify-content:center; padding:0 0 10px; min-height:${this.kanbanFullscreen ? 'calc(100vh - 225px)' : 'auto'};">${columns}</div>
+      <div style="display:flex; gap:10px; overflow-x:auto; align-items:stretch; padding:0 0 10px; min-height:${this.kanbanFullscreen ? 'calc(100vh - 225px)' : 'auto'};">${columns}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
