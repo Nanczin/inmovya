@@ -12,6 +12,10 @@ window.IS.SettingsUI = {
   settingsContainerParent: null,
   settingsContainerNextSibling: null,
   fullscreenHost: null,
+  fullscreenOverlayParent: null,
+  fullscreenOverlayNextSibling: null,
+  fullscreenToastParent: null,
+  fullscreenToastNextSibling: null,
   editingId: null,
   draftAttachments: [],
 
@@ -207,6 +211,12 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
+      const addReplyButton = e.target.closest('.is-kanban-add-reply');
+      if (addReplyButton) {
+        await this.openReplyForm(null, this.selectedCategoryId);
+        return;
+      }
+
       const deleteLeadButton = e.target.closest('.is-delete-kanban-lead');
       if (deleteLeadButton) {
         await this.deleteKanbanLead(
@@ -676,7 +686,10 @@ window.IS.SettingsUI = {
       : `<div style="color:#888; font-size:12px;">Nenhuma categoria personalizada.</div>`;
 
     list.innerHTML = `
-      <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria. Cada resposta rápida aparece como uma etapa do Kanban.</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria. Cada resposta rápida aparece como uma etapa do Kanban.</div>
+        <button type="button" class="is-kanban-add-reply" style="padding:8px 12px; border:none; border-radius:6px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:11px; font-weight:bold;">+ Resposta em ${window.IS.escapeHTML(selectedCategory.name)}</button>
+      </div>
       <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
       <div style="display:flex; gap:10px; overflow-x:auto; align-items:stretch; padding:0 0 10px; min-height:${this.kanbanFullscreen ? 'calc(100vh - 225px)' : 'auto'};">${columns}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
@@ -705,6 +718,14 @@ window.IS.SettingsUI = {
       host.style.setProperty('--inmovya-border', '#cad8e2');
       document.body.appendChild(host);
       host.appendChild(container);
+      const overlay = document.getElementById('is-modal-overlay');
+      const toast = document.getElementById('is-native-toast');
+      this.fullscreenOverlayParent = overlay?.parentNode || null;
+      this.fullscreenOverlayNextSibling = overlay?.nextSibling || null;
+      this.fullscreenToastParent = toast?.parentNode || null;
+      this.fullscreenToastNextSibling = toast?.nextSibling || null;
+      if (overlay) host.appendChild(overlay);
+      if (toast) host.appendChild(toast);
       this.fullscreenHost = host;
       this.kanbanFullscreen = true;
       Object.assign(container.style, {
@@ -739,11 +760,23 @@ window.IS.SettingsUI = {
     if (this.settingsContainerParent) {
       this.settingsContainerParent.insertBefore(container, this.settingsContainerNextSibling);
     }
+    const overlay = document.getElementById('is-modal-overlay');
+    const toast = document.getElementById('is-native-toast');
+    if (toast && this.fullscreenToastParent) {
+      this.fullscreenToastParent.insertBefore(toast, this.fullscreenToastNextSibling);
+    }
+    if (overlay && this.fullscreenOverlayParent) {
+      this.fullscreenOverlayParent.insertBefore(overlay, this.fullscreenOverlayNextSibling);
+    }
     container.setAttribute('style', this.settingsContainerStyle || '');
     if (host) host.remove();
     this.settingsContainerStyle = null;
     this.settingsContainerParent = null;
     this.settingsContainerNextSibling = null;
+    this.fullscreenOverlayParent = null;
+    this.fullscreenOverlayNextSibling = null;
+    this.fullscreenToastParent = null;
+    this.fullscreenToastNextSibling = null;
     this.fullscreenHost = null;
     button.textContent = '⛶ Abrir Kanban em tela cheia';
     await this.renderCategories();
@@ -941,7 +974,7 @@ window.IS.SettingsUI = {
     `;
   },
 
-  async openReplyForm(id) {
+  async openReplyForm(id, preferredCategoryId = null) {
     this.editingId = id;
     this.draftAttachments = [];
     const modal = document.getElementById('is-reply-modal');
@@ -981,7 +1014,10 @@ window.IS.SettingsUI = {
     } else {
       document.getElementById('is-modal-title').textContent = "Nova Resposta";
       document.getElementById('is-form-title').value = '';
-      document.getElementById('is-form-category').value = categories[0] ? categories[0].id : 'default-category';
+      const validCategoryIds = new Set(['default-category', ...categories.map(category => category.id)]);
+      document.getElementById('is-form-category').value = validCategoryIds.has(preferredCategoryId)
+        ? preferredCategoryId
+        : (categories[0] ? categories[0].id : 'default-category');
       document.getElementById('is-form-favorite').checked = false;
       this.renderMessageBlocks([""]);
       this.renderAttachmentsPreview(this.draftAttachments);
