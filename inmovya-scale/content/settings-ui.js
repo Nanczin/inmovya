@@ -55,6 +55,16 @@ window.IS.SettingsUI = {
       </div>
       <button type="button" id="is-btn-kanban-fullscreen" style="width:100%; padding:9px; margin-bottom:12px; border:1px solid #0877b5; border-radius:6px; background:#eef8ff; color:#075f91; cursor:pointer; font-weight:bold;">⛶ Abrir Kanban em tela cheia</button>
       <div id="is-set-categories-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <details style="margin-top:16px; border:1px solid var(--inmovya-border); border-radius:7px; background:var(--inmovya-surface); overflow:hidden;">
+        <summary style="padding:10px 12px; cursor:pointer; color:var(--inmovya-primary); font-size:12px; font-weight:bold;">Backup e restauração</summary>
+        <div style="padding:0 12px 12px; display:flex; flex-direction:column; gap:8px;">
+          <div style="font-size:11px; color:var(--inmovya-text-secondary); line-height:1.4;">Salve respostas, categorias, ordem do Kanban, leads, etiquetas e configurações. A extensão também mantém cinco cópias automáticas internas.</div>
+          <button type="button" id="is-btn-export" style="background:var(--inmovya-primary); color:white; border:none; padding:9px; border-radius:5px; cursor:pointer; font-weight:bold;">Baixar backup completo</button>
+          <label for="is-file-import" style="background:transparent; border:1px solid var(--inmovya-primary); color:var(--inmovya-primary); padding:9px; border-radius:5px; cursor:pointer; font-weight:bold; text-align:center;">Restaurar arquivo de backup</label>
+          <input type="file" id="is-file-import" accept="application/json,.json" style="display:none;">
+          <button type="button" id="is-btn-restore-auto" style="background:transparent; border:1px solid var(--inmovya-border); color:var(--inmovya-text); padding:9px; border-radius:5px; cursor:pointer;">Restaurar última cópia automática</button>
+        </div>
+      </details>
     </div>
 
     <!-- TAB: CRM -->
@@ -82,15 +92,6 @@ window.IS.SettingsUI = {
       <button id="is-btn-save-settings" style="background:var(--inmovya-primary); color:white; border:none; padding:10px; border-radius:4px; cursor:pointer; font-weight:bold;">Salvar Configurações</button>
     </div>
 
-    <!-- TAB: BACKUP -->
-    <div id="is-tab-backup" class="is-tab-content" style="display:none; text-align:center;">
-      <div style="font-size:13px; color:var(--inmovya-text-secondary); margin-bottom:20px;">Exporte todas as suas respostas e configurações, ou importe de um arquivo existente.</div>
-      <div style="display:flex; flex-direction:column; gap:10px;">
-        <button id="is-btn-export" style="background:transparent; border:1px solid var(--inmovya-primary); color:var(--inmovya-primary); padding:10px; border-radius:4px; cursor:pointer; font-weight:bold;">Exportar Backup (JSON)</button>
-        <label for="is-file-import" style="background:var(--inmovya-primary); color:white; padding:10px; border-radius:4px; cursor:pointer; font-weight:bold; display:block;">Importar Backup</label>
-        <input type="file" id="is-file-import" accept=".json" style="display:none;">
-      </div>
-    </div>
   </div>
 </div>
 
@@ -550,18 +551,34 @@ window.IS.SettingsUI = {
         reader.onload = async (event) => {
           try {
             const json = JSON.parse(event.target.result);
+            await window.IS.Storage.createAutomaticBackup(true);
             await window.IS.Storage.importData(json);
-            this.refreshData();
-            this.showToast("Backup importado.");
+            await this.refreshData();
+            this.showToast("Backup restaurado com sucesso.");
           } catch(err) {
-            this.showToast("Erro ao importar.");
+            window.IS.error('Erro ao restaurar backup', err);
+            this.showToast(err.message || "Erro ao restaurar backup.");
           }
         };
         reader.readAsText(file);
       }
       e.target.value = '';
     });
+
+    document.getElementById('is-btn-restore-auto').addEventListener('click', async () => {
+      if (!await this.showConfirm('Restaurar backup', 'Restaurar a última cópia automática? O estado atual será protegido antes da restauração.')) return;
+      try {
+        const restored = await window.IS.Storage.restoreLatestAutomaticBackup();
+        if (!restored) return this.showToast('Nenhuma cópia automática disponível.');
+        await this.refreshData();
+        this.showToast('Cópia automática restaurada.');
+      } catch (error) {
+        window.IS.error('Erro ao restaurar cópia automática', error);
+        this.showToast(error.message || 'Não foi possível restaurar a cópia automática.');
+      }
+    });
     
+    await window.IS.Storage.createAutomaticBackup();
     this.refreshData();
   },
 
