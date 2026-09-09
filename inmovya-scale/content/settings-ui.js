@@ -1095,7 +1095,9 @@ window.IS.SettingsUI = {
         this.draftAttachments = Array.isArray(r.attachments)
           ? r.attachments.map((attachment, attachmentIndex) => ({
               ...attachment,
-              messageIndex: Math.min(attachmentIndex, messageCount - 1),
+              messageIndex: Number.isInteger(attachment.messageIndex)
+                ? Math.max(0, Math.min(attachment.messageIndex, messageCount - 1))
+                : Math.min(attachmentIndex, messageCount - 1),
               useCaption: !!attachment.useCaption
             }))
           : [];
@@ -1143,7 +1145,9 @@ window.IS.SettingsUI = {
     while (texts.length < requiredCount) texts.push('');
     this.draftAttachments = this.draftAttachments.map((attachment, index) => ({
       ...attachment,
-      messageIndex: Math.min(index, texts.length - 1)
+      messageIndex: Number.isInteger(attachment.messageIndex)
+        ? Math.max(0, Math.min(attachment.messageIndex, texts.length - 1))
+        : Math.min(index, texts.length - 1)
     }));
     this.renderMessageBlocks(texts);
     this.renderAttachmentsPreview(this.draftAttachments);
