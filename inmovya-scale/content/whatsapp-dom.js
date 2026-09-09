@@ -427,18 +427,21 @@ window.IS.WhatsAppDOM = {
     }
 
     const normalizedText = String(text).replace(/\r\n?/g, '\n');
-    const lines = normalizedText.split('\n');
-    lines.forEach((line, index) => {
-      if (line) document.execCommand('insertText', false, line);
-      if (index < lines.length - 1) document.execCommand('insertLineBreak', false, null);
-    });
+    const transfer = new DataTransfer();
+    transfer.setData('text/plain', normalizedText);
+    input.dispatchEvent(new ClipboardEvent('paste', {
+      clipboardData: transfer,
+      bubbles: true,
+      cancelable: true
+    }));
     await this.delay(120);
 
     let insertedText = (input.innerText || input.textContent || '').trim();
     if (!insertedText) {
-      const transfer = new DataTransfer();
-      transfer.setData('text/plain', normalizedText);
-      input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+      // Alguns editores bloqueiam eventos de colagem sintéticos. Insira o
+      // conteúdo inteiro de uma vez para que as quebras façam parte da mesma
+      // alteração reconhecida pelo editor do WhatsApp.
+      document.execCommand('insertText', false, normalizedText);
       await this.delay(120);
       insertedText = (input.innerText || input.textContent || '').trim();
     }
