@@ -6,6 +6,7 @@ window.IS.SettingsUI = {
   selectedWaLabelName: null,
   selectedCategoryId: 'default-category',
   draggedLeadKey: null,
+  draggedReplyId: null,
   suppressLeadClickUntil: 0,
   kanbanFullscreen: false,
   settingsContainerStyle: null,
@@ -303,20 +304,38 @@ window.IS.SettingsUI = {
     const categoriesList = document.getElementById('is-set-categories-list');
     categoriesList.addEventListener('dragstart', event => {
       const lead = event.target.closest('.is-kanban-lead-card');
-      if (!lead) return;
-      this.draggedLeadKey = decodeURIComponent(lead.getAttribute('data-lead-key') || '');
+      if (lead) {
+        this.draggedLeadKey = decodeURIComponent(lead.getAttribute('data-lead-key') || '');
+        this.draggedReplyId = null;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', this.draggedLeadKey);
+        lead.style.opacity = '0.55';
+        return;
+      }
+
+      const replyStage = event.target.closest('.is-kanban-reply-stage-handle');
+      if (!replyStage) return;
+      this.draggedReplyId = replyStage.getAttribute('data-reply-id') || null;
+      this.draggedLeadKey = null;
       event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', this.draggedLeadKey);
-      lead.style.opacity = '0.55';
+      event.dataTransfer.setData('application/x-inmovya-reply', this.draggedReplyId || '');
+      const column = replyStage.closest('.is-kanban-column');
+      if (column) column.style.opacity = '0.55';
     });
     categoriesList.addEventListener('dragend', event => {
       const lead = event.target.closest('.is-kanban-lead-card');
       if (lead) lead.style.opacity = '';
+      const replyStage = event.target.closest('.is-kanban-reply-stage-handle');
+      const replyColumn = replyStage?.closest('.is-kanban-column');
+      if (replyColumn) replyColumn.style.opacity = '';
       this.suppressLeadClickUntil = Date.now() + 300;
       this.draggedLeadKey = null;
+      this.draggedReplyId = null;
     });
     categoriesList.addEventListener('dragover', event => {
-      if (!event.target.closest('.is-kanban-column')) return;
+      const column = event.target.closest('.is-kanban-column');
+      if (!column) return;
+      if (this.draggedReplyId && !column.getAttribute('data-reply-id')) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
     });
@@ -324,6 +343,14 @@ window.IS.SettingsUI = {
       const column = event.target.closest('.is-kanban-column');
       if (!column) return;
       event.preventDefault();
+      const draggedReplyId = event.dataTransfer.getData('application/x-inmovya-reply') || this.draggedReplyId;
+      const targetReplyId = column.getAttribute('data-reply-id') || '';
+      if (draggedReplyId) {
+        if (targetReplyId && targetReplyId !== draggedReplyId) {
+          await this.reorderCategoryReplies(draggedReplyId, targetReplyId);
+        }
+        return;
+      }
       const leadKey = event.dataTransfer.getData('text/plain') || this.draggedLeadKey;
       const stageId = column.getAttribute('data-stage-id') || 'unassigned';
       if (!leadKey) return;
@@ -665,10 +692,11 @@ window.IS.SettingsUI = {
           </div>`).join('')
         : '<div style="font-size:10px; color:#7a8d99; padding:7px; text-align:center;">Nenhum lead nesta etapa</div>';
 
-      return `<section class="is-kanban-column" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="flex:0 0 ${this.kanbanFullscreen ? '270px' : '225px'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 250px)' : '250px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
-        <div style="padding:10px; background:linear-gradient(135deg,#0877b5,#075f91); color:white;">
+      const isReplyStage = categoryReplies.some(reply => reply.id === stage.id);
+      return `<section class="is-kanban-column" data-stage-id="${window.IS.escapeHTML(stage.id)}" ${isReplyStage ? `data-reply-id="${window.IS.escapeHTML(stage.id)}"` : ''} style="flex:0 0 ${this.kanbanFullscreen ? '270px' : '225px'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 250px)' : '250px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
+        <div ${isReplyStage ? `draggable="true" class="is-kanban-reply-stage-handle" data-reply-id="${window.IS.escapeHTML(stage.id)}" title="Arraste para reorganizar esta resposta"` : ''} style="padding:10px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; ${isReplyStage ? 'cursor:grab;' : ''}">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-            <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${window.IS.escapeHTML(stage.title)}</strong>
+            <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${isReplyStage ? '☰ ' : ''}${window.IS.escapeHTML(stage.title)}</strong>
             <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${stageLeads.length}</span>
           </div>
           <div style="margin-top:4px; font-size:9px; line-height:1.3; opacity:0.84;">${window.IS.escapeHTML(preview || 'Etapa da resposta rápida')}</div>
@@ -687,7 +715,7 @@ window.IS.SettingsUI = {
 
     list.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-        <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria. Cada resposta rápida aparece como uma etapa do Kanban.</div>
+        <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria. Arraste o cabeçalho ☰ das respostas para definir a ordem das etapas e dos envios.</div>
         <button type="button" class="is-kanban-add-reply" style="padding:8px 12px; border:none; border-radius:6px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:11px; font-weight:bold;">+ Resposta em ${window.IS.escapeHTML(selectedCategory.name)}</button>
       </div>
       <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
@@ -695,6 +723,29 @@ window.IS.SettingsUI = {
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
+  },
+
+  async reorderCategoryReplies(sourceReplyId, targetReplyId) {
+    const replies = await window.IS.Storage.getReplies();
+    const categoryIdForReply = reply => reply.categoryId || 'default-category';
+    const categoryReplies = replies
+      .filter(reply => categoryIdForReply(reply) === this.selectedCategoryId)
+      .sort((left, right) => (left.order || 0) - (right.order || 0));
+    const sourceIndex = categoryReplies.findIndex(reply => reply.id === sourceReplyId);
+    const targetIndex = categoryReplies.findIndex(reply => reply.id === targetReplyId);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return false;
+
+    const [movedReply] = categoryReplies.splice(sourceIndex, 1);
+    const insertionIndex = categoryReplies.findIndex(reply => reply.id === targetReplyId);
+    categoryReplies.splice(insertionIndex, 0, movedReply);
+    const orderById = new Map(categoryReplies.map((reply, index) => [reply.id, index]));
+    await window.IS.Storage.saveReplies(replies.map(reply => orderById.has(reply.id)
+      ? { ...reply, order: orderById.get(reply.id) }
+      : reply));
+    await this.renderCategories();
+    await this.renderReplies();
+    this.showToast('Ordem das respostas atualizada.');
+    return true;
   },
 
   async toggleKanbanFullscreen(enabled) {
