@@ -90,7 +90,9 @@ window.IS.Panel = {
     const listEl = document.getElementById('is-replies-list');
     if (!listEl) return;
 
-    let filtered = this.replies;
+    // Ordenar a visualização não deve alterar o array que será persistido
+    // depois do uso ou da edição de uma resposta.
+    let filtered = [...this.replies];
 
     if (this.showFavoritesOnly) {
       filtered = filtered.filter(r => r.favorite);

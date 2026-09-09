@@ -426,13 +426,18 @@ window.IS.WhatsAppDOM = {
       selection.addRange(range);
     }
 
-    document.execCommand('insertText', false, text);
+    const normalizedText = String(text).replace(/\r\n?/g, '\n');
+    const lines = normalizedText.split('\n');
+    lines.forEach((line, index) => {
+      if (line) document.execCommand('insertText', false, line);
+      if (index < lines.length - 1) document.execCommand('insertLineBreak', false, null);
+    });
     await this.delay(120);
 
     let insertedText = (input.innerText || input.textContent || '').trim();
     if (!insertedText) {
       const transfer = new DataTransfer();
-      transfer.setData('text/plain', text);
+      transfer.setData('text/plain', normalizedText);
       input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
       await this.delay(120);
       insertedText = (input.innerText || input.textContent || '').trim();
@@ -651,7 +656,10 @@ window.IS.WhatsAppDOM = {
     if (attachments.length) this.showSendMask(attachments.length);
     let currentAttachment = 0;
     try {
-    const parts = (text || '').split('===').map(part => part.trim());
+    const normalizedText = String(text || '').replace(/\r\n?/g, '\n');
+    const parts = normalizedText.includes('\n\n===\n\n')
+      ? normalizedText.split('\n\n===\n\n')
+      : normalizedText.split('===');
     if (!parts.length && attachments.length) parts.push('');
 
     const lastMessageIndex = Math.max(0, parts.length - 1);
@@ -668,7 +676,7 @@ window.IS.WhatsAppDOM = {
       const linked = normalizedAttachments.filter(attachment => attachment.messageIndex === messageIndex);
       const hasCaptionedAttachment = linked.some(attachment => attachment.useCaption);
 
-      if (message && !hasCaptionedAttachment) {
+      if (message.trim() && !hasCaptionedAttachment) {
         if (!await this.insertMessage(message)) return false;
         const mustSendText = parts.length > 1 || normalizedAttachments.length > 0;
         if (mustSendText) {

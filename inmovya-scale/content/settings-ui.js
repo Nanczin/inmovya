@@ -18,6 +18,7 @@ window.IS.SettingsUI = {
   fullscreenToastParent: null,
   fullscreenToastNextSibling: null,
   editingId: null,
+  editingOrder: null,
   draftAttachments: [],
 
   get htmlTemplate() {
@@ -386,7 +387,13 @@ window.IS.SettingsUI = {
       if (this.editingId) {
         const rIndex = replies.findIndex(r => r.id === this.editingId);
         if (rIndex > -1) {
-          replies[rIndex] = { ...replies[rIndex], title, categoryId, favorite, message, attachments: [...this.draftAttachments] };
+          const original = replies[rIndex];
+          const originalCategoryId = original.categoryId || 'default-category';
+          const order = originalCategoryId === categoryId
+            ? this.editingOrder
+            : replies.filter(reply => (reply.categoryId || 'default-category') === categoryId)
+              .reduce((highest, reply) => Math.max(highest, Number.isFinite(reply.order) ? reply.order : -1), -1) + 1;
+          replies[rIndex] = { ...original, title, categoryId, favorite, message, attachments: [...this.draftAttachments], order };
         }
       } else {
         const newReply = { id: window.IS.generateUUID(), title, categoryId, favorite, message, attachments: [...this.draftAttachments], order: replies.length };
@@ -607,6 +614,11 @@ window.IS.SettingsUI = {
       if (!grouped[catId]) grouped[catId] = [];
       grouped[catId].push(r);
     });
+    Object.values(grouped).forEach(group => group.sort((left, right) => {
+      const leftOrder = Number.isFinite(left.order) ? left.order : replies.indexOf(left);
+      const rightOrder = Number.isFinite(right.order) ? right.order : replies.indexOf(right);
+      return leftOrder - rightOrder;
+    }));
 
     let html = "";
     const renderItem = (r) => `
@@ -1052,6 +1064,7 @@ window.IS.SettingsUI = {
 
   async openReplyForm(id, preferredCategoryId = null) {
     this.editingId = id;
+    this.editingOrder = null;
     this.draftAttachments = [];
     const modal = document.getElementById('is-reply-modal');
     document.getElementById('is-confirm-modal').style.display = 'none';
@@ -1069,9 +1082,14 @@ window.IS.SettingsUI = {
     if (id) {
       document.getElementById('is-modal-title').textContent = "Editar Resposta";
       const replies = await window.IS.Storage.getReplies();
-      const r = replies.find(x => x.id === id);
+      const replyIndex = replies.findIndex(x => x.id === id);
+      const r = replies[replyIndex];
       if (r) {
-        const storedMessages = (r.message || '').split('===').map(part => part.trim());
+        this.editingOrder = Number.isFinite(r.order) ? r.order : replyIndex;
+        const normalizedMessage = String(r.message || '').replace(/\r\n?/g, '\n');
+        const storedMessages = normalizedMessage.includes('\n\n===\n\n')
+          ? normalizedMessage.split('\n\n===\n\n')
+          : normalizedMessage.split('===');
         const messageCount = Math.max(1, storedMessages.length, Array.isArray(r.attachments) ? r.attachments.length : 0);
         while (storedMessages.length < messageCount) storedMessages.push('');
         this.draftAttachments = Array.isArray(r.attachments)
@@ -1115,7 +1133,7 @@ window.IS.SettingsUI = {
 
   getMessageBlocksData() {
     const inputs = document.querySelectorAll('.is-form-message-input');
-    const texts = Array.from(inputs).map(input => input.value.trim());
+    const texts = Array.from(inputs).map(input => input.value.replace(/\r\n?/g, '\n'));
     return texts.join('\n\n===\n\n');
   },
 
