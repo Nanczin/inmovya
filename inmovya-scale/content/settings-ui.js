@@ -187,6 +187,8 @@ window.IS.SettingsUI = {
       const id = target.getAttribute('data-id');
       if (target.classList.contains('is-btn-edit-reply')) {
         this.openReplyForm(id);
+      } else if (target.classList.contains('is-btn-duplicate-reply')) {
+        await this.duplicateReply(id);
       } else if (target.classList.contains('is-btn-delete-reply')) {
         if (await this.showConfirm("Excluir", "Deseja excluir esta resposta?")) {
           let replies = await window.IS.Storage.getReplies();
@@ -627,6 +629,7 @@ window.IS.SettingsUI = {
           <strong style="font-size:13px;">${window.IS.escapeHTML(r.title)}</strong>
           <div style="display:flex; gap:5px;">
             <button class="is-btn-edit-reply" data-id="${r.id}" style="padding:3px 8px; font-size:11px; cursor:pointer; background:var(--inmovya-primary); color:white; border:none; border-radius:4px;">Editar</button>
+            <button class="is-btn-duplicate-reply" data-id="${r.id}" style="padding:3px 8px; font-size:11px; cursor:pointer; background:#4d7f9f; color:white; border:none; border-radius:4px;">Duplicar</button>
             <button class="is-btn-delete-reply" data-id="${r.id}" style="padding:3px 8px; font-size:11px; cursor:pointer; background:#dc3545; color:white; border:none; border-radius:4px;">Excluir</button>
           </div>
         </div>
@@ -655,6 +658,39 @@ window.IS.SettingsUI = {
     } else {
       list.innerHTML = html;
     }
+  },
+
+  async duplicateReply(id) {
+    const replies = await window.IS.Storage.getReplies();
+    const source = replies.find(reply => reply.id === id);
+    if (!source) return this.showToast('Resposta não encontrada.');
+
+    const categoryId = source.categoryId || 'default-category';
+    const categoryReplies = replies
+      .filter(reply => (reply.categoryId || 'default-category') === categoryId)
+      .sort((left, right) => {
+        const leftOrder = Number.isFinite(left.order) ? left.order : replies.indexOf(left);
+        const rightOrder = Number.isFinite(right.order) ? right.order : replies.indexOf(right);
+        return leftOrder - rightOrder;
+      });
+    const sourceIndex = categoryReplies.findIndex(reply => reply.id === id);
+    const duplicate = {
+      ...source,
+      id: window.IS.generateUUID(),
+      title: `${source.title || 'Sem título'} (cópia)`,
+      attachments: Array.isArray(source.attachments)
+        ? source.attachments.map(attachment => ({ ...attachment, id: window.IS.generateUUID() }))
+        : []
+    };
+    categoryReplies.splice(sourceIndex + 1, 0, duplicate);
+
+    const orderedReplies = new Map(categoryReplies.map((reply, order) => [reply.id, { ...reply, order }]));
+    const updatedReplies = replies.map(reply => orderedReplies.get(reply.id) || reply);
+    updatedReplies.push(orderedReplies.get(duplicate.id));
+    await window.IS.Storage.saveReplies(updatedReplies);
+    await this.renderReplies();
+    await this.renderCategories();
+    this.showToast('Resposta duplicada com sucesso.');
   },
 
   async renderCategories() {
