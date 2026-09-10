@@ -8,14 +8,23 @@ import { Save, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
+export interface ManualFunnelMetrics {
+  ligacoes: number;
+  visitas: number;
+  documentacao: number;
+  negociacao: number;
+  venda: number;
+  interacaoAjuste: number;
+}
+
 interface PowerBIFunnelProps {
   leadsCount: number;
   interacoesCount: number;
   periodo: string;
-  onAjusteChange?: (ajuste: number) => void;
+  onMetricsChange?: (metrics: ManualFunnelMetrics) => void;
 }
 
-export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteChange }: PowerBIFunnelProps) {
+export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onMetricsChange }: PowerBIFunnelProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -68,10 +77,8 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteCh
   }, [periodo]);
 
   useEffect(() => {
-    if (onAjusteChange) {
-      onAjusteChange(manualMetrics.interacaoAjuste);
-    }
-  }, [manualMetrics.interacaoAjuste, onAjusteChange]);
+    onMetricsChange?.(manualMetrics);
+  }, [manualMetrics, onMetricsChange]);
 
   const handleSave = async () => {
     setSaving(true);

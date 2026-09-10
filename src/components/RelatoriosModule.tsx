@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PowerBIFunnel } from './PowerBIFunnel';
+import { PowerBIFunnel, type ManualFunnelMetrics } from './PowerBIFunnel';
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,14 @@ export function RelatoriosModule() {
   const [periodoSelecionado, setPeriodoSelecionado] = useState("7dias");
   const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState<string>("");
   const [dataFimPersonalizada, setDataFimPersonalizada] = useState<string>("");
-  const [interacaoAjuste, setInteracaoAjuste] = useState(0);
+  const [manualMetrics, setManualMetrics] = useState<ManualFunnelMetrics>({
+    ligacoes: 0,
+    visitas: 0,
+    documentacao: 0,
+    negociacao: 0,
+    venda: 0,
+    interacaoAjuste: 0
+  });
   const [classificacoesOferta, setClassificacoesOferta] = useState<Record<string, number>>({});
   const [metricas, setMetricas] = useState({
     conversao: {
@@ -66,6 +73,7 @@ export function RelatoriosModule() {
   const [numerosLigados, setNumerosLigados] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const ligacoesComAjuste = metricas.ligacoes.hoje + manualMetrics.ligacoes;
 
   useEffect(() => {
     if (periodoSelecionado !== "personalizado" || (dataInicioPersonalizada && dataFimPersonalizada)) {
@@ -869,26 +877,26 @@ export function RelatoriosModule() {
                 <Phone className="w-6 h-6" />
               </div>
               <div className="text-right">
-                {calcularVariacao(metricas.ligacoes.hoje, metricas.ligacoes.ontem).tipo === 'positiva' ? (
+                {calcularVariacao(ligacoesComAjuste, metricas.ligacoes.ontem).tipo === 'positiva' ? (
                   <ArrowUp className="w-4 h-4 text-success inline" />
                 ) : (
                   <ArrowDown className="w-4 h-4 text-destructive inline" />
                 )}
-                <span className={`text-sm ml-1 ${calcularVariacao(metricas.ligacoes.hoje, metricas.ligacoes.ontem).tipo === 'positiva'
+                <span className={`text-sm ml-1 ${calcularVariacao(ligacoesComAjuste, metricas.ligacoes.ontem).tipo === 'positiva'
                   ? 'text-success' : 'text-destructive'
                   }`}>
-                  {calcularVariacao(metricas.ligacoes.hoje, metricas.ligacoes.ontem).valor}%
+                  {calcularVariacao(ligacoesComAjuste, metricas.ligacoes.ontem).valor}%
                 </span>
               </div>
             </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.ligacoes.hoje}</div>
+            <div className="text-3xl font-bold text-foreground mb-1">{ligacoesComAjuste}</div>
             <div className="text-sm text-muted-foreground mb-3">Ligações Hoje</div>
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
                 <span>Meta: {metricas.ligacoes.meta}</span>
-                <span>{((metricas.ligacoes.hoje / metricas.ligacoes.meta) * 100).toFixed(0)}%</span>
+                <span>{((ligacoesComAjuste / metricas.ligacoes.meta) * 100).toFixed(0)}%</span>
               </div>
-              <Progress value={(metricas.ligacoes.hoje / metricas.ligacoes.meta) * 100} className="h-1" />
+              <Progress value={(ligacoesComAjuste / metricas.ligacoes.meta) * 100} className="h-1" />
             </div>
           </CardContent>
         </Card>
@@ -949,16 +957,36 @@ export function RelatoriosModule() {
                 <span className="text-sm ml-1 text-success">Em tempo real</span>
               </div>
             </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total + interacaoAjuste}</div>
+            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total + manualMetrics.interacaoAjuste}</div>
             <div className="text-sm text-muted-foreground mb-3">Interações</div>
             <div className="text-xs space-y-1">
               <div>Interessados e Deny List</div>
-              <div>Registradas: <span className="text-success">{metricas.interacoes.total}</span> (Ajuste: {interacaoAjuste})</div>
+              <div>Registradas: <span className="text-success">{metricas.interacoes.total}</span> (Ajuste: {manualMetrics.interacaoAjuste})</div>
             </div>
           </CardContent>
         </Card>
 
-        <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} onAjusteChange={setInteracaoAjuste} />
+        {[
+          { label: 'Visitas', value: manualMetrics.visitas, icon: Eye },
+          { label: 'Documentação', value: manualMetrics.documentacao, icon: Calendar },
+          { label: 'Negociações', value: manualMetrics.negociacao, icon: Target },
+          { label: 'Vendas', value: manualMetrics.venda, icon: DollarSign }
+        ].map(({ label, value, icon: Icon }) => (
+          <Card key={label} className="shadow-card">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-2 rounded-lg bg-blue-600 text-white">
+                  <Icon className="w-6 h-6" />
+                </div>
+                <Badge variant="secondary">Manual</Badge>
+              </div>
+              <div className="text-3xl font-bold text-foreground mb-1">{value}</div>
+              <div className="text-sm text-muted-foreground">{label}</div>
+            </CardContent>
+          </Card>
+        ))}
+
+        <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} onMetricsChange={setManualMetrics} />
       </div>
 
 
