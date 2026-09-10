@@ -16,5 +16,20 @@
     });
   });
 
+  window.addEventListener('INMOVYA_PICK_CAMPAIGN_IMAGE', event => {
+    const detail = event.detail || {};
+    chrome.runtime.sendMessage({ action: 'campaign_pick_image', localId: detail.localId }, response => {
+      const error = chrome.runtime.lastError?.message;
+      window.dispatchEvent(new CustomEvent('INMOVYA_CAMPAIGN_IMAGE_RESULT', {
+        detail: {
+          token: detail.token,
+          ok: !!response?.ok && !error,
+          file: response?.file || null,
+          error: error || response?.error || ''
+        }
+      }));
+    });
+  });
+
   announceReady();
 })();

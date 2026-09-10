@@ -56,11 +56,16 @@ async function sendCampaignMessage(request) {
     let lastError;
     for (let attempt = 0; attempt < 15; attempt++) {
       try {
+        const storedMedia = request.imageLocalId
+          ? (await chrome.storage.local.get(`campaign_media_${request.imageLocalId}`))[`campaign_media_${request.imageLocalId}`]
+          : null;
+        if (request.imageLocalId && !storedMedia?.nativePath) {
+          throw new Error('A imagem original da campanha não está mais disponível neste computador. Selecione-a novamente ao editar a campanha.');
+        }
         const response = await chrome.tabs.sendMessage(tab.id, {
           action: 'campaign_auto_send',
           text: request.text || '',
-          imageUrl: request.imageUrl || '',
-          imageName: request.imageName || ''
+          attachment: storedMedia || null
         });
         if (response?.ok) return response;
         lastError = new Error(response?.error || 'Envio não confirmado.');
@@ -164,6 +169,26 @@ async function setFilesWithDebugger(tabId, paths, kind, targetToken = '') {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action === 'campaign_pick_image') {
+    (async () => {
+      const result = await callNativeFileHost({ action: 'pick', multiple: false });
+      const file = Array.isArray(result?.files) ? result.files[0] : null;
+      if (!file) throw new Error('Nenhuma imagem foi selecionada.');
+      if (!(file.type || '').toLowerCase().startsWith('image/')) throw new Error('Selecione somente uma imagem.');
+      const localId = String(request.localId || '').trim() || crypto.randomUUID();
+      const attachment = {
+        name: file.name,
+        type: file.type,
+        size: file.size || 0,
+        nativePath: file.path
+      };
+      await chrome.storage.local.set({ [`campaign_media_${localId}`]: attachment });
+      return { localId, attachment };
+    })()
+      .then(({ localId, attachment }) => sendResponse({ ok: true, file: { localId, name: attachment.name, type: attachment.type, size: attachment.size } }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (request?.action === 'campaign_send') {
     sendCampaignMessage(request)
       .then(result => sendResponse({ ok: true, ...result }))

@@ -39,22 +39,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const input = await window.IS.WhatsAppDOM.waitForMessageInput(20000);
         if (!input) throw new Error('A conversa do WhatsApp não ficou pronta.');
 
-        if (request.imageUrl) {
-          const response = await fetch(request.imageUrl);
-          if (!response.ok) throw new Error('Não foi possível baixar a imagem da campanha.');
-          const blob = await response.blob();
-          if (!blob.type.startsWith('image/')) throw new Error('O anexo da campanha não é uma imagem válida.');
-          const data = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = () => reject(new Error('Não foi possível preparar a imagem.'));
-            reader.readAsDataURL(blob);
-          });
+        if (request.attachment?.nativePath) {
           const sent = await window.IS.WhatsAppDOM.sendAttachmentBatch([{
             id: window.IS.generateUUID(),
-            name: request.imageName || 'imagem-campanha.jpg',
-            type: blob.type,
-            data
+            name: request.attachment.name || 'imagem-campanha.jpg',
+            type: request.attachment.type || 'image/jpeg',
+            size: request.attachment.size || 0,
+            nativePath: request.attachment.nativePath
           }], request.text || '');
           if (!sent) throw new Error('O WhatsApp não confirmou o envio da imagem.');
         } else {

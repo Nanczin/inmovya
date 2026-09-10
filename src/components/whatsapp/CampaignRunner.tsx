@@ -29,7 +29,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
   const consecutiveFailuresRef = useRef(0);
   const lastRestAtRef = useRef(-1);
 
-  const sendWithExtension = (payload: { phone: string; text: string; imageUrl?: string; imageName?: string }) => {
+  const sendWithExtension = (payload: { phone: string; text: string; imageLocalId?: string }) => {
     return new Promise<void>((resolve, reject) => {
       const token = crypto.randomUUID();
       const timeout = window.setTimeout(() => {
@@ -225,8 +225,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       await sendWithExtension({
         phone,
         text: finalMsg,
-        imageUrl: campaign.variaveis?.imagemUrl || '',
-        imageName: campaign.variaveis?.imagemNome || ''
+        imageLocalId: campaign.variaveis?.imagemLocalId || ''
       });
 
       await supabase

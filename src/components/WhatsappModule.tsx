@@ -29,7 +29,7 @@ export function WhatsappModule() {
     nome: "",
     listaId: "",
     mensagem: "",
-    imagemUrl: "",
+    imagemLocalId: "",
     imagemNome: "",
     cadencia: {
       intervaloMinimo: 30,
@@ -49,33 +49,26 @@ export function WhatsappModule() {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [consentConfirmed, setConsentConfirmed] = useState(false);
 
-  const handleCampaignImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast({ title: 'Arquivo inválido', description: 'Selecione uma imagem.', variant: 'destructive' });
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast({ title: 'Imagem muito grande', description: 'O limite é de 10 MB.', variant: 'destructive' });
-      return;
-    }
-
+  const handleCampaignImagePick = async () => {
     setIsUploadingImage(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado.');
-      const extension = file.name.split('.').pop() || 'jpg';
-      const path = `whatsapp_campaigns/${user.id}/${crypto.randomUUID()}.${extension}`;
-      const { error } = await supabase.storage.from('empreendimentos').upload(path, file, { contentType: file.type });
-      if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from('empreendimentos').getPublicUrl(path);
-      setNewCampaign(current => ({ ...current, imagemUrl: publicUrl, imagemNome: file.name }));
-      toast({ title: 'Imagem adicionada', description: 'Ela será enviada junto com a mensagem.' });
+      const token = crypto.randomUUID();
+      const localId = newCampaign.imagemLocalId || crypto.randomUUID();
+      const result = await new Promise<any>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('A extensão não respondeu. Recarregue-a no navegador.')), 30000);
+        const handler = (event: CustomEvent) => {
+          if (event.detail?.token !== token) return;
+          window.clearTimeout(timeout);
+          window.removeEventListener('INMOVYA_CAMPAIGN_IMAGE_RESULT', handler as EventListener);
+          event.detail?.ok ? resolve(event.detail.file) : reject(new Error(event.detail?.error || 'Não foi possível selecionar a imagem.'));
+        };
+        window.addEventListener('INMOVYA_CAMPAIGN_IMAGE_RESULT', handler as EventListener);
+        window.dispatchEvent(new CustomEvent('INMOVYA_PICK_CAMPAIGN_IMAGE', { detail: { token, localId } }));
+      });
+      setNewCampaign(current => ({ ...current, imagemLocalId: result.localId, imagemNome: result.name }));
+      toast({ title: 'Imagem adicionada', description: 'O arquivo original será lido diretamente do computador.' });
     } catch (error) {
-      console.error('Erro ao enviar imagem da campanha:', error);
-      toast({ title: 'Erro no upload', description: 'Não foi possível armazenar a imagem.', variant: 'destructive' });
+      toast({ title: 'Não foi possível selecionar', description: error instanceof Error ? error.message : 'Verifique a extensão.', variant: 'destructive' });
     } finally {
       setIsUploadingImage(false);
     }
@@ -154,7 +147,7 @@ export function WhatsappModule() {
           mensagem: newCampaign.mensagem,
           variaveis: {
             mensagens: [newCampaign.mensagem],
-            imagemUrl: newCampaign.imagemUrl,
+            imagemLocalId: newCampaign.imagemLocalId,
             imagemNome: newCampaign.imagemNome
           },
           configuracao_cadencia: newCampaign.cadencia,
@@ -197,7 +190,7 @@ export function WhatsappModule() {
 
       toast({ title: "Sucesso", description: "Campanha criada com sucesso!" });
       setNewCampaign({
-        nome: "", listaId: "", mensagem: "", imagemUrl: "", imagemNome: "",
+        nome: "", listaId: "", mensagem: "", imagemLocalId: "", imagemNome: "",
         cadencia: { intervaloMinimo: 30, intervaloMaximo: 60, limiteDiario: 100, pausaAposMensagens: 50, tempoDescanso: 60 }
       });
       setConsentConfirmed(false);
@@ -443,21 +436,21 @@ export function WhatsappModule() {
                 </div>
                 <div className="space-y-2">
                   <Label>Imagem da campanha (opcional)</Label>
-                  {newCampaign.imagemUrl ? (
+                  {newCampaign.imagemLocalId ? (
                     <div className="flex items-center gap-3 rounded-md border p-3">
-                      <img src={newCampaign.imagemUrl} alt="Prévia" className="h-16 w-16 rounded object-cover" />
+                      <Image className="h-8 w-8 text-primary" />
                       <span className="min-w-0 flex-1 truncate text-sm">{newCampaign.imagemNome}</span>
-                      <Button type="button" variant="ghost" size="icon" onClick={() => setNewCampaign(current => ({ ...current, imagemUrl: '', imagemNome: '' }))}>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => setNewCampaign(current => ({ ...current, imagemLocalId: '', imagemNome: '' }))}>
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ) : (
-                    <Label htmlFor="whatsapp-campaign-image" className="flex h-10 cursor-pointer items-center justify-center rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent">
+                    <Button type="button" variant="outline" className="w-full" onClick={handleCampaignImagePick} disabled={isUploadingImage}>
                       {isUploadingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image className="mr-2 h-4 w-4" />}
-                      {isUploadingImage ? 'Enviando...' : 'Selecionar imagem'}
-                    </Label>
+                      {isUploadingImage ? 'Abrindo...' : 'Selecionar imagem original do computador'}
+                    </Button>
                   )}
-                  <Input id="whatsapp-campaign-image" type="file" accept="image/*" className="hidden" onChange={handleCampaignImageUpload} disabled={isUploadingImage} />
+                  <p className="text-xs text-muted-foreground">A imagem não será enviada ao banco de dados.</p>
                 </div>
               </div>
             </CardContent>

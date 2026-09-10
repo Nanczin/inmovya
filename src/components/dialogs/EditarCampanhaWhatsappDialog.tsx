@@ -21,7 +21,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
   
   const [nome, setNome] = useState("");
   const [mensagem, setMensagem] = useState<string>("");
-  const [imagemUrl, setImagemUrl] = useState("");
+  const [imagemLocalId, setImagemLocalId] = useState("");
   const [imagemNome, setImagemNome] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cadencia, setCadencia] = useState({
@@ -44,7 +44,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
       } else {
         setMensagem(campaign.mensagem || "");
       }
-      setImagemUrl(campaign.variaveis?.imagemUrl || "");
+      setImagemLocalId(campaign.variaveis?.imagemLocalId || "");
       setImagemNome(campaign.variaveis?.imagemNome || "");
 
       setCadencia({
@@ -66,7 +66,13 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
     try {
       setLoading(true);
       
-      const variaveis = { ...(campaign.variaveis || {}), mensagens: [mensagem], imagemUrl, imagemNome };
+      const variaveis = {
+        ...(campaign.variaveis || {}),
+        mensagens: [mensagem],
+        imagemLocalId,
+        imagemNome,
+        imagemUrl: ''
+      };
 
       // Update the campaign
       const { error } = await supabase
@@ -124,32 +130,31 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
     }
   };
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
-      toast({ title: 'Imagem inválida', description: 'Use uma imagem de até 10 MB.', variant: 'destructive' });
-      return;
-    }
+  const handleImagePick = async () => {
     if (cadencia.limiteDiario < 1 || cadencia.intervaloMinimo < 30 || cadencia.intervaloMaximo < cadencia.intervaloMinimo) {
       toast({ title: 'Cadência inválida', description: 'Confira o limite diário e use intervalos a partir de 30 segundos.', variant: 'destructive' });
       return;
     }
     setUploadingImage(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado.');
-      const extension = file.name.split('.').pop() || 'jpg';
-      const path = `whatsapp_campaigns/${user.id}/${crypto.randomUUID()}.${extension}`;
-      const { error } = await supabase.storage.from('empreendimentos').upload(path, file, { contentType: file.type });
-      if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from('empreendimentos').getPublicUrl(path);
-      setImagemUrl(publicUrl);
-      setImagemNome(file.name);
+      const token = crypto.randomUUID();
+      const localId = imagemLocalId || crypto.randomUUID();
+      const result = await new Promise<any>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('A extensão não respondeu. Recarregue-a no navegador.')), 30000);
+        const handler = (event: CustomEvent) => {
+          if (event.detail?.token !== token) return;
+          window.clearTimeout(timeout);
+          window.removeEventListener('INMOVYA_CAMPAIGN_IMAGE_RESULT', handler as EventListener);
+          event.detail?.ok ? resolve(event.detail.file) : reject(new Error(event.detail?.error || 'Não foi possível selecionar a imagem.'));
+        };
+        window.addEventListener('INMOVYA_CAMPAIGN_IMAGE_RESULT', handler as EventListener);
+        window.dispatchEvent(new CustomEvent('INMOVYA_PICK_CAMPAIGN_IMAGE', { detail: { token, localId } }));
+      });
+      setImagemLocalId(result.localId);
+      setImagemNome(result.name);
+      toast({ title: 'Imagem adicionada', description: 'O arquivo original será lido diretamente do computador.' });
     } catch (error) {
-      console.error('Erro ao enviar imagem:', error);
-      toast({ title: 'Erro no upload', description: 'Não foi possível armazenar a imagem.', variant: 'destructive' });
+      toast({ title: 'Não foi possível selecionar', description: error instanceof Error ? error.message : 'Verifique a extensão.', variant: 'destructive' });
     } finally {
       setUploadingImage(false);
     }
@@ -210,21 +215,21 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
             <p className="text-xs text-muted-foreground mt-2">As mensagens pendentes serão atualizadas com as novas variações de forma aleatória ao salvar.</p>
             <div className="space-y-2 pt-2">
               <Label>Imagem da campanha (opcional)</Label>
-              {imagemUrl ? (
+              {imagemLocalId ? (
                 <div className="flex items-center gap-3 rounded-md border p-3">
-                  <img src={imagemUrl} alt="Prévia" className="h-16 w-16 rounded object-cover" />
+                  <Image className="h-8 w-8 text-primary" />
                   <span className="min-w-0 flex-1 truncate text-sm">{imagemNome}</span>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => { setImagemUrl(''); setImagemNome(''); }}>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => { setImagemLocalId(''); setImagemNome(''); }}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
               ) : (
-                <Label htmlFor={`edit-whatsapp-image-${campaign.id}`} className="flex h-10 cursor-pointer items-center justify-center rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent">
+                <Button type="button" variant="outline" className="w-full" onClick={handleImagePick} disabled={uploadingImage}>
                   {uploadingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image className="mr-2 h-4 w-4" />}
-                  {uploadingImage ? 'Enviando...' : 'Selecionar imagem'}
-                </Label>
+                  {uploadingImage ? 'Abrindo...' : 'Selecionar imagem original do computador'}
+                </Button>
               )}
-              <Input id={`edit-whatsapp-image-${campaign.id}`} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
+              <p className="text-xs text-muted-foreground">A imagem não será enviada ao banco de dados.</p>
             </div>
           </div>
 
