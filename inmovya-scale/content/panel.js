@@ -128,14 +128,15 @@ window.IS.Panel = {
 
     listEl.innerHTML = filtered.map(reply => {
       const cat = this.categories.find(c => c.id === reply.categoryId) || window.IS.DEFAULT_CATEGORY;
-      const preview = window.IS.escapeHTML(reply.message || "").replace(/\n\n===\n\n/g, ' <strong>⤶</strong> ').substring(0, 100);
+      const fullPreview = String(reply.message || "").replace(/\n\n===\n\n/g, ' ⤶ ');
+      const preview = window.IS.escapeHTML(fullPreview.substring(0, 100));
       return `
         <div class="is-reply-item" data-id="${reply.id}">
           <div class="is-reply-header">
             <span class="is-reply-title">${reply.favorite ? '⭐ ' : ''}${window.IS.escapeHTML(reply.title)}</span>
           </div>
           <div class="is-reply-category">${window.IS.escapeHTML(cat.name)}</div>
-          <div class="is-reply-preview">${preview}${(reply.message || "").length > 100 ? '...' : ''}</div>
+          <div class="is-reply-preview">${preview}${fullPreview.length > 100 ? '...' : ''}</div>
           ${(reply.attachments && reply.attachments.length > 0) ? `<div style="font-size:10px; color:var(--inmovya-primary); margin-top:3px;">📎 ${reply.attachments.length} anexo(s)</div>` : ''}
         </div>
       `;
