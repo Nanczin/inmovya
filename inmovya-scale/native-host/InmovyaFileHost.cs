@@ -23,7 +23,7 @@ internal static class InmovyaFileHost
         {
             var request = ReadMessage();
             var action = request.ContainsKey("action") ? Convert.ToString(request["action"]) : "";
-            if (action == "pick") PickFiles();
+            if (action == "pick") PickFiles(request);
             else if (action == "read") ReadFile(Convert.ToString(request["path"]));
             else if (action == "prepare") PrepareFiles(GetPaths(request));
             else if (action == "attach") AttachFilesToOpenDialog(GetPaths(request), IntPtr.Zero);
@@ -231,14 +231,27 @@ internal static class InmovyaFileHost
         return Json.Deserialize<Dictionary<string, object>>(json);
     }
 
-    private static void PickFiles()
+    private static void PickFiles(Dictionary<string, object> request)
     {
         Application.EnableVisualStyles();
+        var imagesOnly = request.ContainsKey("kind") && Convert.ToString(request["kind"]) == "image";
+        var multiple = !request.ContainsKey("multiple") || Convert.ToBoolean(request["multiple"]);
+        using (var owner = new Form())
         using (var dialog = new OpenFileDialog())
         {
-            dialog.Multiselect = true;
-            dialog.Filter = "Imagens, vídeos e documentos|*.jpg;*.jpeg;*.png;*.gif;*.webp;*.heic;*.heif;*.mp4;*.mov;*.m4v;*.3gp;*.webm;*.pdf|Todos os arquivos|*.*";
-            if (dialog.ShowDialog() != DialogResult.OK)
+            owner.ShowInTaskbar = false;
+            owner.StartPosition = FormStartPosition.Manual;
+            owner.Location = new System.Drawing.Point(-32000, -32000);
+            owner.Size = new System.Drawing.Size(1, 1);
+            owner.TopMost = true;
+            owner.Opacity = 0;
+            owner.Show();
+
+            dialog.Multiselect = multiple;
+            dialog.Filter = imagesOnly
+                ? "Imagens|*.jpg;*.jpeg;*.png;*.gif;*.webp;*.heic;*.heif|Todos os arquivos|*.*"
+                : "Imagens, vídeos e documentos|*.jpg;*.jpeg;*.png;*.gif;*.webp;*.heic;*.heif;*.mp4;*.mov;*.m4v;*.3gp;*.webm;*.pdf|Todos os arquivos|*.*";
+            if (dialog.ShowDialog(owner) != DialogResult.OK)
             {
                 WriteMessage(new { ok = true, files = new object[0] });
                 return;

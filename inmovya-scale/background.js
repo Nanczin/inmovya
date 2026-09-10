@@ -171,7 +171,7 @@ async function setFilesWithDebugger(tabId, paths, kind, targetToken = '') {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request?.action === 'campaign_pick_image') {
     (async () => {
-      const result = await callNativeFileHost({ action: 'pick', multiple: false });
+      const result = await callNativeFileHost({ action: 'pick', multiple: false, kind: 'image' });
       const file = Array.isArray(result?.files) ? result.files[0] : null;
       if (!file) throw new Error('Nenhuma imagem foi selecionada.');
       if (!(file.type || '').toLowerCase().startsWith('image/')) throw new Error('Selecione somente uma imagem.');

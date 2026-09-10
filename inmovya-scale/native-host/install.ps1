@@ -41,7 +41,7 @@ if (-not (Test-Path -LiteralPath $ffmpegPath)) {
 
 $sourcePath = Join-Path $PSScriptRoot 'InmovyaFileHost.cs'
 $exePath = Join-Path $hostDir 'InmovyaFileHost.exe'
-Add-Type -Path $sourcePath -ReferencedAssemblies 'System.Windows.Forms','System.Web.Extensions','UIAutomationClient','UIAutomationTypes' -OutputAssembly $exePath -OutputType ConsoleApplication
+Add-Type -Path $sourcePath -ReferencedAssemblies 'System.Windows.Forms','System.Drawing','System.Web.Extensions','UIAutomationClient','UIAutomationTypes' -OutputAssembly $exePath -OutputType ConsoleApplication
 
 $manifestPath = Join-Path $hostDir 'com.inmovya.scale.files.json'
 $manifest = @{
