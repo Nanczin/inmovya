@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Edit, Plus, Trash2, Info } from "lucide-react";
+import { Edit, Plus, Trash2, Info, Image, Loader2, X } from "lucide-react";
 import { replaceVariables, parseSpintax } from "@/utils/formatUtils";
 
 interface EditarCampanhaWhatsappDialogProps {
@@ -21,9 +21,12 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
   
   const [nome, setNome] = useState("");
   const [mensagem, setMensagem] = useState<string>("");
+  const [imagemUrl, setImagemUrl] = useState("");
+  const [imagemNome, setImagemNome] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [cadencia, setCadencia] = useState({
-    intervaloMinimo: 10,
-    intervaloMaximo: 30,
+    intervaloMinimo: 30,
+    intervaloMaximo: 60,
     limiteDiario: 100,
     pausaAposMensagens: 50,
     tempoDescanso: 60
@@ -41,10 +44,12 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
       } else {
         setMensagem(campaign.mensagem || "");
       }
+      setImagemUrl(campaign.variaveis?.imagemUrl || "");
+      setImagemNome(campaign.variaveis?.imagemNome || "");
 
       setCadencia({
-        intervaloMinimo: campaign.configuracao_cadencia?.intervaloMinimo || 10,
-        intervaloMaximo: campaign.configuracao_cadencia?.intervaloMaximo || 30,
+        intervaloMinimo: Math.max(30, campaign.configuracao_cadencia?.intervaloMinimo || 30),
+        intervaloMaximo: Math.max(30, campaign.configuracao_cadencia?.intervaloMaximo || 60),
         limiteDiario: campaign.configuracao_cadencia?.limiteDiario || 100,
         pausaAposMensagens: campaign.configuracao_cadencia?.pausaAposMensagens || 50,
         tempoDescanso: campaign.configuracao_cadencia?.tempoDescanso || 60
@@ -61,7 +66,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
     try {
       setLoading(true);
       
-      const variaveis = { ...(campaign.variaveis || {}), mensagens: [mensagem] };
+      const variaveis = { ...(campaign.variaveis || {}), mensagens: [mensagem], imagemUrl, imagemNome };
 
       // Update the campaign
       const { error } = await supabase
@@ -119,6 +124,37 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
     }
   };
 
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
+      toast({ title: 'Imagem inválida', description: 'Use uma imagem de até 10 MB.', variant: 'destructive' });
+      return;
+    }
+    if (cadencia.limiteDiario < 1 || cadencia.intervaloMinimo < 30 || cadencia.intervaloMaximo < cadencia.intervaloMinimo) {
+      toast({ title: 'Cadência inválida', description: 'Confira o limite diário e use intervalos a partir de 30 segundos.', variant: 'destructive' });
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado.');
+      const extension = file.name.split('.').pop() || 'jpg';
+      const path = `whatsapp_campaigns/${user.id}/${crypto.randomUUID()}.${extension}`;
+      const { error } = await supabase.storage.from('empreendimentos').upload(path, file, { contentType: file.type });
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from('empreendimentos').getPublicUrl(path);
+      setImagemUrl(publicUrl);
+      setImagemNome(file.name);
+    } catch (error) {
+      console.error('Erro ao enviar imagem:', error);
+      toast({ title: 'Erro no upload', description: 'Não foi possível armazenar a imagem.', variant: 'destructive' });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -172,6 +208,24 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-2">As mensagens pendentes serão atualizadas com as novas variações de forma aleatória ao salvar.</p>
+            <div className="space-y-2 pt-2">
+              <Label>Imagem da campanha (opcional)</Label>
+              {imagemUrl ? (
+                <div className="flex items-center gap-3 rounded-md border p-3">
+                  <img src={imagemUrl} alt="Prévia" className="h-16 w-16 rounded object-cover" />
+                  <span className="min-w-0 flex-1 truncate text-sm">{imagemNome}</span>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => { setImagemUrl(''); setImagemNome(''); }}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Label htmlFor={`edit-whatsapp-image-${campaign.id}`} className="flex h-10 cursor-pointer items-center justify-center rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent">
+                  {uploadingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image className="mr-2 h-4 w-4" />}
+                  {uploadingImage ? 'Enviando...' : 'Selecionar imagem'}
+                </Label>
+              )}
+              <Input id={`edit-whatsapp-image-${campaign.id}`} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
+            </div>
           </div>
 
           <div className="space-y-4 pt-4 border-t">
@@ -181,6 +235,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                 <Label>Intervalo Min (segundos)</Label>
                 <Input 
                   type="number" 
+                  min={30}
                   value={cadencia.intervaloMinimo}
                   onChange={(e) => setCadencia({...cadencia, intervaloMinimo: parseInt(e.target.value) || 0})}
                 />
@@ -189,6 +244,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                 <Label>Intervalo Max (segundos)</Label>
                 <Input 
                   type="number" 
+                  min={30}
                   value={cadencia.intervaloMaximo}
                   onChange={(e) => setCadencia({...cadencia, intervaloMaximo: parseInt(e.target.value) || 0})}
                 />
@@ -197,6 +253,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                 <Label>Limite Diário de Mensagens</Label>
                 <Input 
                   type="number" 
+                  min={1}
                   value={cadencia.limiteDiario}
                   onChange={(e) => setCadencia({...cadencia, limiteDiario: parseInt(e.target.value) || 0})}
                 />
@@ -205,6 +262,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                 <Label>Pausa após X mensagens</Label>
                 <Input 
                   type="number" 
+                  min={1}
                   value={cadencia.pausaAposMensagens}
                   onChange={(e) => setCadencia({...cadencia, pausaAposMensagens: parseInt(e.target.value) || 0})}
                 />
@@ -213,6 +271,7 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
                 <Label>Tempo Descanso (minutos)</Label>
                 <Input 
                   type="number" 
+                  min={1}
                   value={cadencia.tempoDescanso}
                   onChange={(e) => setCadencia({...cadencia, tempoDescanso: parseInt(e.target.value) || 0})}
                 />

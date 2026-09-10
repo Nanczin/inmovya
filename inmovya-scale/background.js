@@ -24,6 +24,57 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
+async function waitForTabComplete(tabId, timeoutMs = 30000) {
+  const current = await chrome.tabs.get(tabId);
+  if (current.status === 'complete') return;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('Tempo esgotado ao abrir o WhatsApp.'));
+    }, timeoutMs);
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId !== tabId || changeInfo.status !== 'complete') return;
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function sendCampaignMessage(request) {
+  const phone = String(request.phone || '').replace(/\D/g, '');
+  if (!phone) throw new Error('Telefone inválido.');
+  const tab = await chrome.tabs.create({
+    url: `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`,
+    active: false
+  });
+  if (!tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
+
+  try {
+    await waitForTabComplete(tab.id);
+    let lastError;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      try {
+        const response = await chrome.tabs.sendMessage(tab.id, {
+          action: 'campaign_auto_send',
+          text: request.text || '',
+          imageUrl: request.imageUrl || '',
+          imageName: request.imageName || ''
+        });
+        if (response?.ok) return response;
+        lastError = new Error(response?.error || 'Envio não confirmado.');
+      } catch (error) {
+        lastError = error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    throw lastError || new Error('A extensão não conseguiu concluir o envio.');
+  } finally {
+    setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 1500);
+  }
+}
+
 const NATIVE_FILE_HOST = 'com.inmovya.scale.files';
 
 function callNativeFileHost(message) {
@@ -113,6 +164,12 @@ async function setFilesWithDebugger(tabId, paths, kind, targetToken = '') {
 }
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action === 'campaign_send') {
+    sendCampaignMessage(request)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (request?.action === 'debugger_set_files') {
     setFilesWithDebugger(sender.tab?.id, request.paths, request.kind, request.targetToken)
       .then(result => sendResponse(result))

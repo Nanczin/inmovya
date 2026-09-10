@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Plus, Search, Calendar, BarChart, Settings, FileText, Upload, RefreshCw, Play, Pause, Square, Trash2, Eye, Edit, Info } from "lucide-react";
+import { MessageCircle, Plus, Search, Calendar, BarChart, Settings, FileText, Upload, RefreshCw, Play, Pause, Square, Trash2, Eye, Edit, Info, Image, Loader2, X } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -29,9 +29,11 @@ export function WhatsappModule() {
     nome: "",
     listaId: "",
     mensagem: "",
+    imagemUrl: "",
+    imagemNome: "",
     cadencia: {
-      intervaloMinimo: 10,
-      intervaloMaximo: 30,
+      intervaloMinimo: 30,
+      intervaloMaximo: 60,
       limiteDiario: 100,
       pausaAposMensagens: 50,
       tempoDescanso: 60, // em minutos
@@ -44,6 +46,40 @@ export function WhatsappModule() {
   const [listas, setListas] = useState<any[]>([]);
   const [previewMessages, setPreviewMessages] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
+
+  const handleCampaignImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast({ title: 'Arquivo inválido', description: 'Selecione uma imagem.', variant: 'destructive' });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: 'Imagem muito grande', description: 'O limite é de 10 MB.', variant: 'destructive' });
+      return;
+    }
+
+    setIsUploadingImage(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado.');
+      const extension = file.name.split('.').pop() || 'jpg';
+      const path = `whatsapp_campaigns/${user.id}/${crypto.randomUUID()}.${extension}`;
+      const { error } = await supabase.storage.from('empreendimentos').upload(path, file, { contentType: file.type });
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from('empreendimentos').getPublicUrl(path);
+      setNewCampaign(current => ({ ...current, imagemUrl: publicUrl, imagemNome: file.name }));
+      toast({ title: 'Imagem adicionada', description: 'Ela será enviada junto com a mensagem.' });
+    } catch (error) {
+      console.error('Erro ao enviar imagem da campanha:', error);
+      toast({ title: 'Erro no upload', description: 'Não foi possível armazenar a imagem.', variant: 'destructive' });
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   useEffect(() => {
     fetchCampaigns();
@@ -94,6 +130,14 @@ export function WhatsappModule() {
       toast({ title: "Campos obrigatórios", description: "Preencha nome, lista e a mensagem.", variant: "destructive" });
       return;
     }
+    if (!consentConfirmed) {
+      toast({ title: 'Confirme o consentimento', description: 'Dispare apenas para contatos que autorizaram mensagens.', variant: 'destructive' });
+      return;
+    }
+    if (newCampaign.cadencia.limiteDiario < 1 || newCampaign.cadencia.intervaloMinimo < 30 || newCampaign.cadencia.intervaloMaximo < newCampaign.cadencia.intervaloMinimo) {
+      toast({ title: 'Cadência inválida', description: 'Use limite diário maior que zero e intervalos válidos a partir de 30 segundos.', variant: 'destructive' });
+      return;
+    }
 
     try {
       setIsCreating(true);
@@ -108,7 +152,11 @@ export function WhatsappModule() {
           nome: newCampaign.nome,
           lista_id: newCampaign.listaId,
           mensagem: newCampaign.mensagem,
-          variaveis: { mensagens: [newCampaign.mensagem] }, // mantendo compatibilidade
+          variaveis: {
+            mensagens: [newCampaign.mensagem],
+            imagemUrl: newCampaign.imagemUrl,
+            imagemNome: newCampaign.imagemNome
+          },
           configuracao_cadencia: newCampaign.cadencia,
           status: 'Rascunho'
         })
@@ -149,9 +197,10 @@ export function WhatsappModule() {
 
       toast({ title: "Sucesso", description: "Campanha criada com sucesso!" });
       setNewCampaign({
-        nome: "", listaId: "", mensagem: "",
-        cadencia: { intervaloMinimo: 10, intervaloMaximo: 30, limiteDiario: 100, pausaAposMensagens: 50, tempoDescanso: 60 }
+        nome: "", listaId: "", mensagem: "", imagemUrl: "", imagemNome: "",
+        cadencia: { intervaloMinimo: 30, intervaloMaximo: 60, limiteDiario: 100, pausaAposMensagens: 50, tempoDescanso: 60 }
       });
+      setConsentConfirmed(false);
       setActiveTab("historico");
       fetchCampaigns();
     } catch (error) {
@@ -392,6 +441,24 @@ export function WhatsappModule() {
                     <strong>Exemplo de Prévia Aleatória:</strong> {newCampaign.mensagem ? replaceVariables(parseSpintax(newCampaign.mensagem), "João") : "Sua mensagem aparecerá aqui..."}
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <Label>Imagem da campanha (opcional)</Label>
+                  {newCampaign.imagemUrl ? (
+                    <div className="flex items-center gap-3 rounded-md border p-3">
+                      <img src={newCampaign.imagemUrl} alt="Prévia" className="h-16 w-16 rounded object-cover" />
+                      <span className="min-w-0 flex-1 truncate text-sm">{newCampaign.imagemNome}</span>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => setNewCampaign(current => ({ ...current, imagemUrl: '', imagemNome: '' }))}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Label htmlFor="whatsapp-campaign-image" className="flex h-10 cursor-pointer items-center justify-center rounded-md border bg-background px-4 text-sm font-medium hover:bg-accent">
+                      {isUploadingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image className="mr-2 h-4 w-4" />}
+                      {isUploadingImage ? 'Enviando...' : 'Selecionar imagem'}
+                    </Label>
+                  )}
+                  <Input id="whatsapp-campaign-image" type="file" accept="image/*" className="hidden" onChange={handleCampaignImageUpload} disabled={isUploadingImage} />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -406,6 +473,7 @@ export function WhatsappModule() {
                   <Label>Intervalo Mínimo (segundos)</Label>
                   <Input 
                     type="number" 
+                    min={30}
                     value={newCampaign.cadencia.intervaloMinimo}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
@@ -417,6 +485,7 @@ export function WhatsappModule() {
                   <Label>Intervalo Máximo (segundos)</Label>
                   <Input 
                     type="number" 
+                    min={30}
                     value={newCampaign.cadencia.intervaloMaximo}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
@@ -428,6 +497,7 @@ export function WhatsappModule() {
                   <Label>Limite Diário de Mensagens</Label>
                   <Input 
                     type="number" 
+                    min={1}
                     value={newCampaign.cadencia.limiteDiario}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
@@ -439,6 +509,7 @@ export function WhatsappModule() {
                   <Label>Pausa automática após (mensagens)</Label>
                   <Input 
                     type="number" 
+                    min={1}
                     value={newCampaign.cadencia.pausaAposMensagens}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
@@ -450,6 +521,7 @@ export function WhatsappModule() {
                   <Label>Tempo de descanso (minutos)</Label>
                   <Input 
                     type="number" 
+                    min={1}
                     value={newCampaign.cadencia.tempoDescanso}
                     onChange={(e) => setNewCampaign({
                       ...newCampaign, 
@@ -460,6 +532,11 @@ export function WhatsappModule() {
               </div>
             </CardContent>
           </Card>
+
+          <label className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            <input type="checkbox" className="mt-1" checked={consentConfirmed} onChange={event => setConsentConfirmed(event.target.checked)} />
+            <span>Confirmo que os contatos desta lista autorizaram o recebimento de mensagens e que a campanha respeita as políticas do WhatsApp.</span>
+          </label>
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setActiveTab("historico")}>Cancelar</Button>

@@ -14,10 +14,12 @@
                         "storage",
                         "declarativeContent",
                         "unlimitedStorage",
-                        "nativeMessaging"
+                        "nativeMessaging",
+                        "tabs"
                     ],
     "host_permissions":  [
                              "https://web.whatsapp.com/*"
+                             ,"https://inmovya-main.vercel.app/*"
                          ],
     "web_accessible_resources":  [
                                       {
@@ -59,6 +61,16 @@
                                            "content/scraper.js"
                                        ],
                                 "run_at":  "document_end"
+                            }
+                            ,
+                            {
+                                "matches": [
+                                    "https://inmovya-main.vercel.app/*"
+                                ],
+                                "js": [
+                                    "content/campaign-bridge.js"
+                                ],
+                                "run_at": "document_start"
                             }
                         ],
     "background":  {

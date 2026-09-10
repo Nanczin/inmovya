@@ -7,6 +7,14 @@ import { Play, Pause, ExternalLink, Clock, AlertTriangle, Send } from "lucide-re
 import { useToast } from "@/hooks/use-toast";
 import { replaceVariables, parseSpintax } from "@/utils/formatUtils";
 
+let campaignDispatchQueue: Promise<void> = Promise.resolve();
+
+function enqueueCampaignDispatch(task: () => Promise<void>) {
+  const queued = campaignDispatchQueue.then(task, task);
+  campaignDispatchQueue = queued.catch(() => undefined);
+  return queued;
+}
+
 export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaign: any, onFinish: () => void, onUpdateStatus: (id: string, status: string) => void }) {
   const [messages, setMessages] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -18,7 +26,26 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
   // Use a ref to keep track of state inside the effect without re-triggering it constantly if not needed
   const isRunningRef = useRef(campaign.status === 'Em andamento');
   const isExecutingRef = useRef(false);
-  const currentWindowRef = useRef<Window | null>(null);
+  const consecutiveFailuresRef = useRef(0);
+  const lastRestAtRef = useRef(-1);
+
+  const sendWithExtension = (payload: { phone: string; text: string; imageUrl?: string; imageName?: string }) => {
+    return new Promise<void>((resolve, reject) => {
+      const token = crypto.randomUUID();
+      const timeout = window.setTimeout(() => {
+        window.removeEventListener('INMOVYA_WHATSAPP_RESULT', handleResult as EventListener);
+        reject(new Error('Tempo esgotado aguardando a confirmação da extensão.'));
+      }, 90000);
+      const handleResult = (event: CustomEvent) => {
+        if (event.detail?.token !== token) return;
+        window.clearTimeout(timeout);
+        window.removeEventListener('INMOVYA_WHATSAPP_RESULT', handleResult as EventListener);
+        event.detail?.ok ? resolve() : reject(new Error(event.detail?.error || 'O envio não foi confirmado.'));
+      };
+      window.addEventListener('INMOVYA_WHATSAPP_RESULT', handleResult as EventListener);
+      window.dispatchEvent(new CustomEvent('INMOVYA_OPEN_WHATSAPP', { detail: { ...payload, token } }));
+    });
+  };
 
   useEffect(() => {
     // Check if background extension is present
@@ -79,7 +106,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         worker.postMessage('start');
       } else if (!isExecutingRef.current) {
         worker.postMessage('stop');
-        executeNextMessage();
+        enqueueCampaignDispatch(executeNextMessage);
       }
     } else {
       worker.postMessage('stop');
@@ -128,23 +155,56 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       return;
     }
 
-    // Check daily limit
+    if (!extensionReady) {
+      toast({
+        title: 'Extensão necessária',
+        description: 'Atualize e ative a extensão Inmovya Scale para iniciar o disparo confirmado.',
+        variant: 'destructive'
+      });
+      onUpdateStatus(campaign.id, 'Pausada');
+      isExecutingRef.current = false;
+      return;
+    }
+
+    // O limite é global para o usuário, somando todas as campanhas.
     const limiteDiario = campaign.configuracao_cadencia?.limiteDiario;
     if (limiteDiario && limiteDiario > 0) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const sentToday = messages.filter(m => 
-        m.status === 'Entregue' && 
-        m.data_envio && 
-        m.data_envio.startsWith(todayStr)
-      ).length;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        isExecutingRef.current = false;
+        return;
+      }
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const { count: sentToday = 0, error: countError } = await supabase
+        .from('whatsapp_campaign_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('status', 'Entregue')
+        .gte('data_envio', startOfToday.toISOString());
+      if (countError) {
+        toast({ title: 'Não foi possível validar o limite diário', description: 'A campanha foi pausada por segurança.', variant: 'destructive' });
+        onUpdateStatus(campaign.id, 'Pausada');
+        isExecutingRef.current = false;
+        return;
+      }
 
-      if (sentToday >= limiteDiario) {
+      if ((sentToday || 0) >= limiteDiario) {
         toast({ 
           title: "Limite Diário Atingido", 
           description: `A campanha atingiu o limite de ${limiteDiario} mensagens hoje e foi pausada automaticamente.`, 
           variant: "destructive" 
         });
         onUpdateStatus(campaign.id, 'Pausada');
+        isExecutingRef.current = false;
+        return;
+      }
+
+      const pausaApos = Number(campaign.configuracao_cadencia?.pausaAposMensagens) || 0;
+      if (pausaApos > 0 && (sentToday || 0) > 0 && (sentToday || 0) % pausaApos === 0 && lastRestAtRef.current !== sentToday) {
+        lastRestAtRef.current = sentToday || 0;
+        const descanso = Math.max(1, Number(campaign.configuracao_cadencia?.tempoDescanso) || 1);
+        setCooldown(descanso * 60);
         isExecutingRef.current = false;
         return;
       }
@@ -155,7 +215,6 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       // Gera o texto final da mensagem
       const fallbackMsg = replaceVariables(parseSpintax(campaign.mensagem || ""), msg.nome);
       const finalMsg = msg.mensagem_personalizada || fallbackMsg;
-      const text = encodeURIComponent(finalMsg);
       let phone = msg.telefone.replace(/\D/g, '');
       
       // Adiciona DDI do Brasil caso o número venha apenas com DDD e telefone
@@ -163,42 +222,18 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         phone = '55' + phone;
       }
       
-      const url = `https://web.whatsapp.com/send?phone=${phone}&text=${text}&inmovya_auto=1`;
-
-      if (extensionReady) {
-        // Dispara para a extensão abrir a aba em segundo plano
-        window.dispatchEvent(new CustomEvent('INMOVYA_OPEN_WHATSAPP', { detail: { url } }));
-      } else {
-        // Fecha a aba anterior se houver alguma aberta do disparo passado
-        if (currentWindowRef.current && !currentWindowRef.current.closed) {
-          try {
-            currentWindowRef.current.close();
-          } catch (e) {
-            // Ignora erro caso ocorra ao tentar fechar
-          }
-        }
-
-        // Abre direto o web.whatsapp para pular a tela de confirmação (interstitial)
-        const newWindow = window.open(url, '_blank');
-        currentWindowRef.current = newWindow;
-
-        try {
-          if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-            toast({ title: "Pop-up Bloqueado!", description: "Por favor, permita pop-ups para este site para que o WhatsApp Web possa abrir automaticamente.", variant: "destructive" });
-            onUpdateStatus(campaign.id, 'Pausada');
-            return;
-          }
-        } catch (e) {
-          // Ignora erro de cross-origin caso ocorra ao tentar ler propriedades da janela
-        }
-      }
-
-      await new Promise(r => setTimeout(r, 1000));
+      await sendWithExtension({
+        phone,
+        text: finalMsg,
+        imageUrl: campaign.variaveis?.imagemUrl || '',
+        imageName: campaign.variaveis?.imagemNome || ''
+      });
 
       await supabase
         .from('whatsapp_campaign_messages')
         .update({ status: 'Entregue', data_envio: new Date().toISOString() })
         .eq('id', msg.id);
+      consecutiveFailuresRef.current = 0;
         
       // Update local state
       const updatedMessages = [...messages];
@@ -217,8 +252,8 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         let min = campaign.configuracao_cadencia?.intervaloMinimo || 10;
         let max = campaign.configuracao_cadencia?.intervaloMaximo || 30;
         
-        // Garante tempo mínimo de 15s para a extensão conseguir enviar e fechar a aba
-        if (min < 15) min = 15;
+        // Intervalo mínimo conservador para reduzir rajadas de envio.
+        if (min < 30) min = 30;
         if (max < min) max = min;
         
         const randomSeconds = Math.floor(Math.random() * (max - min + 1) + min);
@@ -238,6 +273,11 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         setMessages(updatedMessages);
         setCurrentIndex(currentIndex + 1);
         setCooldown(5); // shorter cooldown on fail
+        consecutiveFailuresRef.current += 1;
+        if (consecutiveFailuresRef.current >= 3) {
+          toast({ title: 'Campanha pausada', description: 'Três envios consecutivos falharam. Verifique o WhatsApp antes de continuar.', variant: 'destructive' });
+          onUpdateStatus(campaign.id, 'Pausada');
+        }
       } catch (e) {}
     } finally {
       isExecutingRef.current = false;
