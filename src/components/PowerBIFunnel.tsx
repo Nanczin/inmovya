@@ -21,6 +21,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteCh
   const [loading, setLoading] = useState(false);
 
   const [manualMetrics, setManualMetrics] = useState({
+    ligacoes: 0,
     visitas: 0,
     documentacao: 0,
     negociacao: 0,
@@ -46,6 +47,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteCh
 
         if (data) {
           setManualMetrics({
+            ligacoes: data.ligacoes || 0,
             visitas: data.visitas || 0,
             documentacao: data.documentacao || 0,
             negociacao: data.negociacao || 0,
@@ -53,7 +55,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteCh
             interacaoAjuste: data.interacao_ajuste || 0
           });
         } else {
-          setManualMetrics({ visitas: 0, documentacao: 0, negociacao: 0, venda: 0, interacaoAjuste: 0 });
+          setManualMetrics({ ligacoes: 0, visitas: 0, documentacao: 0, negociacao: 0, venda: 0, interacaoAjuste: 0 });
         }
       } catch (error) {
         console.error('Error fetching powerbi metrics:', error);
@@ -82,6 +84,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteCh
         .upsert({
           user_id: user.id,
           period: periodo,
+          ligacoes: manualMetrics.ligacoes,
           visitas: manualMetrics.visitas,
           documentacao: manualMetrics.documentacao,
           negociacao: manualMetrics.negociacao,
@@ -113,6 +116,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteCh
   const data = [
     { name: 'Leads', valor: leadsCount, fill: '#3b82f6' },
     { name: 'Interações', valor: finalInteracoes, fill: '#8b5cf6' },
+    { name: 'Ligações', valor: Number(manualMetrics.ligacoes) || 0, fill: '#06b6d4' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
     { name: 'Documentação', valor: Number(manualMetrics.documentacao) || 0, fill: '#10b981' },
     { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#ef4444' },
@@ -156,6 +160,10 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onAjusteCh
               <div className="flex items-center justify-between gap-4">
                 <Label className="w-1/2 text-xs">Interações (Ajuste)</Label>
                 <Input type="number" value={manualMetrics.interacaoAjuste} onChange={e => setManualMetrics({...manualMetrics, interacaoAjuste: parseInt(e.target.value) || 0})} className="w-1/2" />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <Label className="w-1/2 text-xs">Ligações</Label>
+                <Input type="number" min="0" value={manualMetrics.ligacoes} onChange={e => setManualMetrics({...manualMetrics, ligacoes: parseInt(e.target.value) || 0})} className="w-1/2" />
               </div>
               <div className="flex items-center justify-between gap-4">
                 <Label className="w-1/2 text-xs">Visitas</Label>
