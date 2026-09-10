@@ -231,6 +231,8 @@ export function LigacoesModule() {
   const [showMetasDialog, setShowMetasDialog] = useState(false);
   const [metaLigacoes, setMetaLigacoes] = useState(200);
   const [ligacoesHoje, setLigacoesHoje] = useState(0);
+  const [ligacoesManuaisHoje, setLigacoesManuaisHoje] = useState(0);
+  const ligacoesHojeComAjuste = ligacoesHoje + ligacoesManuaisHoje;
 
   // Edição de Contato
   const [isEditingContact, setIsEditingContact] = useState(false);
@@ -295,6 +297,19 @@ export function LigacoesModule() {
           
         if (!error && count !== null) {
           setLigacoesHoje(count);
+        }
+
+        const { data: manualMetrics, error: manualMetricsError } = await supabase
+          .from('powerbi_funnel_metrics')
+          .select('ligacoes')
+          .eq('user_id', user.id)
+          .eq('period', 'hoje')
+          .maybeSingle();
+
+        if (!manualMetricsError && manualMetrics) {
+          setLigacoesManuaisHoje(Number(manualMetrics.ligacoes) || 0);
+        } else {
+          setLigacoesManuaisHoje(0);
         }
       } catch (err) {
         console.error("Erro ao carregar progresso:", err);
@@ -1146,9 +1161,9 @@ export function LigacoesModule() {
           <div className="flex-1">
             <div className="flex justify-between text-sm mb-1">
               <span className="text-muted-foreground font-medium">Meta Diária</span>
-              <span className="font-bold">{ligacoesHoje} / {metaLigacoes}</span>
+              <span className="font-bold">{ligacoesHojeComAjuste} / {metaLigacoes}</span>
             </div>
-            <Progress value={Math.min((ligacoesHoje / metaLigacoes) * 100, 100)} className="h-2" />
+            <Progress value={Math.min((ligacoesHojeComAjuste / metaLigacoes) * 100, 100)} className="h-2" />
           </div>
           <Button variant="outline" size="sm" onClick={() => setShowMetasDialog(true)} className="flex-shrink-0" title="Definir Metas">
             <Target className="w-4 h-4" />
@@ -1275,9 +1290,9 @@ export function LigacoesModule() {
                 <div className="flex flex-col gap-1 w-full sm:w-48 bg-muted/30 p-2 rounded-md">
                   <div className="flex justify-between text-xs text-muted-foreground font-medium">
                     <span>Meta Diária</span>
-                    <span>{ligacoesHoje} / {metaLigacoes}</span>
+                    <span>{ligacoesHojeComAjuste} / {metaLigacoes}</span>
                   </div>
-                  <Progress value={Math.min((ligacoesHoje / metaLigacoes) * 100, 100)} className="h-1.5" />
+                  <Progress value={Math.min((ligacoesHojeComAjuste / metaLigacoes) * 100, 100)} className="h-1.5" />
                 </div>
               </div>
 

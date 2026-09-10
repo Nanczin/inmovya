@@ -114,6 +114,8 @@ export function Dashboard({
   const [activeLeads, setActiveLeads] = useState(0);
   const [callsToday, setCallsToday] = useState(0);
   const [interacoes, setInteracoes] = useState(0);
+  const [manualCallsToday, setManualCallsToday] = useState(0);
+  const [manualInteractionAdjustment, setManualInteractionAdjustment] = useState(0);
 
   // Carregar dados de métricas reais
   useEffect(() => {
@@ -134,9 +136,17 @@ export function Dashboard({
       })
       .subscribe();
 
+    const channelManualMetrics = supabase
+      .channel('dashboard-manual-metrics')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'powerbi_funnel_metrics' }, () => {
+        loadMetrics();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channelContacts);
       supabase.removeChannel(channelCalls);
+      supabase.removeChannel(channelManualMetrics);
     };
   }, []);
 
@@ -174,6 +184,21 @@ export function Dashboard({
         
       if (interacoesCount !== null) setInteracoes(interacoesCount);
 
+      const { data: manualMetrics, error: manualMetricsError } = await supabase
+        .from('powerbi_funnel_metrics')
+        .select('ligacoes, interacao_ajuste')
+        .eq('user_id', user.id)
+        .eq('period', 'hoje')
+        .maybeSingle();
+
+      if (!manualMetricsError && manualMetrics) {
+        setManualCallsToday(Number(manualMetrics.ligacoes) || 0);
+        setManualInteractionAdjustment(Number(manualMetrics.interacao_ajuste) || 0);
+      } else {
+        setManualCallsToday(0);
+        setManualInteractionAdjustment(0);
+      }
+
     } catch (error) {
       console.error("Erro ao carregar métricas do dashboard:", error);
     }
@@ -188,14 +213,14 @@ export function Dashboard({
     color: "text-primary"
   }, {
     title: "Ligações Hoje",
-    value: callsToday.toString(),
+    value: (callsToday + manualCallsToday).toString(),
     change: "Em tempo real",
     changeType: "neutral" as const,
     icon: Phone,
     color: "text-accent"
   }, {
     title: "Interações",
-    value: interacoes.toString(),
+    value: (interacoes + manualInteractionAdjustment).toString(),
     change: "Em tempo real",
     changeType: "neutral" as const,
     icon: TrendingUp,
