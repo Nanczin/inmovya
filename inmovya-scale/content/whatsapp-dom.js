@@ -246,25 +246,42 @@ window.IS.WhatsAppDOM = {
   },
 
   async triggerSend(allowKeyboardFallback = true) {
+    const input = this.findMessageInput();
     for (let i = 0; i < 20; i++) {
-      const sendIcons = document.querySelectorAll('[role="dialog"] span[data-icon="send"], span[data-icon="send"]');
-      for (let j = sendIcons.length - 1; j >= 0; j--) {
-        const icon = sendIcons[j];
-        const button = icon.closest('button, div[role="button"]');
-        if (button && button.offsetParent !== null && !button.closest('#inmovya-scale-root')) {
-          button.click();
-          return true;
-        }
+      const footer = input?.closest('footer') || document.querySelector('#main footer');
+      const sendButton = this.findSendButtonInside(footer);
+      if (sendButton) {
+        sendButton.click();
+        return await this.waitForComposerCleared(input);
       }
       await this.delay(150);
     }
 
-    const input = allowKeyboardFallback ? this.findMessageInput() : null;
+    if (!allowKeyboardFallback || !input) return false;
+    input.focus();
+    try {
+      const nativeResponse = await chrome.runtime.sendMessage({ action: 'native_press_enter' });
+      if (nativeResponse?.ok && await this.waitForComposerCleared(input)) return true;
+    } catch (error) {
+      window.IS.log('Enter nativo indisponível para texto; usando evento do navegador.', error);
+    }
+
+    const eventOptions = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+    input.dispatchEvent(new KeyboardEvent('keydown', eventOptions));
+    input.dispatchEvent(new KeyboardEvent('keypress', eventOptions));
+    input.dispatchEvent(new KeyboardEvent('keyup', eventOptions));
+    return await this.waitForComposerCleared(input);
+  },
+
+  async waitForComposerCleared(input, timeoutMs = 3000) {
     if (!input) return false;
-    input.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
-    }));
-    return true;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const currentText = (input.innerText || input.textContent || '').replace(/[\u200B\uFEFF]/g, '').trim();
+      if (!currentText) return true;
+      await this.delay(100);
+    }
+    return false;
   },
 
   findSendButtonInside(root) {
