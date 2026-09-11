@@ -20,6 +20,7 @@ window.IS.SettingsUI = {
   editingId: null,
   editingOrder: null,
   draftAttachments: [],
+  bulkSending: false,
 
   get htmlTemplate() {
     return `<div id="is-native-settings-container" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--inmovya-background); color:var(--inmovya-text); overflow-y:auto; overflow-x:hidden;">
@@ -216,6 +217,15 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
+      const bulkButton = e.target.closest('.is-kanban-send-stage');
+      if (bulkButton) {
+        await this.sendKanbanStageBulk(
+          bulkButton.getAttribute('data-stage-id') || '',
+          bulkButton
+        );
+        return;
+      }
+
       const addReplyButton = e.target.closest('.is-kanban-add-reply');
       if (addReplyButton) {
         await this.openReplyForm(null, this.selectedCategoryId);
@@ -494,6 +504,15 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-labels-list').addEventListener('click', (event) => {
+      const deleteContactButton = event.target.closest('.is-delete-crm-lead');
+      if (deleteContactButton) {
+        this.deleteCrmLead(
+          decodeURIComponent(deleteContactButton.getAttribute('data-lead-key') || ''),
+          decodeURIComponent(deleteContactButton.getAttribute('data-lead-name') || '')
+        );
+        return;
+      }
+
       const deleteButton = event.target.closest('.is-delete-synced-label');
       if (deleteButton) {
         const labelName = deleteButton.getAttribute('data-label-name');
@@ -765,6 +784,7 @@ window.IS.SettingsUI = {
             <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${stageLeads.length}</span>
           </div>
           <div style="margin-top:4px; font-size:9px; line-height:1.3; opacity:0.84;">${window.IS.escapeHTML(preview || 'Etapa da resposta rápida')}</div>
+          ${isReplyStage && stageLeads.length ? `<button type="button" class="is-kanban-send-stage" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="width:100%; margin-top:7px; padding:6px 8px; border:1px solid rgba(255,255,255,0.65); border-radius:5px; background:rgba(255,255,255,0.16); color:white; cursor:pointer; font-size:10px; font-weight:bold;">▶ Enviar etapa para ${stageLeads.length} lead(s)</button>` : ''}
         </div>
         <div style="display:flex; flex-direction:column; gap:7px; min-height:80px; padding:9px;">${leadCards}</div>
       </section>`;
@@ -915,10 +935,10 @@ window.IS.SettingsUI = {
     return Array.from(leadsByKey.values()).sort((a, b) => a.contact.name.localeCompare(b.contact.name, 'pt-BR'));
   },
 
-  async openKanbanLead(leadKey, stageId = 'unassigned', triggerButton = null) {
+  async openKanbanLead(leadKey, stageId = 'unassigned', triggerButton = null, options = {}) {
     const lead = this.getKanbanLeads().find(item => item.key === leadKey);
     if (!lead) return;
-    const restoreFullscreen = this.kanbanFullscreen;
+    const restoreFullscreen = this.kanbanFullscreen && options.manageFullscreen !== false;
     const replies = (await window.IS.Storage.getReplies())
       .filter(reply => (reply.categoryId || 'default-category') === this.selectedCategoryId)
       .sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -948,7 +968,7 @@ window.IS.SettingsUI = {
       }
       if (stageId === 'completed') {
         this.showToast('Conversa aberta. Este lead já concluiu as etapas.');
-        return;
+        return true;
       }
       if (replyIndex < 0 || !replies[replyIndex]) {
         throw new Error('Não existe uma resposta rápida disponível para esta etapa.');
@@ -973,10 +993,12 @@ window.IS.SettingsUI = {
         ? { ...item, usageCount: reply.usageCount, lastUsedAt: reply.lastUsedAt }
         : item));
       await this.renderCategories();
-      this.showToast(`Resposta enviada. Lead avançou para ${replies[replyIndex + 1]?.title || 'Concluído'}.`);
+      if (!options.silentSuccess) this.showToast(`Resposta enviada. Lead avançou para ${replies[replyIndex + 1]?.title || 'Concluído'}.`);
+      return true;
     } catch (error) {
       window.IS.error('Erro ao enviar etapa do Kanban', error);
-      this.showToast(error.message || 'Não foi possível enviar a resposta.');
+      if (!options.silentError) this.showToast(error.message || 'Não foi possível enviar a resposta.');
+      return false;
     } finally {
       if (restoreFullscreen && !this.kanbanFullscreen) {
         await this.toggleKanbanFullscreen(true);
@@ -984,6 +1006,76 @@ window.IS.SettingsUI = {
       if (triggerButton && triggerButton.isConnected) {
         triggerButton.disabled = false;
         triggerButton.style.opacity = '';
+      }
+    }
+  },
+
+  async sendKanbanStageBulk(stageId, triggerButton = null) {
+    if (!stageId || this.bulkSending) return false;
+    const replies = (await window.IS.Storage.getReplies())
+      .filter(reply => (reply.categoryId || 'default-category') === this.selectedCategoryId)
+      .sort((left, right) => (left.order || 0) - (right.order || 0));
+    if (!replies.some(reply => reply.id === stageId)) {
+      this.showToast('Esta coluna não possui uma resposta para disparar.');
+      return false;
+    }
+
+    const stored = await chrome.storage.local.get(['leadCategoryAssignments', 'leadStageAssignments', 'hiddenKanbanLeads']);
+    const categoryAssignments = stored.leadCategoryAssignments || {};
+    const stageAssignments = stored.leadStageAssignments || {};
+    const hidden = new Set(Array.isArray(stored.hiddenKanbanLeads) ? stored.hiddenKanbanLeads : []);
+    const leads = this.getKanbanLeads().filter(lead => {
+      if (hidden.has(lead.key)) return false;
+      const categoryId = categoryAssignments[lead.key] || 'default-category';
+      const assignedStage = stageAssignments[`${this.selectedCategoryId}:${lead.key}`] || 'unassigned';
+      return categoryId === this.selectedCategoryId && assignedStage === stageId;
+    });
+    if (!leads.length) {
+      this.showToast('Nenhum lead disponível nesta etapa.');
+      return false;
+    }
+    if (!await this.showConfirm('Enviar etapa em massa', `Enviar esta resposta para ${leads.length} lead(s), um por vez, com intervalo de 30 segundos? Somente envios confirmados avançarão de etapa.`)) return false;
+
+    const wasFullscreen = this.kanbanFullscreen;
+    this.bulkSending = true;
+    if (triggerButton) {
+      triggerButton.disabled = true;
+      triggerButton.textContent = `Enviando 0/${leads.length}…`;
+    }
+    let sent = 0;
+    let failed = 0;
+    let consecutiveFailures = 0;
+    try {
+      if (wasFullscreen) await this.toggleKanbanFullscreen(false);
+      for (let index = 0; index < leads.length; index++) {
+        if (triggerButton?.isConnected) triggerButton.textContent = `Enviando ${index + 1}/${leads.length}…`;
+        const ok = await this.openKanbanLead(leads[index].key, stageId, null, {
+          manageFullscreen: false,
+          silentSuccess: true,
+          silentError: true
+        });
+        if (ok) {
+          sent += 1;
+          consecutiveFailures = 0;
+        } else {
+          failed += 1;
+          consecutiveFailures += 1;
+        }
+        if (consecutiveFailures >= 3) {
+          this.showToast('Disparo interrompido após 3 falhas consecutivas.');
+          break;
+        }
+        if (index < leads.length - 1) await window.IS.Scraper.delay(30000);
+      }
+      await this.renderCategories();
+      this.showToast(`Etapa concluída: ${sent} enviado(s)${failed ? `, ${failed} com falha` : ''}.`);
+      return failed === 0;
+    } finally {
+      this.bulkSending = false;
+      if (wasFullscreen && !this.kanbanFullscreen) await this.toggleKanbanFullscreen(true);
+      if (triggerButton?.isConnected) {
+        triggerButton.disabled = false;
+        triggerButton.textContent = `▶ Enviar etapa para ${leads.length} lead(s)`;
       }
     }
   },
@@ -1014,6 +1106,43 @@ window.IS.SettingsUI = {
     });
     await this.renderCategories();
     this.showToast('Lead removido do Kanban.');
+    return true;
+  },
+
+  async deleteCrmLead(leadKey, leadName = '') {
+    if (!leadKey) return false;
+    const confirmed = await this.showConfirm(
+      'Excluir lead do CRM',
+      `Deseja remover ${leadName || 'este lead'} do CRM sincronizado e do Kanban? O contato real no WhatsApp será preservado.`
+    );
+    if (!confirmed) return false;
+
+    this.waLabels = this.waLabels
+      .map(label => ({
+        ...label,
+        contacts: (Array.isArray(label.contacts) ? label.contacts : []).filter(contact => {
+          const normalizedName = window.IS.removeAccents((contact.name || '').toLocaleLowerCase().trim());
+          const contactKey = contact.chatId || normalizedName;
+          return contactKey !== leadKey;
+        })
+      }));
+    const data = await chrome.storage.local.get(['hiddenKanbanLeads', 'leadCategoryAssignments', 'leadStageAssignments']);
+    const hidden = Array.isArray(data.hiddenKanbanLeads) ? data.hiddenKanbanLeads.filter(key => key !== leadKey) : [];
+    const categoryAssignments = data.leadCategoryAssignments || {};
+    const stageAssignments = data.leadStageAssignments || {};
+    delete categoryAssignments[leadKey];
+    Object.keys(stageAssignments).forEach(key => {
+      if (key.endsWith(`:${leadKey}`)) delete stageAssignments[key];
+    });
+    await chrome.storage.local.set({
+      waLabels: this.waLabels,
+      hiddenKanbanLeads: hidden,
+      leadCategoryAssignments: categoryAssignments,
+      leadStageAssignments: stageAssignments
+    });
+    this.renderWaLabels();
+    await this.renderCategories();
+    this.showToast('Lead removido do CRM sincronizado e do Kanban.');
     return true;
   },
 
@@ -1089,11 +1218,17 @@ window.IS.SettingsUI = {
       </div>
       <div style="font-size:12px; font-weight:bold; margin-top:6px;">Contatos em ${window.IS.escapeHTML(selectedLabel.name)}</div>
       <div style="display:flex; flex-direction:column; gap:6px;">
-        ${contacts.length ? contacts.map((contact, contactIndex) => `
-          <button type="button" class="is-label-contact" data-label-index="${selectedLabelIndex}" data-contact-index="${contactIndex}" style="padding:9px 10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface); color:var(--inmovya-text); font-size:12px; text-align:left; cursor:pointer;">
-            💬 ${window.IS.escapeHTML(contact.name)}
-          </button>
-        `).join('') : '<div style="padding:12px; text-align:center; color:#888; font-size:12px;">Nenhum contato nesta etiqueta.</div>'}
+        ${contacts.length ? contacts.map((contact, contactIndex) => {
+          const normalizedName = window.IS.removeAccents((contact.name || '').toLocaleLowerCase().trim());
+          const leadKey = contact.chatId || normalizedName;
+          return `
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button type="button" class="is-label-contact" data-label-index="${selectedLabelIndex}" data-contact-index="${contactIndex}" style="flex:1; padding:9px 10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface); color:var(--inmovya-text); font-size:12px; text-align:left; cursor:pointer;">
+              💬 ${window.IS.escapeHTML(contact.name)}
+            </button>
+            <button type="button" class="is-delete-crm-lead" data-lead-key="${encodeURIComponent(leadKey)}" data-lead-name="${encodeURIComponent(contact.name)}" title="Excluir do CRM sincronizado" style="flex:0 0 auto; width:30px; height:30px; border:1px solid #efb2b7; border-radius:6px; background:#fff; color:#c62838; cursor:pointer; font-size:16px;">×</button>
+          </div>`;
+        }).join('') : '<div style="padding:12px; text-align:center; color:#888; font-size:12px;">Nenhum contato nesta etiqueta.</div>'}
       </div>
     `;
   },
