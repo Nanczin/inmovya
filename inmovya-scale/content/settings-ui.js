@@ -994,7 +994,7 @@ window.IS.SettingsUI = {
       await window.IS.Storage.saveReplies(allReplies.map(item => item.id === reply.id
         ? { ...item, usageCount: reply.usageCount, lastUsedAt: reply.lastUsedAt }
         : item));
-      await this.renderCategories();
+      if (!options.deferRender) await this.renderCategories();
       if (!options.silentSuccess) this.showToast(`Resposta enviada. Lead avançou para ${replies[replyIndex + 1]?.title || 'Concluído'}.`);
       return true;
     } catch (error) {
@@ -1046,26 +1046,21 @@ window.IS.SettingsUI = {
     }
     let sent = 0;
     let failed = 0;
-    let consecutiveFailures = 0;
     try {
       if (wasFullscreen) await this.toggleKanbanFullscreen(false);
       for (let index = 0; index < leads.length; index++) {
+        window.IS.log(`Disparo do Kanban: lead ${index + 1}/${leads.length} (${leads[index].contact.name})`);
         if (triggerButton?.isConnected) triggerButton.textContent = `Enviando ${index + 1}/${leads.length}…`;
         const ok = await this.openKanbanLead(leads[index].key, stageId, null, {
           manageFullscreen: false,
           silentSuccess: true,
-          silentError: true
+          silentError: true,
+          deferRender: true
         });
         if (ok) {
           sent += 1;
-          consecutiveFailures = 0;
         } else {
           failed += 1;
-          consecutiveFailures += 1;
-        }
-        if (consecutiveFailures >= 3) {
-          this.showToast('Disparo interrompido após 3 falhas consecutivas.');
-          break;
         }
         if (index < leads.length - 1) await window.IS.Scraper.delay(60000);
       }
