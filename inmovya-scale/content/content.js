@@ -36,26 +36,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'campaign_auto_send') {
     (async () => {
       try {
-        const input = await window.IS.WhatsAppDOM.waitForMessageInput(20000);
+        let input = await window.IS.WhatsAppDOM.waitForMessageInput(30000);
         if (!input) throw new Error('A conversa do WhatsApp não ficou pronta.');
+        input.focus();
+        await window.IS.WhatsAppDOM.delay(1200);
+        input = window.IS.WhatsAppDOM.findMessageInput();
+        if (!input) throw new Error('A conversa do WhatsApp ainda está carregando.');
 
-        if (request.attachment?.nativePath) {
-          const sent = await window.IS.WhatsAppDOM.sendAttachmentBatch([{
+        const attachments = request.attachment?.nativePath
+          ? [{
             id: window.IS.generateUUID(),
             name: request.attachment.name || 'imagem-campanha.jpg',
             type: request.attachment.type || 'image/jpeg',
             size: request.attachment.size || 0,
-            nativePath: request.attachment.nativePath
-          }], request.text || '');
-          if (!sent) throw new Error('O WhatsApp não confirmou o envio da imagem.');
-        } else {
-          if (!await window.IS.WhatsAppDOM.insertMessage(request.text || '')) {
-            throw new Error('O WhatsApp não aceitou a mensagem.');
-          }
-          if (!await window.IS.WhatsAppDOM.triggerSend()) {
-            throw new Error('O botão de envio não foi encontrado.');
-          }
-        }
+            nativePath: request.attachment.nativePath,
+            messageIndex: 0,
+            useCaption: !!String(request.text || '').trim()
+          }]
+          : [];
+        const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
+          request.text || '',
+          attachments,
+          { sendSingleText: true }
+        );
+        if (!sent) throw new Error('O WhatsApp não confirmou o envio da campanha.');
 
         sendResponse({ ok: true });
       } catch (error) {
