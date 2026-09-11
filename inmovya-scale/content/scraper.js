@@ -254,19 +254,35 @@ window.IS.Scraper = {
     if (!contact) return false;
     const expectedName = this.normalizeText(contact.name);
     const currentName = this.normalizeText(window.IS.WhatsAppDOM.getCurrentChatName());
-    const namesMatch = expectedName && currentName && (
-      currentName === expectedName ||
-      (expectedName.length >= 5 && currentName.includes(expectedName)) ||
-      (currentName.length >= 5 && expectedName.includes(currentName))
+    const nameMatches = candidate => expectedName && candidate && (
+      candidate === expectedName ||
+      (expectedName.length >= 5 && candidate.includes(expectedName)) ||
+      (candidate.length >= 5 && expectedName.includes(candidate))
     );
+    const namesMatch = nameMatches(currentName);
     if (namesMatch) return true;
+
+    // O WhatsApp altera com frequência o elemento usado como título da conversa.
+    // Confira todos os textos visíveis do cabeçalho em vez de depender apenas do
+    // primeiro span encontrado por getCurrentChatName().
+    const header = document.querySelector('#main header');
+    if (header) {
+      const headerNames = Array.from(header.querySelectorAll('[title], [aria-label], span[dir="auto"]'))
+        .filter(element => this.isVisible(element))
+        .map(element => this.normalizeText(
+          element.getAttribute('title') || element.getAttribute('aria-label') || element.textContent
+        ));
+      if (headerNames.some(nameMatches)) return true;
+    }
 
     const expectedId = String(contact.chatId || '').trim();
     const expectedDigits = expectedId.replace(/\D/g, '');
-    if (expectedDigits.length < 7) return false;
     const activeRows = Array.from(document.querySelectorAll(
       '#pane-side [aria-selected="true"], #side [aria-selected="true"], #pane-side [data-selected="true"], #side [data-selected="true"]'
     ));
+    const selectedNameMatches = activeRows.some(row => nameMatches(this.normalizeText(this.getContactName(row))));
+    if (selectedNameMatches) return true;
+    if (expectedDigits.length < 7) return false;
     return activeRows.some(row => {
       const currentId = this.getContactIdentity(row);
       const currentDigits = currentId.replace(/\D/g, '');
