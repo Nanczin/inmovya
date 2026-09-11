@@ -221,6 +221,41 @@ window.IS.Scraper = {
     return true;
   },
 
+  async openChatRow(row, contact) {
+    if (!row) return false;
+    const title = row.querySelector(
+      '[data-testid="cell-frame-title"] [title], [data-testid="cell-frame-title"][title], span[dir="auto"][title], span[title]'
+    );
+    const target = (title && title.closest('[role="button"], [tabindex]')) || title || row;
+    const rect = target.getBoundingClientRect();
+    const eventOptions = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: rect.left + Math.min(rect.width / 2, 80),
+      clientY: rect.top + (rect.height / 2),
+      button: 0,
+      buttons: 1,
+      view: window
+    };
+
+    target.focus({ preventScroll: true });
+    target.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+    target.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+    target.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0 }));
+    target.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
+    target.click();
+
+    const input = await window.IS.WhatsAppDOM.waitForMessageInput(5000);
+    if (!input) return false;
+    this.recentExactContactOpen = {
+      name: contact.name,
+      chatId: contact.chatId || this.getContactIdentity(row),
+      openedAt: Date.now()
+    };
+    return true;
+  },
+
   isLabelViewActive(labelName, clickedRow = null) {
     const expected = this.normalizeText(labelName);
     const headings = document.querySelectorAll('#side header, #side [role="heading"], #side h1, #side h2, #side h3');
@@ -353,13 +388,7 @@ window.IS.Scraper = {
 
     const contactRow = await this.findContactRowWithScroll(contact);
     if (!contactRow) return false;
-    contactRow.click();
-    this.recentExactContactOpen = {
-      name: contact.name,
-      chatId: contact.chatId || this.getContactIdentity(contactRow),
-      openedAt: Date.now()
-    };
-    return true;
+    return this.openChatRow(contactRow, contact);
   },
 
   async findLabelRowByName(name) {
@@ -477,8 +506,7 @@ window.IS.Scraper = {
     if (labelRow) {
       const contactRow = await this.findContactRowWithScroll(contact);
       if (contactRow) {
-        contactRow.click();
-        opened = true;
+        opened = await this.openChatRow(contactRow, contact);
       }
     }
     if (!opened) opened = await this.openContactBySearch(contact);
