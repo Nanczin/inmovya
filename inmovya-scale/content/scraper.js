@@ -2,6 +2,8 @@
 window.IS = window.IS || {};
 
 window.IS.Scraper = {
+  recentExactContactOpen: null,
+
   delay(ms) {
     return new Promise(res => setTimeout(res, ms));
   },
@@ -282,16 +284,35 @@ window.IS.Scraper = {
     ));
     const selectedNameMatches = activeRows.some(row => nameMatches(this.normalizeText(this.getContactName(row))));
     if (selectedNameMatches) return true;
-    if (expectedDigits.length < 7) return false;
-    return activeRows.some(row => {
+    const identityMatches = expectedDigits.length >= 7 && activeRows.some(row => {
       const currentId = this.getContactIdentity(row);
       const currentDigits = currentId.replace(/\D/g, '');
       return (currentId && currentId === expectedId) ||
         (currentDigits.length >= 7 && currentDigits.slice(-8) === expectedDigits.slice(-8));
-    }) || (() => {
+    });
+    const headerIdentityMatches = expectedDigits.length >= 7 && (() => {
       const headerDigits = String(window.IS.WhatsAppDOM.getCurrentChatName() || '').replace(/\D/g, '');
       return headerDigits.length >= 7 && headerDigits.slice(-8) === expectedDigits.slice(-8);
     })();
+    if (identityMatches || headerIdentityMatches) return true;
+
+    // A busca já restringiu o clique a uma linha cujo nome/ID corresponde
+    // exatamente ao lead. Algumas versões do WhatsApp não expõem mais o título
+    // nem aria-selected depois da abertura. Nesse caso, aceite por poucos
+    // segundos o clique exato, somente quando o compositor da conversa existir.
+    const recent = this.recentExactContactOpen;
+    const recentName = this.normalizeText(recent && recent.name);
+    const recentId = String(recent && recent.chatId || '').trim();
+    const sameRecentContact = recent && (
+      (expectedId && recentId && expectedId === recentId) ||
+      (expectedName && recentName === expectedName)
+    );
+    return !!(
+      sameRecentContact &&
+      Date.now() - recent.openedAt < 10000 &&
+      document.querySelector('#main header') &&
+      window.IS.WhatsAppDOM.findMessageInput()
+    );
   },
 
   findSearchInput() {
@@ -316,6 +337,7 @@ window.IS.Scraper = {
   },
 
   async openContactBySearch(contact) {
+    this.recentExactContactOpen = null;
     const searchInput = await this.returnToChatList();
     if (!searchInput) return false;
 
@@ -332,6 +354,11 @@ window.IS.Scraper = {
     const contactRow = await this.findContactRowWithScroll(contact);
     if (!contactRow) return false;
     contactRow.click();
+    this.recentExactContactOpen = {
+      name: contact.name,
+      chatId: contact.chatId || this.getContactIdentity(contactRow),
+      openedAt: Date.now()
+    };
     return true;
   },
 
