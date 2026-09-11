@@ -977,7 +977,11 @@ window.IS.SettingsUI = {
       const reply = replies[replyIndex];
       const contactName = window.IS.WhatsAppDOM.getCurrentChatName() || lead.contact.name;
       const finalMessage = await window.IS.Variables.parseMessage(reply.message || '', contactName);
-      const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(finalMessage, reply.attachments || []);
+      const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
+        finalMessage,
+        reply.attachments || [],
+        { sendSingleText: true }
+      );
       if (!sent) throw new Error('A resposta rápida não pôde ser enviada para este lead.');
 
       const nextStageId = replies[replyIndex + 1] ? replies[replyIndex + 1].id : 'completed';

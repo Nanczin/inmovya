@@ -655,7 +655,7 @@ window.IS.WhatsAppDOM = {
     document.getElementById('inmovya-send-mask')?.remove();
   },
 
-  async insertSequenceAndAttachments(text, attachments = []) {
+  async insertSequenceAndAttachments(text, attachments = [], options = {}) {
     if (attachments.length) this.showSendMask(attachments.length);
     let currentAttachment = 0;
     try {
@@ -681,7 +681,7 @@ window.IS.WhatsAppDOM = {
 
       if (message.trim() && !hasCaptionedAttachment) {
         if (!await this.insertMessage(message)) return false;
-        const mustSendText = parts.length > 1 || normalizedAttachments.length > 0;
+        const mustSendText = !!options.sendSingleText || parts.length > 1 || normalizedAttachments.length > 0;
         if (mustSendText) {
           await this.delay(250);
           if (!await this.triggerSend()) return false;
