@@ -226,28 +226,54 @@ window.IS.Scraper = {
     const title = row.querySelector(
       '[data-testid="cell-frame-title"] [title], [data-testid="cell-frame-title"][title], span[dir="auto"][title], span[title]'
     );
-    const target = (title && title.closest('[role="button"], [tabindex]')) || title || row;
-    const rect = target.getBoundingClientRect();
-    const eventOptions = {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      clientX: rect.left + Math.min(rect.width / 2, 80),
-      clientY: rect.top + (rect.height / 2),
-      button: 0,
-      buttons: 1,
-      view: window
+    const targets = [];
+    const addTarget = element => {
+      if (element && row.contains(element) && !targets.includes(element)) targets.push(element);
     };
+    addTarget(title);
+    let parent = title && title.parentElement;
+    while (parent && parent !== row) {
+      if (parent.matches('[role="button"], [role="gridcell"], [tabindex], [data-testid*="cell-frame" i]')) {
+        addTarget(parent);
+      }
+      parent = parent.parentElement;
+    }
+    row.querySelectorAll('[data-testid*="cell-frame" i], [role="gridcell"], [tabindex]').forEach(addTarget);
+    addTarget(row);
 
-    target.focus({ preventScroll: true });
-    target.dispatchEvent(new PointerEvent('pointerdown', { ...eventOptions, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-    target.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-    target.dispatchEvent(new PointerEvent('pointerup', { ...eventOptions, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0 }));
-    target.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
-    target.click();
+    for (const target of targets) {
+      if (!target.isConnected) break;
+      const rect = target.getBoundingClientRect();
+      const eventOptions = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: rect.left + Math.min(rect.width / 2, 80),
+        clientY: rect.top + (rect.height / 2),
+        button: 0,
+        view: window
+      };
+      target.focus({ preventScroll: true });
+      target.dispatchEvent(new PointerEvent('pointerdown', {
+        ...eventOptions, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 1
+      }));
+      target.dispatchEvent(new MouseEvent('mousedown', { ...eventOptions, buttons: 1 }));
+      target.dispatchEvent(new PointerEvent('pointerup', {
+        ...eventOptions, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0
+      }));
+      target.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
+      target.click();
+      if (await window.IS.WhatsAppDOM.waitForMessageInput(1400)) break;
+      target.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+      }));
+      target.dispatchEvent(new KeyboardEvent('keyup', {
+        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+      }));
+      if (await window.IS.WhatsAppDOM.waitForMessageInput(1400)) break;
+    }
 
-    const input = await window.IS.WhatsAppDOM.waitForMessageInput(5000);
-    if (!input) return false;
+    if (!window.IS.WhatsAppDOM.findMessageInput()) return false;
     this.recentExactContactOpen = {
       name: contact.name,
       chatId: contact.chatId || this.getContactIdentity(row),
@@ -460,13 +486,23 @@ window.IS.Scraper = {
     const expectedName = this.normalizeText(contact && contact.name);
     const expectedId = (contact && contact.chatId || '').trim();
     const expectedDigits = expectedId.replace(/\D/g, '');
-    return this.getChatRows().find(row => {
+    const knownRow = this.getChatRows().find(row => {
       const rowId = this.getContactIdentity(row);
       if (expectedId && rowId && rowId === expectedId) return true;
       const rowDigits = rowId.replace(/\D/g, '');
       if (expectedDigits.length >= 7 && rowDigits.length >= 7 && rowDigits === expectedDigits) return true;
       return this.normalizeText(this.getContactName(row)) === expectedName;
-    }) || null;
+    });
+    if (knownRow) return knownRow;
+
+    // Resultados da busca podem deixar de usar role=listitem/row. Localize o
+    // título exato e suba até o primeiro contêiner visual correspondente.
+    const exactTitle = Array.from(document.querySelectorAll('#side span[title], #pane-side span[title]'))
+      .find(node => this.isInteractable(node) && this.normalizeText(node.getAttribute('title')) === expectedName);
+    if (!exactTitle) return null;
+    return exactTitle.closest(
+      '[role="listitem"], [role="row"], [data-testid*="cell-frame" i], [role="button"], [tabindex]'
+    ) || exactTitle.parentElement;
   },
 
   async findContactRowWithScroll(contact) {
