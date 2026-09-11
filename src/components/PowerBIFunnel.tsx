@@ -19,12 +19,14 @@ export interface ManualFunnelMetrics {
 
 interface PowerBIFunnelProps {
   leadsCount: number;
+  ligacoesCount: number;
   interacoesCount: number;
   periodo: string;
+  storagePeriod?: string;
   onMetricsChange?: (metrics: ManualFunnelMetrics) => void;
 }
 
-export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onMetricsChange }: PowerBIFunnelProps) {
+export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, periodo, storagePeriod, onMetricsChange }: PowerBIFunnelProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -49,7 +51,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onMetricsC
           .from('powerbi_funnel_metrics')
           .select('*')
           .eq('user_id', user.id)
-          .eq('period', periodo)
+          .eq('period', storagePeriod || periodo)
           .maybeSingle();
 
         if (error && error.code !== 'PGRST116') throw error;
@@ -74,7 +76,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onMetricsC
     };
 
     fetchMetrics();
-  }, [periodo]);
+  }, [periodo, storagePeriod]);
 
   useEffect(() => {
     onMetricsChange?.(manualMetrics);
@@ -90,7 +92,7 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onMetricsC
         .from('powerbi_funnel_metrics')
         .upsert({
           user_id: user.id,
-          period: periodo,
+          period: storagePeriod || periodo,
           ligacoes: manualMetrics.ligacoes,
           visitas: manualMetrics.visitas,
           documentacao: manualMetrics.documentacao,
@@ -119,11 +121,12 @@ export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onMetricsC
   };
 
   const finalInteracoes = Math.max(0, interacoesCount + (Number(manualMetrics.interacaoAjuste) || 0));
+  const finalLigacoes = Math.max(0, ligacoesCount + (Number(manualMetrics.ligacoes) || 0));
 
   const data = [
     { name: 'Leads', valor: leadsCount, fill: '#3b82f6' },
     { name: 'Interações', valor: finalInteracoes, fill: '#8b5cf6' },
-    { name: 'Ligações', valor: Number(manualMetrics.ligacoes) || 0, fill: '#06b6d4' },
+    { name: 'Ligações', valor: finalLigacoes, fill: '#06b6d4' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
     { name: 'Documentação', valor: Number(manualMetrics.documentacao) || 0, fill: '#10b981' },
     { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#ef4444' },

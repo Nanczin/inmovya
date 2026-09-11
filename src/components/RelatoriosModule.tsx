@@ -85,7 +85,6 @@ export function RelatoriosModule() {
   const [numerosLigados, setNumerosLigados] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [metricaGrafico, setMetricaGrafico] = useState("ligacoes");
-  const [periodoGrafico, setPeriodoGrafico] = useState("30dias");
   const [serieTemporal, setSerieTemporal] = useState<any[]>([]);
   const [graficoCarregando, setGraficoCarregando] = useState(false);
   const { toast } = useToast();
@@ -98,26 +97,19 @@ export function RelatoriosModule() {
   }, [periodoSelecionado, dataInicioPersonalizada, dataFimPersonalizada]);
 
   useEffect(() => {
-    carregarSerieTemporal();
-  }, [periodoGrafico]);
-
-  const getPeriodoGraficoDatas = () => {
-    const fim = new Date();
-    const inicio = new Date();
-    if (periodoGrafico === "7dias") inicio.setDate(fim.getDate() - 6);
-    else if (periodoGrafico === "30dias") inicio.setDate(fim.getDate() - 29);
-    else if (periodoGrafico === "90dias") inicio.setDate(fim.getDate() - 89);
-    else inicio.setMonth(0, 1);
-    inicio.setHours(0, 0, 0, 0);
-    return { inicio, fim };
-  };
+    if (periodoSelecionado !== "personalizado" || (dataInicioPersonalizada && dataFimPersonalizada)) {
+      carregarSerieTemporal();
+    }
+  }, [periodoSelecionado, dataInicioPersonalizada, dataFimPersonalizada]);
 
   const carregarSerieTemporal = async () => {
     setGraficoCarregando(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { inicio, fim } = getPeriodoGraficoDatas();
+      const range = getPeriodoDatas();
+      const inicio = new Date(range.inicio);
+      const fim = new Date(range.fim);
       const [leadsResult, callsResult, emailsResult] = await Promise.all([
         supabase.from('leads').select('created_at, status').eq('user_id', user.id)
           .gte('created_at', inicio.toISOString()).lte('created_at', fim.toISOString()),
@@ -222,16 +214,20 @@ export function RelatoriosModule() {
         dataFim.setHours(23, 59, 59, 999);
         break;
       case "7dias":
-        dataInicio.setDate(hoje.getDate() - 7);
+        dataInicio.setDate(hoje.getDate() - 6);
+        dataInicio.setHours(0, 0, 0, 0);
         break;
       case "30dias":
-        dataInicio.setDate(hoje.getDate() - 30);
+        dataInicio.setDate(hoje.getDate() - 29);
+        dataInicio.setHours(0, 0, 0, 0);
         break;
       case "90dias":
-        dataInicio.setDate(hoje.getDate() - 90);
+        dataInicio.setDate(hoje.getDate() - 89);
+        dataInicio.setHours(0, 0, 0, 0);
         break;
       case "ano":
         dataInicio.setMonth(0, 1);
+        dataInicio.setHours(0, 0, 0, 0);
         break;
       case "personalizado":
         if (dataInicioPersonalizada) {
@@ -242,12 +238,15 @@ export function RelatoriosModule() {
         }
         break;
       default:
-        dataInicio.setDate(hoje.getDate() - 7);
+        dataInicio.setDate(hoje.getDate() - 6);
+        dataInicio.setHours(0, 0, 0, 0);
     }
 
     return {
       inicio: dataInicio.toISOString(),
-      fim: periodoSelecionado === 'ontem' ? dataFim.toISOString() : new Date().toISOString()
+      fim: periodoSelecionado === 'ontem' || periodoSelecionado === 'personalizado'
+        ? dataFim.toISOString()
+        : new Date().toISOString()
     };
   };
 
@@ -283,7 +282,9 @@ export function RelatoriosModule() {
     if (errorAtuais) console.warn("Leads table error", errorAtuais);
 
     // Calcular métricas período atual
-    const leadsNovos = leadsAtuais?.filter(lead => lead.status === 'novo').length || 0;
+    // "Novos leads" representa todos os leads cadastrados dentro do período,
+    // inclusive aqueles que já avançaram de status depois do cadastro.
+    const leadsNovos = leadsAtuais?.length || 0;
     const leadsQualificados = leadsAtuais?.filter(lead =>
       lead.status === 'qualificado' ||
       lead.status === 'interessado' ||
@@ -923,6 +924,25 @@ export function RelatoriosModule() {
   };
 
   const metricaAtiva = metricasGrafico.find(item => item.id === metricaGrafico) || metricasGrafico[0];
+  const serieGrafico = (() => {
+    const adjusted = serieTemporal.map(point => ({ ...point }));
+    if (!adjusted.length) return adjusted;
+    adjusted[adjusted.length - 1].ligacoes += manualMetrics.ligacoes;
+    let interactionAdjustment = manualMetrics.interacaoAjuste;
+    if (interactionAdjustment >= 0) {
+      adjusted[adjusted.length - 1].interacoes += interactionAdjustment;
+    } else {
+      for (let index = adjusted.length - 1; index >= 0 && interactionAdjustment < 0; index--) {
+        const removable = Math.min(adjusted[index].interacoes, Math.abs(interactionAdjustment));
+        adjusted[index].interacoes -= removable;
+        interactionAdjustment += removable;
+      }
+    }
+    return adjusted;
+  })();
+  const chavePeriodoManual = periodoSelecionado === 'personalizado'
+    ? `personalizado:${dataInicioPersonalizada || 'inicio'}:${dataFimPersonalizada || 'fim'}`
+    : periodoSelecionado;
   const formatarValorGrafico = (value: number) => metricaAtiva.moeda
     ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)
     : new Intl.NumberFormat('pt-BR').format(value);
@@ -1094,7 +1114,14 @@ export function RelatoriosModule() {
           </Card>
         ))}
 
-        <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} onMetricsChange={setManualMetrics} />
+        <PowerBIFunnel
+          periodo={periodoSelecionado}
+          storagePeriod={chavePeriodoManual}
+          leadsCount={metricas.leads.novos}
+          ligacoesCount={metricas.ligacoes.hoje}
+          interacoesCount={metricas.interacoes.total}
+          onMetricsChange={setManualMetrics}
+        />
       </div>
 
       <Card className="shadow-card">
@@ -1119,16 +1146,19 @@ export function RelatoriosModule() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select value={periodoGrafico} onValueChange={setPeriodoGrafico}>
+              <Select value={periodoSelecionado} onValueChange={setPeriodoSelecionado}>
                 <SelectTrigger className="w-full sm:w-[180px]">
                   <Calendar className="mr-2 h-4 w-4" />
                   <SelectValue placeholder="Selecionar período" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="hoje">Hoje</SelectItem>
+                  <SelectItem value="ontem">Ontem</SelectItem>
                   <SelectItem value="7dias">Últimos 7 dias</SelectItem>
                   <SelectItem value="30dias">Últimos 30 dias</SelectItem>
                   <SelectItem value="90dias">Últimos 90 dias</SelectItem>
                   <SelectItem value="ano">Este ano</SelectItem>
+                  <SelectItem value="personalizado">Período personalizado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1137,12 +1167,12 @@ export function RelatoriosModule() {
         <CardContent>
           {graficoCarregando ? (
             <div className="flex h-[340px] items-center justify-center text-muted-foreground">Carregando gráfico...</div>
-          ) : serieTemporal.length === 0 ? (
+          ) : serieGrafico.length === 0 ? (
             <div className="flex h-[340px] items-center justify-center text-muted-foreground">Nenhum dado disponível neste período.</div>
           ) : (
             <div className="h-[340px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={serieTemporal} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                <LineChart data={serieGrafico} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="label" minTickGap={24} tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={value => metricaAtiva.moeda ? `${Math.round(value / 1000)} mil` : String(value)} />
@@ -1159,7 +1189,7 @@ export function RelatoriosModule() {
                     name={metricaAtiva.nome}
                     stroke={metricaAtiva.cor}
                     strokeWidth={3}
-                    dot={serieTemporal.length <= 31}
+                    dot={serieGrafico.length <= 31}
                     activeDot={{ r: 6 }}
                   />
                 </LineChart>
