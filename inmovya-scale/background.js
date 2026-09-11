@@ -42,12 +42,12 @@ async function waitForTabComplete(tabId, timeoutMs = 30000) {
   });
 }
 
-async function sendCampaignMessage(request) {
+async function sendCampaignMessage(request, returnTabId = null) {
   const phone = String(request.phone || '').replace(/\D/g, '');
   if (!phone) throw new Error('Telefone inválido.');
   const tab = await chrome.tabs.create({
     url: `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`,
-    active: false
+    active: true
   });
   if (!tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
 
@@ -76,7 +76,11 @@ async function sendCampaignMessage(request) {
     }
     throw lastError || new Error('A extensão não conseguiu concluir o envio.');
   } finally {
-    setTimeout(() => chrome.tabs.remove(tab.id).catch(() => {}), 1500);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await chrome.tabs.remove(tab.id).catch(() => {});
+    if (returnTabId && returnTabId !== tab.id) {
+      await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+    }
   }
 }
 
@@ -190,7 +194,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   if (request?.action === 'campaign_send') {
-    sendCampaignMessage(request)
+    sendCampaignMessage(request, sender.tab?.id || null)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
