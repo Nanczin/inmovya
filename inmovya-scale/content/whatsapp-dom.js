@@ -720,6 +720,9 @@ window.IS.WhatsAppDOM = {
       '[data-testid="conversation-info-header-chat-title"][title]',
       '[data-testid="conversation-info-header-chat-title"] span[title]',
       '[data-testid="conversation-info-header-chat-title"]',
+      '[data-testid="conversation-info-header-chat-title"] span[dir="auto"]',
+      '[role="button"] span[dir="auto"]',
+      'span[dir="auto"]',
       '[role="button"] span[dir="auto"][title]',
       'span[dir="auto"][title]',
       'span[title]'
@@ -728,7 +731,7 @@ window.IS.WhatsAppDOM = {
       const titleSpan = Array.from(header.querySelectorAll(selector)).find(element => {
         const title = (element.getAttribute('title') || element.textContent || '').replace(/\s+/g, ' ').trim();
         if (!title || element.offsetParent === null) return false;
-        return !/^(adicionar à lista|add to list|chamada|ligação|video call|voice call|pesquisar|search|menu|mais opções|more options)$/i.test(title);
+        return !/^(adicionar à lista|add to list|chamada|ligação|video call|voice call|pesquisar|search|menu|mais opções|more options|online|digitando.*|typing.*|visto por último.*|last seen.*)$/i.test(title);
       });
       if (titleSpan) {
         return (titleSpan.getAttribute('title') || titleSpan.textContent || '').replace(/\s+/g, ' ').trim();

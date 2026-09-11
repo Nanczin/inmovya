@@ -250,6 +250,34 @@ window.IS.Scraper = {
     return /(?:@c\.us|@s\.whatsapp\.net|@g\.us|^\+?\d{7,}$)/i.test(candidate) ? candidate : '';
   },
 
+  isCurrentContact(contact) {
+    if (!contact) return false;
+    const expectedName = this.normalizeText(contact.name);
+    const currentName = this.normalizeText(window.IS.WhatsAppDOM.getCurrentChatName());
+    const namesMatch = expectedName && currentName && (
+      currentName === expectedName ||
+      (expectedName.length >= 5 && currentName.includes(expectedName)) ||
+      (currentName.length >= 5 && expectedName.includes(currentName))
+    );
+    if (namesMatch) return true;
+
+    const expectedId = String(contact.chatId || '').trim();
+    const expectedDigits = expectedId.replace(/\D/g, '');
+    if (expectedDigits.length < 7) return false;
+    const activeRows = Array.from(document.querySelectorAll(
+      '#pane-side [aria-selected="true"], #side [aria-selected="true"], #pane-side [data-selected="true"], #side [data-selected="true"]'
+    ));
+    return activeRows.some(row => {
+      const currentId = this.getContactIdentity(row);
+      const currentDigits = currentId.replace(/\D/g, '');
+      return (currentId && currentId === expectedId) ||
+        (currentDigits.length >= 7 && currentDigits.slice(-8) === expectedDigits.slice(-8));
+    }) || (() => {
+      const headerDigits = String(window.IS.WhatsAppDOM.getCurrentChatName() || '').replace(/\D/g, '');
+      return headerDigits.length >= 7 && headerDigits.slice(-8) === expectedDigits.slice(-8);
+    })();
+  },
+
   findSearchInput() {
     const selectors = [
       '#side [contenteditable="true"][data-tab="3"]',
@@ -413,11 +441,9 @@ window.IS.Scraper = {
     if (!opened) opened = await this.openContactBySearch(contact);
     if (!opened) throw new Error(`O contato ${contact.name} não foi encontrado no WhatsApp.`);
 
-    const expectedName = this.normalizeText(contact.name);
     for (let attempt = 0; attempt < 20; attempt++) {
       await this.delay(200);
-      const currentName = this.normalizeText(window.IS.WhatsAppDOM.getCurrentChatName());
-      if (currentName === expectedName) return true;
+      if (this.isCurrentContact(contact)) return true;
     }
     throw new Error(`A conversa de ${contact.name} não foi aberta.`);
   },

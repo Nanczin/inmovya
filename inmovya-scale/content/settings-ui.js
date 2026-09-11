@@ -953,9 +953,7 @@ window.IS.SettingsUI = {
       // anexos sejam considerados interativos. Recolha durante o disparo e
       // restaure o Kanban ao terminar.
       if (restoreFullscreen) await this.toggleKanbanFullscreen(false);
-      const normalizeName = value => window.IS.removeAccents(String(value || '').toLocaleLowerCase().replace(/\s+/g, ' ').trim());
-      const expectedName = normalizeName(lead.contact.name);
-      const currentMatches = () => normalizeName(window.IS.WhatsAppDOM.getCurrentChatName()) === expectedName;
+      const currentMatches = () => window.IS.Scraper.isCurrentContact(lead.contact);
       let opened = currentMatches();
       if (!opened) opened = await window.IS.Scraper.openContactBySearch(lead.contact);
       if (!opened) await window.IS.Scraper.openContact(lead.labelName, lead.contact);
@@ -1038,7 +1036,7 @@ window.IS.SettingsUI = {
       this.showToast('Nenhum lead disponível nesta etapa.');
       return false;
     }
-    if (!await this.showConfirm('Enviar etapa em massa', `Enviar esta resposta para ${leads.length} lead(s), um por vez, com intervalo de 30 segundos? Somente envios confirmados avançarão de etapa.`)) return false;
+    if (!await this.showConfirm('Enviar etapa em massa', `Enviar esta resposta para ${leads.length} lead(s), um por vez, com intervalo de 1 minuto? Somente envios confirmados avançarão de etapa.`)) return false;
 
     const wasFullscreen = this.kanbanFullscreen;
     this.bulkSending = true;
@@ -1069,7 +1067,7 @@ window.IS.SettingsUI = {
           this.showToast('Disparo interrompido após 3 falhas consecutivas.');
           break;
         }
-        if (index < leads.length - 1) await window.IS.Scraper.delay(30000);
+        if (index < leads.length - 1) await window.IS.Scraper.delay(60000);
       }
       await this.renderCategories();
       this.showToast(`Etapa concluída: ${sent} enviado(s)${failed ? `, ${failed} com falha` : ''}.`);
