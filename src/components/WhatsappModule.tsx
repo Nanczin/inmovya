@@ -48,6 +48,11 @@ export function WhatsappModule() {
   const [isCreating, setIsCreating] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [consentConfirmed, setConsentConfirmed] = useState(false);
+  const [isContactsOpen, setIsContactsOpen] = useState(false);
+  const [contactsCampaign, setContactsCampaign] = useState<any>(null);
+  const [campaignContacts, setCampaignContacts] = useState<any[]>([]);
+  const [loadingCampaignContacts, setLoadingCampaignContacts] = useState(false);
+  const [deletingContactId, setDeletingContactId] = useState<string | null>(null);
 
   const handleCampaignImagePick = async () => {
     setIsUploadingImage(true);
@@ -236,6 +241,63 @@ export function WhatsappModule() {
     }
   };
 
+  const openCampaignContacts = async (campaign: any) => {
+    setContactsCampaign(campaign);
+    setCampaignContacts([]);
+    setIsContactsOpen(true);
+    setLoadingCampaignContacts(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não identificado.');
+      const { data, error } = await supabase
+        .from('whatsapp_campaign_messages')
+        .select('id, nome, telefone, status, created_at')
+        .eq('campaign_id', campaign.id)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setCampaignContacts(data || []);
+    } catch (error) {
+      console.error('Error fetching campaign contacts:', error);
+      toast({ title: 'Erro', description: 'Não foi possível carregar os contatos da campanha.', variant: 'destructive' });
+    } finally {
+      setLoadingCampaignContacts(false);
+    }
+  };
+
+  const deleteCampaignContact = async (contact: any) => {
+    if (!contactsCampaign) return;
+    if (contactsCampaign.status === 'Em andamento') {
+      toast({
+        title: 'Pause a campanha primeiro',
+        description: 'Isso evita que um contato já carregado na fila receba a mensagem após ser removido.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    if (!window.confirm(`Excluir ${contact.nome || contact.telefone} desta campanha?`)) return;
+
+    setDeletingContactId(contact.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não identificado.');
+      const { error } = await supabase
+        .from('whatsapp_campaign_messages')
+        .delete()
+        .eq('id', contact.id)
+        .eq('campaign_id', contactsCampaign.id)
+        .eq('user_id', user.id);
+      if (error) throw error;
+      setCampaignContacts(current => current.filter(item => item.id !== contact.id));
+      toast({ title: 'Contato excluído', description: 'O contato foi removido somente desta campanha.' });
+    } catch (error) {
+      console.error('Error deleting campaign contact:', error);
+      toast({ title: 'Erro', description: 'Não foi possível excluir o contato da campanha.', variant: 'destructive' });
+    } finally {
+      setDeletingContactId(null);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Em andamento": return "bg-primary text-primary-foreground";
@@ -339,6 +401,10 @@ export function WhatsappModule() {
                     
                     <Button size="sm" variant="outline" onClick={() => deleteCampaign(campaign.id)}>
                       <Trash2 className="w-4 h-4 mr-1" /> Excluir
+                    </Button>
+
+                    <Button size="sm" variant="outline" onClick={() => openCampaignContacts(campaign)}>
+                      <Eye className="w-4 h-4 mr-1" /> Contatos
                     </Button>
                     
                     <Button size="sm" variant="outline" onClick={() => {
@@ -547,6 +613,50 @@ export function WhatsappModule() {
           campaign={activeCampaignForReport} 
         />
       )}
+
+      <Dialog open={isContactsOpen} onOpenChange={setIsContactsOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Contatos — {contactsCampaign?.nome || 'Campanha'}</DialogTitle>
+          </DialogHeader>
+          {contactsCampaign?.status === 'Em andamento' && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              Pause a campanha para excluir contatos com segurança.
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+            {loadingCampaignContacts ? (
+              <div className="py-10 text-center text-muted-foreground">
+                <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+                Carregando contatos...
+              </div>
+            ) : campaignContacts.length === 0 ? (
+              <div className="py-10 text-center text-muted-foreground">Nenhum contato nesta campanha.</div>
+            ) : campaignContacts.map(contact => (
+              <div key={contact.id} className="flex items-center gap-3 rounded-md border p-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{contact.nome || 'Sem nome'}</div>
+                  <div className="text-sm text-muted-foreground">{contact.telefone}</div>
+                </div>
+                <Badge variant="outline">{contact.status || 'Pendente'}</Badge>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  title="Excluir contato da campanha"
+                  disabled={deletingContactId === contact.id || contactsCampaign?.status === 'Em andamento'}
+                  onClick={() => deleteCampaignContact(contact)}
+                  className="text-destructive hover:text-destructive"
+                >
+                  {deletingContactId === contact.id
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Trash2 className="h-4 w-4" />}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

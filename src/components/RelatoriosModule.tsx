@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   BarChart3,
   TrendingUp,
@@ -24,6 +25,17 @@ import {
   Target,
   Clock
 } from "lucide-react";
+
+const metricasGrafico = [
+  { id: "ligacoes", nome: "Ligações", cor: "#2563eb" },
+  { id: "interacoes", nome: "Interações", cor: "#7c3aed" },
+  { id: "leads", nome: "Novos leads", cor: "#0891b2" },
+  { id: "qualificados", nome: "Leads qualificados", cor: "#d97706" },
+  { id: "convertidos", nome: "Leads convertidos", cor: "#16a34a" },
+  { id: "emails", nome: "Emails disparados", cor: "#db2777" },
+  { id: "emailsSucesso", nome: "Emails enviados com sucesso", cor: "#059669" },
+  { id: "receita", nome: "Receita estimada", cor: "#0f766e", moeda: true }
+];
 
 export function RelatoriosModule() {
   const [periodoSelecionado, setPeriodoSelecionado] = useState("7dias");
@@ -72,6 +84,10 @@ export function RelatoriosModule() {
   const [topLeads, setTopLeads] = useState<any[]>([]);
   const [numerosLigados, setNumerosLigados] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [metricaGrafico, setMetricaGrafico] = useState("ligacoes");
+  const [periodoGrafico, setPeriodoGrafico] = useState("30dias");
+  const [serieTemporal, setSerieTemporal] = useState<any[]>([]);
+  const [graficoCarregando, setGraficoCarregando] = useState(false);
   const { toast } = useToast();
   const ligacoesComAjuste = metricas.ligacoes.hoje + manualMetrics.ligacoes;
 
@@ -80,6 +96,93 @@ export function RelatoriosModule() {
       carregarMetricas();
     }
   }, [periodoSelecionado, dataInicioPersonalizada, dataFimPersonalizada]);
+
+  useEffect(() => {
+    carregarSerieTemporal();
+  }, [periodoGrafico]);
+
+  const getPeriodoGraficoDatas = () => {
+    const fim = new Date();
+    const inicio = new Date();
+    if (periodoGrafico === "7dias") inicio.setDate(fim.getDate() - 6);
+    else if (periodoGrafico === "30dias") inicio.setDate(fim.getDate() - 29);
+    else if (periodoGrafico === "90dias") inicio.setDate(fim.getDate() - 89);
+    else inicio.setMonth(0, 1);
+    inicio.setHours(0, 0, 0, 0);
+    return { inicio, fim };
+  };
+
+  const carregarSerieTemporal = async () => {
+    setGraficoCarregando(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { inicio, fim } = getPeriodoGraficoDatas();
+      const [leadsResult, callsResult, emailsResult] = await Promise.all([
+        supabase.from('leads').select('created_at, status').eq('user_id', user.id)
+          .gte('created_at', inicio.toISOString()).lte('created_at', fim.toISOString()),
+        supabase.from('ligacoes').select('data_ligacao, status').eq('user_id', user.id)
+          .gte('data_ligacao', inicio.toISOString()).lte('data_ligacao', fim.toISOString()),
+        supabase.from('email_logs').select('sent_at, status').eq('user_id', user.id)
+          .gte('sent_at', inicio.toISOString()).lte('sent_at', fim.toISOString())
+      ]);
+      if (leadsResult.error) throw leadsResult.error;
+      if (callsResult.error) throw callsResult.error;
+      if (emailsResult.error) throw emailsResult.error;
+
+      const porDia = new Map<string, any>();
+      const cursor = new Date(inicio);
+      while (cursor <= fim) {
+        const chave = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+        porDia.set(chave, {
+          data: chave,
+          label: cursor.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+          ligacoes: 0,
+          interacoes: 0,
+          leads: 0,
+          qualificados: 0,
+          convertidos: 0,
+          emails: 0,
+          emailsSucesso: 0,
+          receita: 0
+        });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      const getChaveLocal = (value: string) => {
+        const date = new Date(value);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      };
+      (callsResult.data || []).forEach(call => {
+        const point = porDia.get(getChaveLocal(call.data_ligacao));
+        if (!point) return;
+        point.ligacoes += 1;
+        if (call.status === 'interacao') point.interacoes += 1;
+      });
+      (leadsResult.data || []).forEach(lead => {
+        const point = porDia.get(getChaveLocal(lead.created_at));
+        if (!point) return;
+        point.leads += 1;
+        if (['qualificado', 'interessado', 'em_contato'].includes(lead.status)) point.qualificados += 1;
+        if (lead.status === 'convertido') {
+          point.convertidos += 1;
+          point.receita += 450000;
+        }
+      });
+      (emailsResult.data || []).forEach(email => {
+        const point = porDia.get(getChaveLocal(email.sent_at));
+        if (!point) return;
+        point.emails += 1;
+        if (email.status === 'success') point.emailsSucesso += 1;
+      });
+      setSerieTemporal(Array.from(porDia.values()));
+    } catch (error) {
+      console.error('Erro ao carregar série temporal:', error);
+      setSerieTemporal([]);
+      toast({ title: 'Erro no gráfico', description: 'Não foi possível carregar a evolução das métricas.', variant: 'destructive' });
+    } finally {
+      setGraficoCarregando(false);
+    }
+  };
 
   const carregarMetricas = async () => {
     setIsLoading(true);
@@ -819,6 +922,11 @@ export function RelatoriosModule() {
     };
   };
 
+  const metricaAtiva = metricasGrafico.find(item => item.id === metricaGrafico) || metricasGrafico[0];
+  const formatarValorGrafico = (value: number) => metricaAtiva.moeda
+    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)
+    : new Intl.NumberFormat('pt-BR').format(value);
+
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Header */}
@@ -988,6 +1096,78 @@ export function RelatoriosModule() {
 
         <PowerBIFunnel periodo={periodoSelecionado} leadsCount={metricas.leads.novos + metricas.leads.qualificados + metricas.leads.convertidos} interacoesCount={metricas.interacoes.total} onMetricsChange={setManualMetrics} />
       </div>
+
+      <Card className="shadow-card">
+        <CardHeader className="space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-blue-600" />
+                Evolução das métricas
+              </CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">Acompanhe os resultados reais ao longo do tempo.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Select value={metricaGrafico} onValueChange={setMetricaGrafico}>
+                <SelectTrigger className="w-full sm:w-[230px]">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  <SelectValue placeholder="Selecionar métrica" />
+                </SelectTrigger>
+                <SelectContent>
+                  {metricasGrafico.map(item => (
+                    <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={periodoGrafico} onValueChange={setPeriodoGrafico}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  <SelectValue placeholder="Selecionar período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7dias">Últimos 7 dias</SelectItem>
+                  <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+                  <SelectItem value="90dias">Últimos 90 dias</SelectItem>
+                  <SelectItem value="ano">Este ano</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {graficoCarregando ? (
+            <div className="flex h-[340px] items-center justify-center text-muted-foreground">Carregando gráfico...</div>
+          ) : serieTemporal.length === 0 ? (
+            <div className="flex h-[340px] items-center justify-center text-muted-foreground">Nenhum dado disponível neste período.</div>
+          ) : (
+            <div className="h-[340px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={serieTemporal} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="label" minTickGap={24} tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={value => metricaAtiva.moeda ? `${Math.round(value / 1000)} mil` : String(value)} />
+                  <Tooltip
+                    formatter={(value: number) => [formatarValorGrafico(value), metricaAtiva.nome]}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.data
+                      ? new Date(`${payload[0].payload.data}T12:00:00`).toLocaleDateString('pt-BR')
+                      : ''}
+                    contentStyle={{ borderRadius: 8, borderColor: 'hsl(var(--border))' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey={metricaAtiva.id}
+                    name={metricaAtiva.nome}
+                    stroke={metricaAtiva.cor}
+                    strokeWidth={3}
+                    dot={serieTemporal.length <= 31}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
 
       {/* Bottom Section */}
