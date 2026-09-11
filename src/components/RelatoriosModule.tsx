@@ -37,6 +37,19 @@ const metricasGrafico = [
   { id: "receita", nome: "Receita estimada", cor: "#0f766e", moeda: true }
 ];
 
+async function carregarTodasAsPaginas<T>(consulta: (inicio: number, fim: number) => PromiseLike<{ data: T[] | null; error: any }>) {
+  const pageSize = 1000;
+  const result: T[] = [];
+  for (let inicio = 0; ; inicio += pageSize) {
+    const { data, error } = await consulta(inicio, inicio + pageSize - 1);
+    if (error) throw error;
+    const page = data || [];
+    result.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return result;
+}
+
 export function RelatoriosModule() {
   const [periodoSelecionado, setPeriodoSelecionado] = useState("7dias");
   const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState<string>("");
@@ -99,6 +112,8 @@ export function RelatoriosModule() {
   useEffect(() => {
     if (periodoSelecionado !== "personalizado" || (dataInicioPersonalizada && dataFimPersonalizada)) {
       carregarSerieTemporal();
+    } else {
+      setSerieTemporal([]);
     }
   }, [periodoSelecionado, dataInicioPersonalizada, dataFimPersonalizada]);
 
@@ -110,17 +125,14 @@ export function RelatoriosModule() {
       const range = getPeriodoDatas();
       const inicio = new Date(range.inicio);
       const fim = new Date(range.fim);
-      const [leadsResult, callsResult, emailsResult] = await Promise.all([
-        supabase.from('leads').select('created_at, status').eq('user_id', user.id)
-          .gte('created_at', inicio.toISOString()).lte('created_at', fim.toISOString()),
-        supabase.from('ligacoes').select('data_ligacao, status').eq('user_id', user.id)
-          .gte('data_ligacao', inicio.toISOString()).lte('data_ligacao', fim.toISOString()),
-        supabase.from('email_logs').select('sent_at, status').eq('user_id', user.id)
-          .gte('sent_at', inicio.toISOString()).lte('sent_at', fim.toISOString())
+      const [leadsData, callsData, emailsData] = await Promise.all([
+        carregarTodasAsPaginas((from, to) => supabase.from('leads').select('created_at, status').eq('user_id', user.id)
+          .gte('created_at', inicio.toISOString()).lte('created_at', fim.toISOString()).range(from, to)),
+        carregarTodasAsPaginas((from, to) => supabase.from('ligacoes').select('data_ligacao, status').eq('user_id', user.id)
+          .gte('data_ligacao', inicio.toISOString()).lte('data_ligacao', fim.toISOString()).range(from, to)),
+        carregarTodasAsPaginas((from, to) => supabase.from('email_logs').select('sent_at, status').eq('user_id', user.id)
+          .gte('sent_at', inicio.toISOString()).lte('sent_at', fim.toISOString()).range(from, to))
       ]);
-      if (leadsResult.error) throw leadsResult.error;
-      if (callsResult.error) throw callsResult.error;
-      if (emailsResult.error) throw emailsResult.error;
 
       const porDia = new Map<string, any>();
       const cursor = new Date(inicio);
@@ -144,13 +156,13 @@ export function RelatoriosModule() {
         const date = new Date(value);
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       };
-      (callsResult.data || []).forEach(call => {
+      callsData.forEach(call => {
         const point = porDia.get(getChaveLocal(call.data_ligacao));
         if (!point) return;
         point.ligacoes += 1;
         if (call.status === 'interacao') point.interacoes += 1;
       });
-      (leadsResult.data || []).forEach(lead => {
+      leadsData.forEach(lead => {
         const point = porDia.get(getChaveLocal(lead.created_at));
         if (!point) return;
         point.leads += 1;
@@ -160,7 +172,7 @@ export function RelatoriosModule() {
           point.receita += 450000;
         }
       });
-      (emailsResult.data || []).forEach(email => {
+      emailsData.forEach(email => {
         const point = porDia.get(getChaveLocal(email.sent_at));
         if (!point) return;
         point.emails += 1;
@@ -257,12 +269,13 @@ export function RelatoriosModule() {
     if (!user) return;
 
     // Buscar leads do período atual
-    const { data: leadsAtuais, error: errorAtuais } = await supabase
+    const leadsAtuais = await carregarTodasAsPaginas((from, to) => supabase
       .from('leads')
       .select('*')
       .eq('user_id', user.id)
       .gte('created_at', inicio)
-      .lte('created_at', fim);
+      .lte('created_at', fim)
+      .range(from, to));
 
     // Buscar leads do período anterior para comparação
     const dataInicioAnterior = new Date(inicio);
@@ -270,16 +283,13 @@ export function RelatoriosModule() {
 
     dataInicioAnterior.setDate(dataInicioAnterior.getDate() - diasPeriodo);
 
-    const { data: leadsAnteriores, error: errorAnteriores } = await supabase
+    const leadsAnteriores = await carregarTodasAsPaginas((from, to) => supabase
       .from('leads')
       .select('*')
       .eq('user_id', user.id)
       .gte('created_at', dataInicioAnterior.toISOString())
-      .lt('created_at', inicio);
-
-    if (errorAtuais && errorAtuais.code !== 'PGRST116') throw errorAtuais;
-    // Ignorar erro se tabela não existir mas logar
-    if (errorAtuais) console.warn("Leads table error", errorAtuais);
+      .lt('created_at', inicio)
+      .range(from, to));
 
     // Calcular métricas período atual
     // "Novos leads" representa todos os leads cadastrados dentro do período,
@@ -331,26 +341,26 @@ export function RelatoriosModule() {
     if (!user) return;
 
     // Ligações do período atual
-    const { data: ligacoesPeriodo, error: errorPeriodo } = await supabase
+    const ligacoesPeriodo = await carregarTodasAsPaginas((from, to) => supabase
       .from('ligacoes')
       .select('*')
       .eq('user_id', user.id)
       .gte('data_ligacao', inicio)
-      .lte('data_ligacao', fim);
+      .lte('data_ligacao', fim)
+      .range(from, to));
 
     // Ligações do período anterior para comparação
     const diasPeriodo = Math.max(1, Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (1000 * 60 * 60 * 24)));
     const dataInicioAnterior = new Date(inicio);
     dataInicioAnterior.setDate(dataInicioAnterior.getDate() - diasPeriodo);
 
-    const { data: ligacoesAnteriores, error: errorAnteriores } = await supabase
+    const ligacoesAnteriores = await carregarTodasAsPaginas((from, to) => supabase
       .from('ligacoes')
       .select('*')
       .eq('user_id', user.id)
       .gte('data_ligacao', dataInicioAnterior.toISOString())
-      .lt('data_ligacao', inicio);
-
-    if (errorPeriodo) console.warn("Ligacoes fetch error", errorPeriodo);
+      .lt('data_ligacao', inicio)
+      .range(from, to));
 
     // Para comparação "hoje vs ontem" quando período for "hoje"
     let ligacoesHoje = 0;
@@ -406,14 +416,13 @@ export function RelatoriosModule() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { data: emailLogs, error } = await supabase
+    const emailLogs = await carregarTodasAsPaginas((from, to) => supabase
       .from('email_logs')
       .select('*')
       .eq('user_id', user.id)
       .gte('sent_at', inicio)
-      .lte('sent_at', fim);
-
-    if (error) throw error;
+      .lte('sent_at', fim)
+      .range(from, to));
 
     const totalDisparados = emailLogs?.length || 0;
     const emailsSucesso = emailLogs?.filter(log => log.status === 'success').length || 0;
@@ -924,6 +933,11 @@ export function RelatoriosModule() {
   };
 
   const metricaAtiva = metricasGrafico.find(item => item.id === metricaGrafico) || metricasGrafico[0];
+  const rangeAtual = getPeriodoDatas();
+  const diasNoPeriodo = Math.max(1, Math.ceil(
+    (new Date(rangeAtual.fim).getTime() - new Date(rangeAtual.inicio).getTime()) / (1000 * 60 * 60 * 24)
+  ));
+  const metaLigacoesPeriodo = metricas.ligacoes.meta * diasNoPeriodo;
   const serieGrafico = (() => {
     const adjusted = serieTemporal.map(point => ({ ...point }));
     if (!adjusted.length) return adjusted;
@@ -1018,13 +1032,13 @@ export function RelatoriosModule() {
               </div>
             </div>
             <div className="text-3xl font-bold text-foreground mb-1">{ligacoesComAjuste}</div>
-            <div className="text-sm text-muted-foreground mb-3">Ligações Hoje</div>
+            <div className="text-sm text-muted-foreground mb-3">Ligações no período</div>
             <div className="space-y-1">
               <div className="flex justify-between text-xs">
-                <span>Meta: {metricas.ligacoes.meta}</span>
-                <span>{((ligacoesComAjuste / metricas.ligacoes.meta) * 100).toFixed(0)}%</span>
+                <span>Meta: {metaLigacoesPeriodo}</span>
+                <span>{((ligacoesComAjuste / metaLigacoesPeriodo) * 100).toFixed(0)}%</span>
               </div>
-              <Progress value={(ligacoesComAjuste / metricas.ligacoes.meta) * 100} className="h-1" />
+              <Progress value={(ligacoesComAjuste / metaLigacoesPeriodo) * 100} className="h-1" />
             </div>
           </CardContent>
         </Card>
@@ -1163,6 +1177,29 @@ export function RelatoriosModule() {
               </Select>
             </div>
           </div>
+          {periodoSelecionado === "personalizado" && (
+            <div className="grid gap-2 sm:grid-cols-2 sm:max-w-md sm:ml-auto">
+              <div>
+                <Label className="mb-1 block text-xs">Data inicial</Label>
+                <Input
+                  type="date"
+                  value={dataInicioPersonalizada}
+                  max={dataFimPersonalizada || undefined}
+                  onChange={event => setDataInicioPersonalizada(event.target.value)}
+                />
+              </div>
+              <div>
+                <Label className="mb-1 block text-xs">Data final</Label>
+                <Input
+                  type="date"
+                  value={dataFimPersonalizada}
+                  min={dataInicioPersonalizada || undefined}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={event => setDataFimPersonalizada(event.target.value)}
+                />
+              </div>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {graficoCarregando ? (
