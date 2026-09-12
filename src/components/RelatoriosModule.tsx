@@ -62,6 +62,7 @@ export function RelatoriosModule() {
     venda: 0,
     interacaoAjuste: 0
   });
+  const [dailyManualMetrics, setDailyManualMetrics] = useState<Record<string, ManualFunnelMetrics>>({});
   const [classificacoesOferta, setClassificacoesOferta] = useState<Record<string, number>>({});
   const [metricas, setMetricas] = useState({
     conversao: {
@@ -934,6 +935,12 @@ export function RelatoriosModule() {
 
   const metricaAtiva = metricasGrafico.find(item => item.id === metricaGrafico) || metricasGrafico[0];
   const rangeAtual = getPeriodoDatas();
+  const chaveDataLocal = (value: string) => {
+    const date = new Date(value);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+  const rangeStartKey = chaveDataLocal(rangeAtual.inicio);
+  const rangeEndKey = chaveDataLocal(rangeAtual.fim);
   const diasNoPeriodo = Math.max(1, Math.ceil(
     (new Date(rangeAtual.fim).getTime() - new Date(rangeAtual.inicio).getTime()) / (1000 * 60 * 60 * 24)
   ));
@@ -941,17 +948,12 @@ export function RelatoriosModule() {
   const serieGrafico = (() => {
     const adjusted = serieTemporal.map(point => ({ ...point }));
     if (!adjusted.length) return adjusted;
-    adjusted[adjusted.length - 1].ligacoes += manualMetrics.ligacoes;
-    let interactionAdjustment = manualMetrics.interacaoAjuste;
-    if (interactionAdjustment >= 0) {
-      adjusted[adjusted.length - 1].interacoes += interactionAdjustment;
-    } else {
-      for (let index = adjusted.length - 1; index >= 0 && interactionAdjustment < 0; index--) {
-        const removable = Math.min(adjusted[index].interacoes, Math.abs(interactionAdjustment));
-        adjusted[index].interacoes -= removable;
-        interactionAdjustment += removable;
-      }
-    }
+    adjusted.forEach(point => {
+      const daily = dailyManualMetrics[point.data];
+      if (!daily) return;
+      point.ligacoes += daily.ligacoes;
+      point.interacoes = Math.max(0, point.interacoes + daily.interacaoAjuste);
+    });
     return adjusted;
   })();
   const chavePeriodoManual = periodoSelecionado === 'personalizado'
@@ -1131,10 +1133,13 @@ export function RelatoriosModule() {
         <PowerBIFunnel
           periodo={periodoSelecionado}
           storagePeriod={chavePeriodoManual}
+          rangeStart={rangeStartKey}
+          rangeEnd={rangeEndKey}
           leadsCount={metricas.leads.novos}
           ligacoesCount={metricas.ligacoes.hoje}
           interacoesCount={metricas.interacoes.total}
           onMetricsChange={setManualMetrics}
+          onDailyMetricsChange={setDailyManualMetrics}
         />
       </div>
 

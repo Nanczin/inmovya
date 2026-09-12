@@ -24,9 +24,22 @@ interface PowerBIFunnelProps {
   periodo: string;
   storagePeriod?: string;
   onMetricsChange?: (metrics: ManualFunnelMetrics) => void;
+  onDailyMetricsChange?: (metrics: Record<string, ManualFunnelMetrics>) => void;
+  rangeStart: string;
+  rangeEnd: string;
 }
 
-export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, periodo, storagePeriod, onMetricsChange }: PowerBIFunnelProps) {
+const emptyMetrics = (): ManualFunnelMetrics => ({
+  ligacoes: 0, visitas: 0, documentacao: 0, negociacao: 0, venda: 0, interacaoAjuste: 0
+});
+
+const localDateKey = (value: string | Date) => {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, periodo, onMetricsChange, onDailyMetricsChange, rangeStart, rangeEnd }: PowerBIFunnelProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -39,6 +52,9 @@ export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, peri
     venda: 0,
     interacaoAjuste: 0
   });
+  const [loadedMetrics, setLoadedMetrics] = useState<ManualFunnelMetrics>(emptyMetrics());
+  const [targetMetrics, setTargetMetrics] = useState<ManualFunnelMetrics>(emptyMetrics());
+  const [dailyMetrics, setDailyMetrics] = useState<Record<string, ManualFunnelMetrics>>({});
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -50,24 +66,50 @@ export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, peri
         const { data, error } = await supabase
           .from('powerbi_funnel_metrics')
           .select('*')
-          .eq('user_id', user.id)
-          .eq('period', storagePeriod || periodo)
-          .maybeSingle();
+          .eq('user_id', user.id);
 
-        if (error && error.code !== 'PGRST116') throw error;
+        if (error) throw error;
 
-        if (data) {
-          setManualMetrics({
-            ligacoes: data.ligacoes || 0,
-            visitas: data.visitas || 0,
-            documentacao: data.documentacao || 0,
-            negociacao: data.negociacao || 0,
-            venda: data.venda || 0,
-            interacaoAjuste: data.interacao_ajuste || 0
-          });
-        } else {
-          setManualMetrics({ ligacoes: 0, visitas: 0, documentacao: 0, negociacao: 0, venda: 0, interacaoAjuste: 0 });
-        }
+        const startKey = localDateKey(rangeStart);
+        const endKey = localDateKey(rangeEnd);
+        const daily: Record<string, ManualFunnelMetrics> = {};
+        let explicitTarget = emptyMetrics();
+        (data || []).forEach(row => {
+          const key = row.period?.startsWith('dia:') ? row.period.slice(4) : localDateKey(row.updated_at || row.created_at);
+          if (key < startKey || key > endKey) return;
+          const current = daily[key] || emptyMetrics();
+          daily[key] = {
+            ligacoes: current.ligacoes + (Number(row.ligacoes) || 0),
+            visitas: current.visitas + (Number(row.visitas) || 0),
+            documentacao: current.documentacao + (Number(row.documentacao) || 0),
+            negociacao: current.negociacao + (Number(row.negociacao) || 0),
+            venda: current.venda + (Number(row.venda) || 0),
+            interacaoAjuste: current.interacaoAjuste + (Number(row.interacao_ajuste) || 0)
+          };
+          if (row.period === `dia:${endKey}`) {
+            explicitTarget = {
+              ligacoes: Number(row.ligacoes) || 0,
+              visitas: Number(row.visitas) || 0,
+              documentacao: Number(row.documentacao) || 0,
+              negociacao: Number(row.negociacao) || 0,
+              venda: Number(row.venda) || 0,
+              interacaoAjuste: Number(row.interacao_ajuste) || 0
+            };
+          }
+        });
+        const aggregate = Object.values(daily).reduce<ManualFunnelMetrics>((total, item) => ({
+          ligacoes: total.ligacoes + item.ligacoes,
+          visitas: total.visitas + item.visitas,
+          documentacao: total.documentacao + item.documentacao,
+          negociacao: total.negociacao + item.negociacao,
+          venda: total.venda + item.venda,
+          interacaoAjuste: total.interacaoAjuste + item.interacaoAjuste
+        }), emptyMetrics());
+        setManualMetrics(aggregate);
+        setLoadedMetrics(aggregate);
+        setTargetMetrics(explicitTarget);
+        setDailyMetrics(daily);
+        onDailyMetricsChange?.(daily);
       } catch (error) {
         console.error('Error fetching powerbi metrics:', error);
       } finally {
@@ -76,7 +118,7 @@ export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, peri
     };
 
     fetchMetrics();
-  }, [periodo, storagePeriod]);
+  }, [periodo, rangeStart, rangeEnd, onDailyMetricsChange]);
 
   useEffect(() => {
     onMetricsChange?.(manualMetrics);
@@ -88,21 +130,46 @@ export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, peri
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Não autenticado");
 
+      const targetKey = localDateKey(rangeEnd);
+      const savedMetrics = {
+        ligacoes: Math.max(0, targetMetrics.ligacoes + manualMetrics.ligacoes - loadedMetrics.ligacoes),
+        visitas: Math.max(0, targetMetrics.visitas + manualMetrics.visitas - loadedMetrics.visitas),
+        documentacao: Math.max(0, targetMetrics.documentacao + manualMetrics.documentacao - loadedMetrics.documentacao),
+        negociacao: Math.max(0, targetMetrics.negociacao + manualMetrics.negociacao - loadedMetrics.negociacao),
+        venda: Math.max(0, targetMetrics.venda + manualMetrics.venda - loadedMetrics.venda),
+        interacaoAjuste: targetMetrics.interacaoAjuste + manualMetrics.interacaoAjuste - loadedMetrics.interacaoAjuste
+      };
       const { error } = await supabase
         .from('powerbi_funnel_metrics')
         .upsert({
           user_id: user.id,
-          period: storagePeriod || periodo,
-          ligacoes: manualMetrics.ligacoes,
-          visitas: manualMetrics.visitas,
-          documentacao: manualMetrics.documentacao,
-          negociacao: manualMetrics.negociacao,
-          venda: manualMetrics.venda,
-          interacao_ajuste: manualMetrics.interacaoAjuste,
+          period: `dia:${targetKey}`,
+          ligacoes: savedMetrics.ligacoes,
+          visitas: savedMetrics.visitas,
+          documentacao: savedMetrics.documentacao,
+          negociacao: savedMetrics.negociacao,
+          venda: savedMetrics.venda,
+          interacao_ajuste: savedMetrics.interacaoAjuste,
           updated_at: new Date().toISOString()
         }, { onConflict: 'user_id, period' });
 
       if (error) throw error;
+      setLoadedMetrics(manualMetrics);
+      setTargetMetrics(savedMetrics);
+      const nextDailyMetrics = {
+        ...dailyMetrics,
+        [targetKey]: {
+          ...(dailyMetrics[targetKey] || emptyMetrics()),
+          ligacoes: (dailyMetrics[targetKey]?.ligacoes || 0) + manualMetrics.ligacoes - loadedMetrics.ligacoes,
+          visitas: (dailyMetrics[targetKey]?.visitas || 0) + manualMetrics.visitas - loadedMetrics.visitas,
+          documentacao: (dailyMetrics[targetKey]?.documentacao || 0) + manualMetrics.documentacao - loadedMetrics.documentacao,
+          negociacao: (dailyMetrics[targetKey]?.negociacao || 0) + manualMetrics.negociacao - loadedMetrics.negociacao,
+          venda: (dailyMetrics[targetKey]?.venda || 0) + manualMetrics.venda - loadedMetrics.venda,
+          interacaoAjuste: (dailyMetrics[targetKey]?.interacaoAjuste || 0) + manualMetrics.interacaoAjuste - loadedMetrics.interacaoAjuste
+        }
+      };
+      setDailyMetrics(nextDailyMetrics);
+      onDailyMetricsChange?.(nextDailyMetrics);
 
       toast({
         title: "Salvo com sucesso",
