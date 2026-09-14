@@ -440,31 +440,51 @@ window.IS.Scraper = {
     return true;
   },
 
-  async openContactBySearch(contact) {
-    this.recentExactContactOpen = null;
-    await this.clearContactSearch();
-    const searchInput = this.findSearchInput();
+  async setContactSearchQuery(searchInput, query) {
     if (!searchInput) return false;
+    const value = String(query || '').normalize('NFC').replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, '').trim();
+    if (!value) return false;
 
     searchInput.focus();
     searchInput.click();
     if (searchInput.isContentEditable) {
-      document.execCommand('insertText', false, contact.name);
-      searchInput.dispatchEvent(new InputEvent('input', {
-        bubbles: true,
-        inputType: 'insertText',
-        data: contact.name
-      }));
+      document.execCommand('insertText', false, value);
     } else {
       const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-      if (valueSetter) valueSetter.call(searchInput, contact.name);
-      else searchInput.value = contact.name;
-      searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: contact.name }));
+      if (valueSetter) valueSetter.call(searchInput, value);
+      else searchInput.value = value;
     }
-    for (let attempt = 0; attempt < 24; attempt++) {
-      await this.delay(250);
-      const contactRow = this.findContactRow(contact);
-      if (contactRow) return this.openChatRow(contactRow, contact);
+    searchInput.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      inputType: 'insertText',
+      data: value
+    }));
+    await this.delay(500);
+    return true;
+  },
+
+  async openContactBySearch(contact) {
+    this.recentExactContactOpen = null;
+    const cleanName = String(contact?.name || '').normalize('NFC')
+      .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const phone = String(contact?.chatId || '').replace(/\D/g, '');
+    const queries = Array.from(new Set([
+      cleanName,
+      phone.length >= 7 ? phone : '',
+      cleanName.split(' ')[0]
+    ].filter(Boolean)));
+
+    for (const query of queries) {
+      await this.clearContactSearch();
+      const searchInput = this.findSearchInput();
+      if (!searchInput || !await this.setContactSearchQuery(searchInput, query)) continue;
+      for (let attempt = 0; attempt < 32; attempt++) {
+        await this.delay(250);
+        const contactRow = this.findContactRow(contact);
+        if (contactRow && await this.openChatRow(contactRow, contact)) return true;
+      }
     }
     return false;
   },
