@@ -225,6 +225,16 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
+      const moveLabelButton = e.target.closest('.is-kanban-move-label');
+      if (moveLabelButton) {
+        await this.moveKanbanLabel(
+          document.getElementById('is-kanban-label-search')?.value || '',
+          document.getElementById('is-kanban-label-category')?.value || '',
+          document.getElementById('is-kanban-label-stage')?.value || 'unassigned'
+        );
+        return;
+      }
+
       const moveSelectedButton = e.target.closest('.is-kanban-move-selected');
       if (moveSelectedButton) {
         const stageSelect = document.getElementById('is-kanban-bulk-stage');
@@ -330,6 +340,21 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('change', async event => {
+      const labelCategorySelect = event.target.closest('#is-kanban-label-category');
+      if (labelCategorySelect) {
+        const stageSelect = document.getElementById('is-kanban-label-stage');
+        if (!stageSelect) return;
+        const replies = (await window.IS.Storage.getReplies())
+          .filter(reply => (reply.categoryId || 'default-category') === labelCategorySelect.value)
+          .sort((left, right) => (left.order || 0) - (right.order || 0));
+        stageSelect.innerHTML = [
+          '<option value="unassigned">Etapa: Sem etapa</option>',
+          ...replies.map(reply => `<option value="${window.IS.escapeHTML(reply.id)}">Etapa: ${window.IS.escapeHTML(reply.title || 'Sem título')}</option>`),
+          ...(replies.length ? ['<option value="completed">Etapa: Concluído</option>'] : [])
+        ].join('');
+        return;
+      }
+
       const leadCheckbox = event.target.closest('.is-kanban-lead-select');
       if (leadCheckbox) {
         const leadKey = decodeURIComponent(leadCheckbox.getAttribute('data-lead-key') || '');
@@ -797,6 +822,11 @@ window.IS.SettingsUI = {
       const responseCount = replies.filter(reply => categoryIdForReply(reply) === category.id).length;
       return `<button type="button" class="is-category-filter" data-id="${window.IS.escapeHTML(category.id)}" style="flex:0 0 auto; padding:8px 12px; border:1px solid ${active ? '#0877b5' : '#c9d9e5'}; border-radius:18px; background:${active ? 'linear-gradient(135deg,#0877b5,#075f91)' : '#ffffff'}; color:${active ? 'white' : '#36596f'}; cursor:pointer; font-size:11px; font-weight:bold;">${window.IS.escapeHTML(category.name)} (${responseCount})</button>`;
     }).join('');
+    const labelNames = [...new Set(this.waLabels.map(label => String(label.name || '').trim()).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right, 'pt-BR'));
+    const labelOptions = labelNames
+      .map(name => `<option value="${window.IS.escapeHTML(name)}"></option>`)
+      .join('');
 
     const categoryReplies = replies
       .filter(reply => categoryIdForReply(reply) === selectedCategory.id)
@@ -871,6 +901,21 @@ window.IS.SettingsUI = {
         <button type="button" class="is-kanban-add-reply" style="padding:8px 12px; border:none; border-radius:6px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:11px; font-weight:bold;">+ Resposta em ${window.IS.escapeHTML(selectedCategory.name)}</button>
       </div>
       <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
+      <div style="margin-bottom:10px; padding:9px; border:1px solid #87b8d8; border-radius:7px; background:#f4faff;">
+        <div style="font-size:11px; font-weight:bold; color:#075f91; margin-bottom:7px;">Mover uma etiqueta do WhatsApp</div>
+        <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;">
+          <input type="search" id="is-kanban-label-search" list="is-kanban-label-options" placeholder="Pesquisar etiqueta..." style="min-width:170px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
+          <datalist id="is-kanban-label-options">${labelOptions}</datalist>
+          <select id="is-kanban-label-category" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
+            ${boardCategories.map(category => `<option value="${window.IS.escapeHTML(category.id)}" ${category.id === selectedCategory.id ? 'selected' : ''}>Categoria: ${window.IS.escapeHTML(category.name)}</option>`).join('')}
+          </select>
+          <select id="is-kanban-label-stage" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
+            ${stages.map(stage => `<option value="${window.IS.escapeHTML(stage.id)}">Etapa: ${window.IS.escapeHTML(stage.title)}</option>`).join('')}
+          </select>
+          <button type="button" class="is-kanban-move-label" ${labelNames.length ? '' : 'disabled'} style="padding:8px 12px; border:none; border-radius:5px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:10px; font-weight:bold;">Mover etiqueta</button>
+        </div>
+        <div style="margin-top:5px; font-size:9px; color:#60788a;">Todos os leads da etiqueta serão movidos juntos para a categoria e etapa escolhidas.</div>
+      </div>
       <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:10px; padding:9px; border:1px solid #c9d9e5; border-radius:7px; background:#eef6fb;">
         <button type="button" class="is-kanban-select-all" style="padding:7px 9px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#075f91; cursor:pointer; font-size:10px; font-weight:bold;">Selecionar todos</button>
         <button type="button" class="is-kanban-clear-selection" style="padding:7px 9px; border:1px solid #c3d2dc; border-radius:5px; background:white; color:#526d7e; cursor:pointer; font-size:10px;">Limpar seleção</button>
@@ -959,6 +1004,86 @@ window.IS.SettingsUI = {
     this.selectedKanbanLeadKeys.clear();
     await this.renderCategories();
     this.showToast(`${leadKeys.length} lead(s) movido(s) para ${destination.name}, em Sem etapa.`);
+    return true;
+  },
+
+  async moveKanbanLabel(labelSearch, categoryId, stageId = 'unassigned') {
+    const searched = window.IS.removeAccents(String(labelSearch || '').toLocaleLowerCase().trim());
+    if (!searched) {
+      this.showToast('Pesquise e selecione uma etiqueta.');
+      return false;
+    }
+    const matchingLabels = this.waLabels.filter(label => {
+      const normalized = window.IS.removeAccents(String(label.name || '').toLocaleLowerCase().trim());
+      return normalized === searched || normalized.includes(searched);
+    });
+    const exactLabel = matchingLabels.find(label =>
+      window.IS.removeAccents(String(label.name || '').toLocaleLowerCase().trim()) === searched
+    );
+    const label = exactLabel || (matchingLabels.length === 1 ? matchingLabels[0] : null);
+    if (!label) {
+      this.showToast(matchingLabels.length > 1
+        ? 'Há mais de uma etiqueta correspondente. Selecione o nome completo.'
+        : 'Etiqueta não encontrada. Sincronize-a primeiro no CRM.');
+      return false;
+    }
+
+    const categories = await window.IS.Storage.getCategories();
+    const availableCategories = [
+      { id: 'default-category', name: 'Sem categoria' },
+      ...categories.filter(category => category.id !== 'default-category')
+    ];
+    const destination = availableCategories.find(category => category.id === categoryId);
+    if (!destination) {
+      this.showToast('Selecione uma categoria válida.');
+      return false;
+    }
+    const destinationReplies = (await window.IS.Storage.getReplies())
+      .filter(reply => (reply.categoryId || 'default-category') === categoryId);
+    const validStageIds = new Set(['unassigned', 'completed', ...destinationReplies.map(reply => reply.id)]);
+    if (!validStageIds.has(stageId) || (stageId === 'completed' && !destinationReplies.length)) {
+      this.showToast('Selecione uma etapa válida para a categoria.');
+      return false;
+    }
+
+    const hiddenData = await chrome.storage.local.get('hiddenKanbanLeads');
+    const hidden = new Set(Array.isArray(hiddenData.hiddenKanbanLeads) ? hiddenData.hiddenKanbanLeads : []);
+    const labelName = window.IS.removeAccents(String(label.name || '').toLocaleLowerCase().trim());
+    const leadKeys = this.getKanbanLeads()
+      .filter(lead => !hidden.has(lead.key))
+      .filter(lead => lead.labels.some(name =>
+        window.IS.removeAccents(String(name || '').toLocaleLowerCase().trim()) === labelName
+      ))
+      .map(lead => lead.key);
+    if (!leadKeys.length) {
+      this.showToast('Essa etiqueta não possui leads disponíveis no Kanban.');
+      return false;
+    }
+
+    const data = await chrome.storage.local.get(['leadCategoryAssignments', 'leadStageAssignments']);
+    const categoryAssignments = data.leadCategoryAssignments || {};
+    const stageAssignments = data.leadStageAssignments || {};
+    leadKeys.forEach(leadKey => {
+      categoryAssignments[leadKey] = categoryId;
+      Object.keys(stageAssignments).forEach(key => {
+        if (key.endsWith(`:${leadKey}`)) delete stageAssignments[key];
+      });
+      stageAssignments[`${categoryId}:${leadKey}`] = stageId;
+    });
+    await chrome.storage.local.set({
+      leadCategoryAssignments: categoryAssignments,
+      leadStageAssignments: stageAssignments
+    });
+
+    const stageTitle = stageId === 'unassigned'
+      ? 'Sem etapa'
+      : stageId === 'completed'
+        ? 'Concluído'
+        : destinationReplies.find(reply => reply.id === stageId)?.title || 'etapa selecionada';
+    this.selectedCategoryId = categoryId;
+    this.selectedKanbanLeadKeys.clear();
+    await this.renderCategories();
+    this.showToast(`${leadKeys.length} lead(s) da etiqueta ${label.name} movido(s) para ${destination.name} / ${stageTitle}.`);
     return true;
   },
 
