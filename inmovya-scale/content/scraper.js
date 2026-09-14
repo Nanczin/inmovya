@@ -263,23 +263,36 @@ window.IS.Scraper = {
       }));
       target.dispatchEvent(new MouseEvent('mouseup', { ...eventOptions, buttons: 0 }));
       target.click();
-      if (await window.IS.WhatsAppDOM.waitForMessageInput(1400)) break;
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await this.delay(150);
+        if (this.isCurrentContact(contact)) {
+          this.recentExactContactOpen = {
+            name: contact.name,
+            chatId: contact.chatId || this.getContactIdentity(row),
+            openedAt: Date.now()
+          };
+          return true;
+        }
+      }
       target.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
       }));
       target.dispatchEvent(new KeyboardEvent('keyup', {
         key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
       }));
-      if (await window.IS.WhatsAppDOM.waitForMessageInput(1400)) break;
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await this.delay(150);
+        if (this.isCurrentContact(contact)) {
+          this.recentExactContactOpen = {
+            name: contact.name,
+            chatId: contact.chatId || this.getContactIdentity(row),
+            openedAt: Date.now()
+          };
+          return true;
+        }
+      }
     }
-
-    if (!window.IS.WhatsAppDOM.findMessageInput()) return false;
-    this.recentExactContactOpen = {
-      name: contact.name,
-      chatId: contact.chatId || this.getContactIdentity(row),
-      openedAt: Date.now()
-    };
-    return true;
+    return false;
   },
 
   isLabelViewActive(labelName, clickedRow = null) {
