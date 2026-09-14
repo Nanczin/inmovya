@@ -757,8 +757,8 @@ window.IS.SettingsUI = {
       return assignedCategory === selectedCategory.id;
     });
     const stages = [
-      { id: 'unassigned', title: 'Sem etapa', message: categoryReplies.length ? 'Clique no lead para enviar a primeira resposta' : 'Nenhuma resposta cadastrada' },
-      ...categoryReplies.map(reply => ({ id: reply.id, title: reply.title || 'Sem título', message: reply.message || '' })),
+      { id: 'unassigned', title: 'Sem etapa', message: categoryReplies.length ? 'Clique no lead para executar a primeira resposta' : 'Nenhuma resposta cadastrada', pasteOnly: !!categoryReplies[0]?.pasteOnly },
+      ...categoryReplies.map(reply => ({ id: reply.id, title: reply.title || 'Sem título', message: reply.message || '', pasteOnly: !!reply.pasteOnly })),
       ...(categoryReplies.length ? [{ id: 'completed', title: 'Concluído', message: 'Todas as respostas desta categoria foram enviadas' }] : [])
     ];
     const validStageIds = new Set(stages.map(stage => stage.id));
@@ -775,7 +775,7 @@ window.IS.SettingsUI = {
             <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="display:block; flex:1; min-width:0; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
               <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
               <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
-              <span style="display:block; margin-top:5px; color:#0877b5; font-size:9px; font-weight:bold;">${stage.id === 'completed' ? 'Abrir conversa' : 'Enviar resposta e avançar →'}</span>
+              <span style="display:block; margin-top:5px; color:#0877b5; font-size:9px; font-weight:bold;">${stage.id === 'completed' ? 'Abrir conversa' : stage.pasteOnly ? 'Colar sem enviar e avançar →' : 'Enviar resposta e avançar →'}</span>
             </button>
             <button type="button" class="is-delete-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-lead-name="${encodeURIComponent(lead.contact.name)}" title="Excluir lead do Kanban" style="flex:0 0 auto; width:22px; height:22px; padding:0; border:1px solid #efb2b7; border-radius:50%; background:#fff; color:#c62838; cursor:pointer; font-size:14px; line-height:18px;">×</button>
             </div>
@@ -796,7 +796,7 @@ window.IS.SettingsUI = {
             <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${stageLeads.length}</span>
           </div>
           <div style="margin-top:4px; font-size:9px; line-height:1.3; opacity:0.84;">${window.IS.escapeHTML(preview || 'Etapa da resposta rápida')}</div>
-          ${isReplyStage && stageLeads.length ? `<button type="button" class="is-kanban-send-stage" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="width:100%; margin-top:7px; padding:6px 8px; border:1px solid rgba(255,255,255,0.65); border-radius:5px; background:rgba(255,255,255,0.16); color:white; cursor:pointer; font-size:10px; font-weight:bold;">▶ Enviar etapa para ${stageLeads.length} lead(s)</button>` : ''}
+          ${isReplyStage && stageLeads.length ? `<button type="button" class="is-kanban-send-stage" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="width:100%; margin-top:7px; padding:6px 8px; border:1px solid rgba(255,255,255,0.65); border-radius:5px; background:rgba(255,255,255,0.16); color:white; cursor:pointer; font-size:10px; font-weight:bold;">▶ ${stage.pasteOnly ? 'Colar' : 'Enviar'} etapa para ${stageLeads.length} lead(s)</button>` : ''}
         </div>
         <div style="display:flex; flex-direction:column; gap:7px; min-height:80px; padding:9px;">${leadCards}</div>
       </section>`;
@@ -987,12 +987,20 @@ window.IS.SettingsUI = {
       const reply = replies[replyIndex];
       const contactName = window.IS.WhatsAppDOM.getCurrentChatName() || lead.contact.name;
       const finalMessage = await window.IS.Variables.parseMessage(reply.message || '', contactName);
-      const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
-        finalMessage,
-        reply.attachments || [],
-        { sendSingleText: true }
-      );
-      if (!sent) throw new Error('A resposta rápida não pôde ser enviada para este lead.');
+      const completed = reply.pasteOnly
+        ? await window.IS.WhatsAppDOM.insertMessage(
+            String(finalMessage || '').replace(/\n\n===\n\n/g, '\n\n').replace(/===/g, '\n\n')
+          )
+        : await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
+            finalMessage,
+            reply.attachments || [],
+            { sendSingleText: true }
+          );
+      if (!completed) {
+        throw new Error(reply.pasteOnly
+          ? 'O texto não pôde ser inserido na conversa deste lead.'
+          : 'A resposta rápida não pôde ser enviada para este lead.');
+      }
 
       const nextStageId = replies[replyIndex + 1] ? replies[replyIndex + 1].id : 'completed';
       const stageData = await chrome.storage.local.get('leadStageAssignments');
@@ -1007,7 +1015,9 @@ window.IS.SettingsUI = {
         ? { ...item, usageCount: reply.usageCount, lastUsedAt: reply.lastUsedAt }
         : item));
       if (!options.deferRender) await this.renderCategories();
-      if (!options.silentSuccess) this.showToast(`Resposta enviada. Lead avançou para ${replies[replyIndex + 1]?.title || 'Concluído'}.`);
+      if (!options.silentSuccess) this.showToast(reply.pasteOnly
+        ? `Texto inserido sem envio. Lead avançou para ${replies[replyIndex + 1]?.title || 'Concluído'}.`
+        : `Resposta enviada. Lead avançou para ${replies[replyIndex + 1]?.title || 'Concluído'}.`);
       return true;
     } catch (error) {
       window.IS.error('Erro ao enviar etapa do Kanban', error);
@@ -1029,10 +1039,12 @@ window.IS.SettingsUI = {
     const replies = (await window.IS.Storage.getReplies())
       .filter(reply => (reply.categoryId || 'default-category') === this.selectedCategoryId)
       .sort((left, right) => (left.order || 0) - (right.order || 0));
-    if (!replies.some(reply => reply.id === stageId)) {
+    const stageReply = replies.find(reply => reply.id === stageId);
+    if (!stageReply) {
       this.showToast('Esta coluna não possui uma resposta para disparar.');
       return false;
     }
+    const pasteOnly = !!stageReply.pasteOnly;
 
     const stored = await chrome.storage.local.get(['leadCategoryAssignments', 'leadStageAssignments', 'hiddenKanbanLeads']);
     const categoryAssignments = stored.leadCategoryAssignments || {};
@@ -1048,13 +1060,17 @@ window.IS.SettingsUI = {
       this.showToast('Nenhum lead disponível nesta etapa.');
       return false;
     }
-    if (!await this.showConfirm('Enviar etapa em massa', `Enviar esta resposta para ${leads.length} lead(s), um por vez, com intervalo de 1 minuto? Somente envios confirmados avançarão de etapa.`)) return false;
+    const confirmationTitle = pasteOnly ? 'Colar etapa nos leads' : 'Enviar etapa em massa';
+    const confirmationText = pasteOnly
+      ? `Colar esta resposta, sem enviar, em ${leads.length} conversa(s), uma por vez, com intervalo de 1 minuto? Cada lead avançará após o texto ser inserido.`
+      : `Enviar esta resposta para ${leads.length} lead(s), um por vez, com intervalo de 1 minuto? Somente envios confirmados avançarão de etapa.`;
+    if (!await this.showConfirm(confirmationTitle, confirmationText)) return false;
 
     const wasFullscreen = this.kanbanFullscreen;
     this.bulkSending = true;
     if (triggerButton) {
       triggerButton.disabled = true;
-      triggerButton.textContent = `Enviando 0/${leads.length}…`;
+      triggerButton.textContent = `${pasteOnly ? 'Colando' : 'Enviando'} 0/${leads.length}…`;
     }
     let sent = 0;
     let failed = 0;
@@ -1062,7 +1078,7 @@ window.IS.SettingsUI = {
       if (wasFullscreen) await this.toggleKanbanFullscreen(false);
       for (let index = 0; index < leads.length; index++) {
         window.IS.log(`Disparo do Kanban: lead ${index + 1}/${leads.length} (${leads[index].contact.name})`);
-        if (triggerButton?.isConnected) triggerButton.textContent = `Enviando ${index + 1}/${leads.length}…`;
+        if (triggerButton?.isConnected) triggerButton.textContent = `${pasteOnly ? 'Colando' : 'Enviando'} ${index + 1}/${leads.length}…`;
         const ok = await this.openKanbanLead(leads[index].key, stageId, null, {
           manageFullscreen: false,
           silentSuccess: true,
@@ -1077,14 +1093,16 @@ window.IS.SettingsUI = {
         if (index < leads.length - 1) await window.IS.Scraper.delay(60000);
       }
       await this.renderCategories();
-      this.showToast(`Etapa concluída: ${sent} enviado(s)${failed ? `, ${failed} com falha` : ''}.`);
+      this.showToast(pasteOnly
+        ? `Etapa concluída: texto colado em ${sent} conversa(s), sem envio${failed ? `, ${failed} com falha` : ''}.`
+        : `Etapa concluída: ${sent} enviado(s)${failed ? `, ${failed} com falha` : ''}.`);
       return failed === 0;
     } finally {
       this.bulkSending = false;
       if (wasFullscreen && !this.kanbanFullscreen) await this.toggleKanbanFullscreen(true);
       if (triggerButton?.isConnected) {
         triggerButton.disabled = false;
-        triggerButton.textContent = `▶ Enviar etapa para ${leads.length} lead(s)`;
+        triggerButton.textContent = `▶ ${pasteOnly ? 'Colar' : 'Enviar'} etapa para ${leads.length} lead(s)`;
       }
     }
   },
