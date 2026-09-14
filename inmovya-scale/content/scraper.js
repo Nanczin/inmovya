@@ -343,6 +343,10 @@ window.IS.Scraper = {
     // primeiro span encontrado por getCurrentChatName().
     const header = document.querySelector('#main header');
     if (header) {
+      // Algumas versões renderizam o nome como texto simples, sem title,
+      // aria-label ou span[dir]. Leia também o texto visível do cabeçalho.
+      const headerText = this.normalizeText(header.innerText || header.textContent || '');
+      if (nameMatches(headerText)) return true;
       const headerNames = Array.from(header.querySelectorAll('[title], [aria-label], span[dir="auto"]'))
         .filter(element => this.isVisible(element))
         .map(element => this.normalizeText(
