@@ -1226,9 +1226,6 @@ window.IS.SettingsUI = {
         }
         await window.IS.Scraper.delay(1000);
       }
-      // Remova o resultado anterior antes de procurar o próximo contato. Isso
-      // impede que o WhatsApp mantenha a primeira conversa presa na busca.
-      await window.IS.Scraper.clearContactSearch();
     };
     try {
       if (wasFullscreen) await this.toggleKanbanFullscreen(false);

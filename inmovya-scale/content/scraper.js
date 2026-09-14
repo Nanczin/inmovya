@@ -398,16 +398,37 @@ window.IS.Scraper = {
       '#side [contenteditable="true"][data-tab="3"]',
       '#side [contenteditable="true"][aria-placeholder*="pesquis" i]',
       '#side [contenteditable="true"][aria-placeholder*="search" i]',
+      '#side header [contenteditable="true"][role="textbox"]',
+      '#side [contenteditable="true"][role="textbox"]',
+      '#side [contenteditable="true"][data-lexical-editor="true"]',
       '#side input[placeholder*="pesquis" i]',
-      '#side input[placeholder*="search" i]'
+      '#side input[placeholder*="search" i]',
+      '#side header input[type="text"]',
+      '#side input[type="text"]'
     ];
-    return selectors.map(selector => document.querySelector(selector)).find(element => this.isInteractable(element)) || null;
+    const candidates = Array.from(document.querySelectorAll(selectors.join(',')))
+      .filter(element => this.isVisible(element))
+      .filter(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 40 && rect.height > 10 && rect.top < Math.min(window.innerHeight * 0.35, 260);
+      })
+      .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top);
+    return candidates[0] || null;
   },
 
   async returnToChatList() {
-    for (let attempt = 0; attempt < 4; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       const searchInput = this.findSearchInput();
       if (searchInput) return searchInput;
+      const searchIcon = Array.from(document.querySelectorAll(
+        '#side header span[data-icon="search"], #side header [aria-label*="pesquis" i], #side header [aria-label*="search" i]'
+      )).find(element => this.isVisible(element));
+      if (searchIcon) {
+        (searchIcon.closest('button, [role="button"]') || searchIcon).click();
+        await this.delay(400);
+        const openedSearchInput = this.findSearchInput();
+        if (openedSearchInput) return openedSearchInput;
+      }
       if (!await this.clickBack()) break;
       await this.delay(500);
     }
@@ -481,7 +502,10 @@ window.IS.Scraper = {
     ].filter(Boolean)));
 
     for (const query of queries) {
-      await this.clearContactSearch();
+      if (!await this.clearContactSearch()) {
+        window.IS.error(`Campo de pesquisa não encontrado ao procurar ${contact.name}.`);
+        continue;
+      }
       const searchInput = this.findSearchInput();
       if (!searchInput || !await this.setContactSearchQuery(searchInput, query)) continue;
       for (let attempt = 0; attempt < 32; attempt++) {
