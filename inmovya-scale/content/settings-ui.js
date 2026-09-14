@@ -1214,6 +1214,22 @@ window.IS.SettingsUI = {
     }
     let sent = 0;
     let failed = 0;
+    const waitForNextLead = async (nextIndex) => {
+      const waitSeconds = pasteOnly ? 3 : 60;
+      for (let remaining = waitSeconds; remaining > 0; remaining--) {
+        const nextName = leads[nextIndex]?.contact?.name || 'próximo lead';
+        if (triggerButton?.isConnected) {
+          triggerButton.textContent = `Próximo: ${nextName} em ${remaining}s…`;
+        }
+        if (remaining === waitSeconds || remaining % 15 === 0) {
+          window.IS.log(`Disparo do Kanban: próximo lead (${nextName}) em ${remaining}s`);
+        }
+        await window.IS.Scraper.delay(1000);
+      }
+      // Remova o resultado anterior antes de procurar o próximo contato. Isso
+      // impede que o WhatsApp mantenha a primeira conversa presa na busca.
+      await window.IS.Scraper.clearContactSearch();
+    };
     try {
       if (wasFullscreen) await this.toggleKanbanFullscreen(false);
       for (let index = 0; index < leads.length; index++) {
@@ -1231,10 +1247,7 @@ window.IS.SettingsUI = {
           failed += 1;
         }
         if (index < leads.length - 1) {
-          // Não há risco de disparo no modo rascunho: avance logo após o
-          // WhatsApp registrar o texto. O intervalo anti-ban permanece apenas
-          // para respostas efetivamente enviadas.
-          await window.IS.Scraper.delay(pasteOnly ? 2500 : 60000);
+          await waitForNextLead(index + 1);
         }
       }
       await this.renderCategories();

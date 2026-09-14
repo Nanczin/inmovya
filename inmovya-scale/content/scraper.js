@@ -397,16 +397,45 @@ window.IS.Scraper = {
     return this.findSearchInput();
   },
 
-  async openContactBySearch(contact) {
-    this.recentExactContactOpen = null;
+  async clearContactSearch() {
     const searchInput = await this.returnToChatList();
     if (!searchInput) return false;
 
     searchInput.focus();
     searchInput.click();
     if (searchInput.isContentEditable) {
-      document.execCommand('selectAll', false, null);
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(searchInput);
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
       document.execCommand('delete', false, null);
+      if ((searchInput.textContent || '').trim()) searchInput.textContent = '';
+    } else {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (valueSetter) valueSetter.call(searchInput, '');
+      else searchInput.value = '';
+    }
+    searchInput.dispatchEvent(new InputEvent('input', {
+      bubbles: true,
+      inputType: 'deleteContentBackward',
+      data: null
+    }));
+    await this.delay(350);
+    return true;
+  },
+
+  async openContactBySearch(contact) {
+    this.recentExactContactOpen = null;
+    await this.clearContactSearch();
+    const searchInput = this.findSearchInput();
+    if (!searchInput) return false;
+
+    searchInput.focus();
+    searchInput.click();
+    if (searchInput.isContentEditable) {
       document.execCommand('insertText', false, contact.name);
       searchInput.dispatchEvent(new InputEvent('input', {
         bubbles: true,
