@@ -179,7 +179,7 @@ window.IS.Scraper = {
     ];
     const rows = [];
     document.querySelectorAll(selectors.join(',')).forEach(row => {
-      if (this.isInteractable(row) && row.querySelector('span[title]') && !rows.includes(row)) {
+      if (this.isInteractable(row) && this.getContactName(row) && !rows.includes(row)) {
         rows.push(row);
       }
     });
@@ -191,7 +191,7 @@ window.IS.Scraper = {
     if (explicitTitle) return (explicitTitle.getAttribute('title') || explicitTitle.textContent || '').trim();
 
     const rowRect = row.getBoundingClientRect();
-    const candidates = Array.from(row.querySelectorAll('span[dir="auto"][title], span[title]'))
+    const candidates = Array.from(row.querySelectorAll('span[dir="auto"][title], span[title], span[dir="auto"]'))
       .filter(node => {
         if (!this.isVisible(node)) return false;
         if (node.closest('[data-testid*="last-msg" i], [data-testid*="message" i], [aria-label*="mensagem" i], [aria-label*="message" i]')) return false;
@@ -200,7 +200,7 @@ window.IS.Scraper = {
       })
       .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top);
     const titleNode = candidates[0];
-    return titleNode ? (titleNode.getAttribute('title') || titleNode.textContent || '').trim() : '';
+    return titleNode ? (titleNode.getAttribute('title') || titleNode.textContent || '').replace(/\s+/g, ' ').trim() : '';
   },
 
   isSavedContactName(name) {
@@ -403,18 +403,28 @@ window.IS.Scraper = {
     if (!searchInput) return false;
 
     searchInput.focus();
+    searchInput.click();
     if (searchInput.isContentEditable) {
       document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
       document.execCommand('insertText', false, contact.name);
+      searchInput.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        inputType: 'insertText',
+        data: contact.name
+      }));
     } else {
-      searchInput.value = contact.name;
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      if (valueSetter) valueSetter.call(searchInput, contact.name);
+      else searchInput.value = contact.name;
       searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: contact.name }));
     }
-    await this.delay(1200);
-
-    const contactRow = await this.findContactRowWithScroll(contact);
-    if (!contactRow) return false;
-    return this.openChatRow(contactRow, contact);
+    for (let attempt = 0; attempt < 24; attempt++) {
+      await this.delay(250);
+      const contactRow = this.findContactRow(contact);
+      if (contactRow) return this.openChatRow(contactRow, contact);
+    }
+    return false;
   },
 
   async findLabelRowByName(name) {
@@ -497,8 +507,12 @@ window.IS.Scraper = {
 
     // Resultados da busca podem deixar de usar role=listitem/row. Localize o
     // título exato e suba até o primeiro contêiner visual correspondente.
-    const exactTitle = Array.from(document.querySelectorAll('#side span[title], #pane-side span[title]'))
-      .find(node => this.isInteractable(node) && this.normalizeText(node.getAttribute('title')) === expectedName);
+    const exactTitle = Array.from(document.querySelectorAll(
+      '#side span[title], #pane-side span[title], #side span[dir="auto"], #pane-side span[dir="auto"]'
+    )).find(node => {
+      const candidateName = node.getAttribute('title') || node.textContent || '';
+      return this.isVisible(node) && this.normalizeText(candidateName) === expectedName;
+    });
     if (!exactTitle) return null;
     return exactTitle.closest(
       '[role="listitem"], [role="row"], [data-testid*="cell-frame" i], [role="button"], [tabindex]'

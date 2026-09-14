@@ -232,6 +232,13 @@ window.IS.SettingsUI = {
         return;
       }
 
+      const moveCategoryButton = e.target.closest('.is-kanban-move-category-selected');
+      if (moveCategoryButton) {
+        const categorySelect = document.getElementById('is-kanban-bulk-category');
+        await this.moveSelectedKanbanLeadsToCategory(categorySelect?.value || '');
+        return;
+      }
+
       const selectAllButton = e.target.closest('.is-kanban-select-all');
       if (selectAllButton) {
         document.querySelectorAll('.is-kanban-lead-select').forEach(checkbox => {
@@ -332,8 +339,10 @@ window.IS.SettingsUI = {
         const count = this.selectedKanbanLeadKeys.size;
         const countLabel = document.getElementById('is-kanban-selected-count');
         const moveButton = document.querySelector('.is-kanban-move-selected');
+        const moveCategoryButton = document.querySelector('.is-kanban-move-category-selected');
         if (countLabel) countLabel.textContent = `${count} selecionado(s)`;
         if (moveButton) moveButton.disabled = count === 0;
+        if (moveCategoryButton) moveCategoryButton.disabled = count === 0 || !document.getElementById('is-kanban-bulk-category')?.value;
         return;
       }
 
@@ -848,6 +857,7 @@ window.IS.SettingsUI = {
     }).join('');
 
     const manageableCategories = categories.filter(category => category.id !== 'default-category');
+    const destinationCategories = boardCategories.filter(category => category.id !== selectedCategory.id);
     const categoryManagement = manageableCategories.length
       ? manageableCategories.map(category => `<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border:1px solid var(--inmovya-border); border-radius:4px;">
           <strong style="font-size:12px;">${window.IS.escapeHTML(category.name)}</strong>
@@ -869,6 +879,12 @@ window.IS.SettingsUI = {
           ${stages.map(stage => `<option value="${window.IS.escapeHTML(stage.id)}">Mover para: ${window.IS.escapeHTML(stage.title)}</option>`).join('')}
         </select>
         <button type="button" class="is-kanban-move-selected" ${this.selectedKanbanLeadKeys.size ? '' : 'disabled'} style="padding:8px 12px; border:none; border-radius:5px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:10px; font-weight:bold; disabled:opacity:.5;">Mover selecionados</button>
+        <select id="is-kanban-bulk-category" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;" ${destinationCategories.length ? '' : 'disabled'}>
+          ${destinationCategories.length
+            ? destinationCategories.map(category => `<option value="${window.IS.escapeHTML(category.id)}">Categoria: ${window.IS.escapeHTML(category.name)}</option>`).join('')
+            : '<option value="">Nenhuma outra categoria</option>'}
+        </select>
+        <button type="button" class="is-kanban-move-category-selected" ${this.selectedKanbanLeadKeys.size && destinationCategories.length ? '' : 'disabled'} style="padding:8px 12px; border:none; border-radius:5px; background:#4d7f9f; color:white; cursor:pointer; font-size:10px; font-weight:bold;">Mover para categoria</button>
       </div>
       <div style="display:flex; gap:10px; overflow-x:auto; align-items:stretch; padding:0 0 10px; min-height:${this.kanbanFullscreen ? 'calc(100vh - 225px)' : 'auto'};">${columns}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
@@ -906,6 +922,43 @@ window.IS.SettingsUI = {
     this.selectedKanbanLeadKeys.clear();
     await this.renderCategories();
     this.showToast(`${leadKeys.length} lead(s) movido(s) para ${stageTitle}.`);
+    return true;
+  },
+
+  async moveSelectedKanbanLeadsToCategory(categoryId) {
+    const leadKeys = [...this.selectedKanbanLeadKeys];
+    if (!leadKeys.length) {
+      this.showToast('Selecione pelo menos um lead.');
+      return false;
+    }
+
+    const categories = await window.IS.Storage.getCategories();
+    const availableCategories = [
+      { id: 'default-category', name: 'Sem categoria' },
+      ...categories.filter(category => category.id !== 'default-category')
+    ];
+    const destination = availableCategories.find(category => category.id === categoryId);
+    if (!destination || categoryId === this.selectedCategoryId) {
+      this.showToast('Selecione outra categoria válida.');
+      return false;
+    }
+
+    const data = await chrome.storage.local.get(['leadCategoryAssignments', 'leadStageAssignments']);
+    const categoryAssignments = data.leadCategoryAssignments || {};
+    const stageAssignments = data.leadStageAssignments || {};
+    leadKeys.forEach(leadKey => {
+      categoryAssignments[leadKey] = categoryId;
+      delete stageAssignments[`${this.selectedCategoryId}:${leadKey}`];
+      stageAssignments[`${categoryId}:${leadKey}`] = 'unassigned';
+    });
+    await chrome.storage.local.set({
+      leadCategoryAssignments: categoryAssignments,
+      leadStageAssignments: stageAssignments
+    });
+
+    this.selectedKanbanLeadKeys.clear();
+    await this.renderCategories();
+    this.showToast(`${leadKeys.length} lead(s) movido(s) para ${destination.name}, em Sem etapa.`);
     return true;
   },
 
