@@ -118,6 +118,13 @@ window.IS.SettingsUI = {
         <input type="checkbox" id="is-form-favorite">
         <label for="is-form-favorite" style="font-size:13px;">Marcar como favorito</label>
       </div>
+      <div style="padding:10px; border:1px solid var(--inmovya-border); border-radius:6px; background:var(--inmovya-surface);">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="is-form-paste-only">
+          <label for="is-form-paste-only" style="font-size:13px; font-weight:bold;">Apenas colar o texto na conversa</label>
+        </div>
+        <div style="font-size:11px; color:var(--inmovya-text-secondary); margin:5px 0 0 22px; line-height:1.35;">A mensagem será preenchida no WhatsApp sem ser enviada, para você personalizar antes do envio.</div>
+      </div>
       <div>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
           <label style="margin:0; font-size:12px; font-weight:bold;">Mensagens (Sequência)</label>
@@ -388,11 +395,15 @@ window.IS.SettingsUI = {
       
       const categoryId = document.getElementById('is-form-category').value;
       const favorite = document.getElementById('is-form-favorite').checked;
+      const pasteOnly = document.getElementById('is-form-paste-only').checked;
       const message = this.getMessageBlocksData();
       const hasMessageText = Array.from(document.querySelectorAll('.is-form-message-input'))
         .some(input => input.value.trim().length > 0);
       if (!hasMessageText && this.draftAttachments.length === 0) {
         return this.showToast("Adicione uma mensagem ou uma imagem.");
+      }
+      if (pasteOnly && !hasMessageText) {
+        return this.showToast("Adicione um texto para colar na conversa.");
       }
       
       let replies = await window.IS.Storage.getReplies();
@@ -405,10 +416,10 @@ window.IS.SettingsUI = {
             ? this.editingOrder
             : replies.filter(reply => (reply.categoryId || 'default-category') === categoryId)
               .reduce((highest, reply) => Math.max(highest, Number.isFinite(reply.order) ? reply.order : -1), -1) + 1;
-          replies[rIndex] = { ...original, title, categoryId, favorite, message, attachments: [...this.draftAttachments], order };
+          replies[rIndex] = { ...original, title, categoryId, favorite, pasteOnly, message, attachments: [...this.draftAttachments], order };
         }
       } else {
-        const newReply = { id: window.IS.generateUUID(), title, categoryId, favorite, message, attachments: [...this.draftAttachments], order: replies.length };
+        const newReply = { id: window.IS.generateUUID(), title, categoryId, favorite, pasteOnly, message, attachments: [...this.draftAttachments], order: replies.length };
         replies.push(newReply);
       }
       
@@ -655,6 +666,7 @@ window.IS.SettingsUI = {
         <div style="font-size:11px; color:#888; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
           ${window.IS.escapeHTML(r.message || "").replace(/===/g, ' ⤶ ')}
         </div>
+        ${r.pasteOnly ? '<div style="font-size:10px; color:var(--inmovya-primary); font-weight:bold;">✏️ Apenas preencher para personalizar</div>' : ''}
       </div>
     `;
 
@@ -1272,6 +1284,7 @@ window.IS.SettingsUI = {
         document.getElementById('is-form-title').value = r.title || '';
         document.getElementById('is-form-category').value = r.categoryId || 'default-category';
         document.getElementById('is-form-favorite').checked = !!r.favorite;
+        document.getElementById('is-form-paste-only').checked = !!r.pasteOnly;
         this.renderMessageBlocks(storedMessages);
         this.renderAttachmentsPreview(this.draftAttachments);
       }
@@ -1283,6 +1296,7 @@ window.IS.SettingsUI = {
         ? preferredCategoryId
         : (categories[0] ? categories[0].id : 'default-category');
       document.getElementById('is-form-favorite').checked = false;
+      document.getElementById('is-form-paste-only').checked = false;
       this.renderMessageBlocks([""]);
       this.renderAttachmentsPreview(this.draftAttachments);
     }

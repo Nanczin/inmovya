@@ -105,6 +105,52 @@ export function RelatoriosModule() {
   const ligacoesComAjuste = metricas.ligacoes.hoje + manualMetrics.ligacoes;
 
   useEffect(() => {
+    const limparHistoricoExpirado = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 60);
+        cutoff.setHours(0, 0, 0, 0);
+        const cutoffIso = cutoff.toISOString();
+        const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+
+        const [callsResult, emailsResult, manualResult] = await Promise.all([
+          supabase.from('ligacoes').delete().eq('user_id', user.id).lt('data_ligacao', cutoffIso),
+          supabase.from('email_logs').delete().eq('user_id', user.id).lt('sent_at', cutoffIso),
+          supabase.from('powerbi_funnel_metrics').select('id, period, created_at, updated_at').eq('user_id', user.id)
+        ]);
+
+        if (callsResult.error) throw callsResult.error;
+        if (emailsResult.error) throw emailsResult.error;
+        if (manualResult.error) throw manualResult.error;
+
+        const expiredManualIds = (manualResult.data || [])
+          .filter(row => {
+            if (row.period?.startsWith('dia:')) return row.period.slice(4) < cutoffKey;
+            const storedAt = row.updated_at || row.created_at;
+            return !!storedAt && new Date(storedAt) < cutoff;
+          })
+          .map(row => row.id);
+
+        if (expiredManualIds.length > 0) {
+          const { error } = await supabase
+            .from('powerbi_funnel_metrics')
+            .delete()
+            .eq('user_id', user.id)
+            .in('id', expiredManualIds);
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.error('Erro ao aplicar retenção de 60 dias nos relatórios:', error);
+      }
+    };
+
+    limparHistoricoExpirado();
+  }, []);
+
+  useEffect(() => {
     if (periodoSelecionado !== "personalizado" || (dataInicioPersonalizada && dataFimPersonalizada)) {
       carregarMetricas();
     }

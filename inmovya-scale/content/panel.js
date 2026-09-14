@@ -154,14 +154,18 @@ window.IS.Panel = {
     const contactName = window.IS.WhatsAppDOM.getCurrentChatName();
     const finalMessage = await window.IS.Variables.parseMessage(reply.message, contactName);
 
-    const success = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
-      finalMessage,
-      reply.attachments,
-      { sendSingleText: true }
-    );
+    const success = reply.pasteOnly
+      ? await window.IS.WhatsAppDOM.insertMessage(
+          String(finalMessage || '').replace(/\n\n===\n\n/g, '\n\n').replace(/===/g, '\n\n')
+        )
+      : await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
+          finalMessage,
+          reply.attachments,
+          { sendSingleText: true }
+        );
 
     if (success) {
-      this.showToast("Mensagem enviada.");
+      this.showToast(reply.pasteOnly ? "Texto inserido. Personalize e envie quando quiser." : "Mensagem enviada.");
       reply.usageCount = (reply.usageCount || 0) + 1;
       reply.lastUsedAt = new Date().toISOString();
       await window.IS.Storage.saveReplies(this.replies);

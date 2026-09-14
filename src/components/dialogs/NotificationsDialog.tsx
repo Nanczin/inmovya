@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useLeads } from "@/context/LeadsContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -38,6 +39,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
     clearAll,
     removeNotification
   } = useNotifications();
+  const { getLeadById } = useLeads();
 
   const { toast } = useToast();
 
@@ -272,6 +274,11 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                             <p className="text-sm text-muted-foreground mt-1">
                               {notification.message}
                             </p>
+                            {notification.leadId && (
+                              <p className="text-sm font-medium text-foreground mt-2">
+                                Lead: {getLeadById(notification.leadId)?.nome || 'Lead não encontrado'}
+                              </p>
+                            )}
 
                             <p className="text-xs text-muted-foreground mt-2">
                               {new Date(notification.timestamp).toLocaleString('pt-BR')}
@@ -317,6 +324,11 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                             <p className="text-sm text-muted-foreground mt-1">
                               {notification.message}
                             </p>
+                            {notification.leadId && (
+                              <p className="text-sm font-medium text-foreground mt-2">
+                                Lead: {getLeadById(notification.leadId)?.nome || 'Lead não encontrado'}
+                              </p>
+                            )}
 
                             <p className="text-xs text-muted-foreground mt-2">
                               {new Date(notification.timestamp).toLocaleString('pt-BR')}
