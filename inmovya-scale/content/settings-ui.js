@@ -21,6 +21,7 @@ window.IS.SettingsUI = {
   editingOrder: null,
   draftAttachments: [],
   bulkSending: false,
+  selectedKanbanLeadKeys: new Set(),
 
   get htmlTemplate() {
     return `<div id="is-native-settings-container" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--inmovya-background); color:var(--inmovya-text); overflow-y:auto; overflow-x:hidden;">
@@ -224,6 +225,30 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('click', async (e) => {
+      const moveSelectedButton = e.target.closest('.is-kanban-move-selected');
+      if (moveSelectedButton) {
+        const stageSelect = document.getElementById('is-kanban-bulk-stage');
+        await this.moveSelectedKanbanLeads(stageSelect?.value || 'unassigned');
+        return;
+      }
+
+      const selectAllButton = e.target.closest('.is-kanban-select-all');
+      if (selectAllButton) {
+        document.querySelectorAll('.is-kanban-lead-select').forEach(checkbox => {
+          const leadKey = decodeURIComponent(checkbox.getAttribute('data-lead-key') || '');
+          if (leadKey) this.selectedKanbanLeadKeys.add(leadKey);
+        });
+        await this.renderCategories();
+        return;
+      }
+
+      const clearSelectionButton = e.target.closest('.is-kanban-clear-selection');
+      if (clearSelectionButton) {
+        this.selectedKanbanLeadKeys.clear();
+        await this.renderCategories();
+        return;
+      }
+
       const bulkButton = e.target.closest('.is-kanban-send-stage');
       if (bulkButton) {
         await this.sendKanbanStageBulk(
@@ -262,6 +287,7 @@ window.IS.SettingsUI = {
       const filterButton = e.target.closest('.is-category-filter');
       if (filterButton) {
         this.selectedCategoryId = filterButton.getAttribute('data-id') || 'default-category';
+        this.selectedKanbanLeadKeys.clear();
         await this.renderCategories();
         return;
       }
@@ -297,6 +323,20 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-categories-list').addEventListener('change', async event => {
+      const leadCheckbox = event.target.closest('.is-kanban-lead-select');
+      if (leadCheckbox) {
+        const leadKey = decodeURIComponent(leadCheckbox.getAttribute('data-lead-key') || '');
+        if (!leadKey) return;
+        if (leadCheckbox.checked) this.selectedKanbanLeadKeys.add(leadKey);
+        else this.selectedKanbanLeadKeys.delete(leadKey);
+        const count = this.selectedKanbanLeadKeys.size;
+        const countLabel = document.getElementById('is-kanban-selected-count');
+        const moveButton = document.querySelector('.is-kanban-move-selected');
+        if (countLabel) countLabel.textContent = `${count} selecionado(s)`;
+        if (moveButton) moveButton.disabled = count === 0;
+        return;
+      }
+
       const stageSelect = event.target.closest('.is-kanban-lead-stage');
       if (stageSelect) {
         const leadKey = decodeURIComponent(stageSelect.getAttribute('data-lead-key') || '');
@@ -756,6 +796,10 @@ window.IS.SettingsUI = {
       const assignedCategory = validCategoryIds.has(assignments[lead.key]) ? assignments[lead.key] : 'default-category';
       return assignedCategory === selectedCategory.id;
     });
+    const categoryLeadKeys = new Set(categoryLeads.map(lead => lead.key));
+    this.selectedKanbanLeadKeys = new Set(
+      [...this.selectedKanbanLeadKeys].filter(leadKey => categoryLeadKeys.has(leadKey))
+    );
     const stages = [
       { id: 'unassigned', title: 'Sem etapa', message: categoryReplies.length ? 'Clique no lead para executar a primeira resposta' : 'Nenhuma resposta cadastrada', pasteOnly: !!categoryReplies[0]?.pasteOnly },
       ...categoryReplies.map(reply => ({ id: reply.id, title: reply.title || 'Sem título', message: reply.message || '', pasteOnly: !!reply.pasteOnly })),
@@ -772,6 +816,7 @@ window.IS.SettingsUI = {
       const leadCards = stageLeads.length
         ? stageLeads.map(lead => `<div draggable="true" class="is-kanban-lead-card" data-lead-key="${encodeURIComponent(lead.key)}" style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
             <div style="display:flex; align-items:flex-start; gap:6px;">
+            <input type="checkbox" class="is-kanban-lead-select" data-lead-key="${encodeURIComponent(lead.key)}" ${this.selectedKanbanLeadKeys.has(lead.key) ? 'checked' : ''} title="Selecionar lead" style="flex:0 0 auto; margin-top:2px; cursor:pointer;">
             <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="display:block; flex:1; min-width:0; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
               <strong style="display:block; font-size:12px;">👤 ${window.IS.escapeHTML(lead.contact.name)}</strong>
               <span style="display:block; margin-top:3px; color:#56798f; font-size:9px;">🏷️ ${window.IS.escapeHTML(lead.labels.join(', '))}</span>
@@ -816,10 +861,52 @@ window.IS.SettingsUI = {
         <button type="button" class="is-kanban-add-reply" style="padding:8px 12px; border:none; border-radius:6px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:11px; font-weight:bold;">+ Resposta em ${window.IS.escapeHTML(selectedCategory.name)}</button>
       </div>
       <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
+      <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:10px; padding:9px; border:1px solid #c9d9e5; border-radius:7px; background:#eef6fb;">
+        <button type="button" class="is-kanban-select-all" style="padding:7px 9px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#075f91; cursor:pointer; font-size:10px; font-weight:bold;">Selecionar todos</button>
+        <button type="button" class="is-kanban-clear-selection" style="padding:7px 9px; border:1px solid #c3d2dc; border-radius:5px; background:white; color:#526d7e; cursor:pointer; font-size:10px;">Limpar seleção</button>
+        <strong id="is-kanban-selected-count" style="font-size:10px; color:#254c64;">${this.selectedKanbanLeadKeys.size} selecionado(s)</strong>
+        <select id="is-kanban-bulk-stage" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
+          ${stages.map(stage => `<option value="${window.IS.escapeHTML(stage.id)}">Mover para: ${window.IS.escapeHTML(stage.title)}</option>`).join('')}
+        </select>
+        <button type="button" class="is-kanban-move-selected" ${this.selectedKanbanLeadKeys.size ? '' : 'disabled'} style="padding:8px 12px; border:none; border-radius:5px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:10px; font-weight:bold; disabled:opacity:.5;">Mover selecionados</button>
+      </div>
       <div style="display:flex; gap:10px; overflow-x:auto; align-items:stretch; padding:0 0 10px; min-height:${this.kanbanFullscreen ? 'calc(100vh - 225px)' : 'auto'};">${columns}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
+  },
+
+  async moveSelectedKanbanLeads(stageId) {
+    const leadKeys = [...this.selectedKanbanLeadKeys];
+    if (!leadKeys.length) {
+      this.showToast('Selecione pelo menos um lead.');
+      return false;
+    }
+
+    const replies = (await window.IS.Storage.getReplies())
+      .filter(reply => (reply.categoryId || 'default-category') === this.selectedCategoryId);
+    const validStageIds = new Set(['unassigned', 'completed', ...replies.map(reply => reply.id)]);
+    if (!validStageIds.has(stageId)) {
+      this.showToast('Selecione uma etapa válida.');
+      return false;
+    }
+
+    const stageData = await chrome.storage.local.get('leadStageAssignments');
+    const stageAssignments = stageData.leadStageAssignments || {};
+    leadKeys.forEach(leadKey => {
+      stageAssignments[`${this.selectedCategoryId}:${leadKey}`] = stageId;
+    });
+    await chrome.storage.local.set({ leadStageAssignments: stageAssignments });
+
+    const stageTitle = stageId === 'unassigned'
+      ? 'Sem etapa'
+      : stageId === 'completed'
+        ? 'Concluído'
+        : replies.find(reply => reply.id === stageId)?.title || 'etapa selecionada';
+    this.selectedKanbanLeadKeys.clear();
+    await this.renderCategories();
+    this.showToast(`${leadKeys.length} lead(s) movido(s) para ${stageTitle}.`);
+    return true;
   },
 
   async reorderCategoryReplies(sourceReplyId, targetReplyId) {
@@ -1062,7 +1149,7 @@ window.IS.SettingsUI = {
     }
     const confirmationTitle = pasteOnly ? 'Colar etapa nos leads' : 'Enviar etapa em massa';
     const confirmationText = pasteOnly
-      ? `Colar esta resposta, sem enviar, em ${leads.length} conversa(s), uma por vez, com intervalo de 1 minuto? Cada lead avançará após o texto ser inserido.`
+      ? `Colar esta resposta, sem enviar, em ${leads.length} conversa(s), uma por vez? Cada lead avançará após o texto ser inserido e a próxima conversa será aberta automaticamente.`
       : `Enviar esta resposta para ${leads.length} lead(s), um por vez, com intervalo de 1 minuto? Somente envios confirmados avançarão de etapa.`;
     if (!await this.showConfirm(confirmationTitle, confirmationText)) return false;
 
@@ -1090,7 +1177,12 @@ window.IS.SettingsUI = {
         } else {
           failed += 1;
         }
-        if (index < leads.length - 1) await window.IS.Scraper.delay(60000);
+        if (index < leads.length - 1) {
+          // Não há risco de disparo no modo rascunho: avance logo após o
+          // WhatsApp registrar o texto. O intervalo anti-ban permanece apenas
+          // para respostas efetivamente enviadas.
+          await window.IS.Scraper.delay(pasteOnly ? 2500 : 60000);
+        }
       }
       await this.renderCategories();
       this.showToast(pasteOnly
