@@ -593,8 +593,10 @@ window.IS.SettingsUI = {
         const normalizedName = window.IS.removeAccents(labelName.toLocaleLowerCase());
         const existingIndex = this.waLabels.findIndex(label => window.IS.removeAccents(label.name.toLocaleLowerCase()) === normalizedName);
         if (existingIndex >= 0) {
-          await this.preserveKanbanAssignmentsForUpdatedLabel(this.waLabels[existingIndex], capturedLabel);
-          this.waLabels[existingIndex] = capturedLabel;
+          const previousLabel = this.waLabels[existingIndex];
+          const mergedLabel = this.mergeUpdatedLabelContacts(previousLabel, capturedLabel);
+          await this.preserveKanbanAssignmentsForUpdatedLabel(previousLabel, mergedLabel);
+          this.waLabels[existingIndex] = mergedLabel;
         }
         else this.waLabels.push(capturedLabel);
         this.selectedWaLabelName = capturedLabel.name;
@@ -613,6 +615,15 @@ window.IS.SettingsUI = {
     });
 
     document.getElementById('is-set-labels-list').addEventListener('click', (event) => {
+      const updateLabelButton = event.target.closest('.is-update-synced-label');
+      if (updateLabelButton) {
+        this.updateCrmLabel(
+          decodeURIComponent(updateLabelButton.getAttribute('data-label-name') || ''),
+          updateLabelButton
+        );
+        return;
+      }
+
       const deleteContactButton = event.target.closest('.is-delete-crm-lead');
       if (deleteContactButton) {
         this.deleteCrmLead(
@@ -1240,6 +1251,39 @@ window.IS.SettingsUI = {
     return Array.from(leadsByKey.values()).sort((a, b) => a.contact.name.localeCompare(b.contact.name, 'pt-BR'));
   },
 
+  mergeUpdatedLabelContacts(previousLabel, capturedLabel) {
+    const mergedContacts = (Array.isArray(previousLabel?.contacts) ? previousLabel.contacts : [])
+      .map(contact => ({ ...contact }));
+    const normalizedName = contact => window.IS.removeAccents(String(contact?.name || '').toLocaleLowerCase().trim());
+
+    (Array.isArray(capturedLabel?.contacts) ? capturedLabel.contacts : []).forEach(capturedContact => {
+      const capturedId = String(capturedContact.chatId || '').trim();
+      const capturedName = normalizedName(capturedContact);
+      const existingIndex = mergedContacts.findIndex(existingContact => {
+        const existingId = String(existingContact.chatId || '').trim();
+        return (capturedId && existingId && capturedId === existingId) ||
+          (capturedName && normalizedName(existingContact) === capturedName);
+      });
+      if (existingIndex >= 0) {
+        const existingContact = mergedContacts[existingIndex];
+        mergedContacts[existingIndex] = {
+          ...existingContact,
+          ...capturedContact,
+          id: existingContact.id || capturedContact.id
+        };
+      } else {
+        mergedContacts.push({ ...capturedContact });
+      }
+    });
+
+    return {
+      ...previousLabel,
+      ...capturedLabel,
+      id: previousLabel?.id || capturedLabel?.id,
+      contacts: mergedContacts
+    };
+  },
+
   async preserveKanbanAssignmentsForUpdatedLabel(previousLabel, capturedLabel) {
     const previousContacts = Array.isArray(previousLabel?.contacts) ? previousLabel.contacts : [];
     const capturedContacts = Array.isArray(capturedLabel?.contacts) ? capturedLabel.contacts : [];
@@ -1532,6 +1576,48 @@ window.IS.SettingsUI = {
     return true;
   },
 
+  async updateCrmLabel(labelName, triggerButton = null) {
+    const normalizedName = window.IS.removeAccents(String(labelName || '').toLocaleLowerCase().trim());
+    const labelIndex = this.waLabels.findIndex(label =>
+      window.IS.removeAccents(String(label.name || '').toLocaleLowerCase().trim()) === normalizedName
+    );
+    if (labelIndex < 0) {
+      this.showToast('Etiqueta sincronizada não encontrada.');
+      return false;
+    }
+    if (!window.IS.Scraper || typeof window.IS.Scraper.captureOpenLabel !== 'function') {
+      this.showToast('Sincronizador de etiquetas indisponível.');
+      return false;
+    }
+
+    if (triggerButton) {
+      triggerButton.disabled = true;
+      triggerButton.textContent = 'Atualizando…';
+    }
+    try {
+      const previousLabel = this.waLabels[labelIndex];
+      const capturedLabel = await window.IS.Scraper.captureOpenLabel(previousLabel.name);
+      const mergedLabel = this.mergeUpdatedLabelContacts(previousLabel, capturedLabel);
+      await this.preserveKanbanAssignmentsForUpdatedLabel(previousLabel, mergedLabel);
+      this.waLabels[labelIndex] = mergedLabel;
+      this.selectedWaLabelName = mergedLabel.name;
+      await chrome.storage.local.set({ waLabels: this.waLabels });
+      this.renderWaLabels();
+      await this.renderCategories();
+      this.showToast(`${mergedLabel.name} atualizada: ${mergedLabel.contacts.length} contato(s). As posições antigas foram preservadas.`);
+      return true;
+    } catch (error) {
+      window.IS.error('Erro ao atualizar contatos da etiqueta', error);
+      this.showToast(error.message || 'Não foi possível atualizar a etiqueta.');
+      return false;
+    } finally {
+      if (triggerButton?.isConnected) {
+        triggerButton.disabled = false;
+        triggerButton.textContent = '↻ Atualizar contatos';
+      }
+    }
+  },
+
   async addCategory() {
     const input = document.getElementById('is-new-cat-name');
     const button = document.getElementById('is-btn-add-cat');
@@ -1603,6 +1689,8 @@ window.IS.SettingsUI = {
         }).join('')}
       </div>
       <div style="font-size:12px; font-weight:bold; margin-top:6px;">Contatos em ${window.IS.escapeHTML(selectedLabel.name)}</div>
+      <button type="button" class="is-update-synced-label" data-label-name="${encodeURIComponent(selectedLabel.name)}" style="width:100%; margin:7px 0 8px; padding:8px; border:1px solid var(--inmovya-primary); border-radius:6px; background:#eef8ff; color:var(--inmovya-primary); cursor:pointer; font-size:11px; font-weight:bold;">↻ Atualizar contatos</button>
+      <div style="margin:-3px 0 8px; color:var(--inmovya-text-secondary); font-size:9px; line-height:1.35;">Abra esta etiqueta no WhatsApp antes de atualizar. As categorias e etapas já organizadas serão mantidas.</div>
       <div style="display:flex; flex-direction:column; gap:6px;">
         ${contacts.length ? contacts.map((contact, contactIndex) => {
           const normalizedName = window.IS.removeAccents((contact.name || '').toLocaleLowerCase().trim());
