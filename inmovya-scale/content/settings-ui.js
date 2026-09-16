@@ -259,6 +259,17 @@ window.IS.SettingsUI = {
         return;
       }
 
+      const selectStageButton = e.target.closest('.is-kanban-select-stage');
+      if (selectStageButton) {
+        const column = selectStageButton.closest('.is-kanban-column');
+        column?.querySelectorAll('.is-kanban-lead-select').forEach(checkbox => {
+          const leadKey = decodeURIComponent(checkbox.getAttribute('data-lead-key') || '');
+          if (leadKey) this.selectedKanbanLeadKeys.add(leadKey);
+        });
+        await this.renderCategories();
+        return;
+      }
+
       const clearSelectionButton = e.target.closest('.is-kanban-clear-selection');
       if (clearSelectionButton) {
         this.selectedKanbanLeadKeys.clear();
@@ -394,6 +405,16 @@ window.IS.SettingsUI = {
       await chrome.storage.local.set({ leadCategoryAssignments: assignments });
       await this.renderCategories();
       this.showToast('Lead movido para outra categoria.');
+    });
+
+    document.getElementById('is-set-categories-list').addEventListener('input', event => {
+      const searchInput = event.target.closest('#is-kanban-lead-search');
+      if (!searchInput) return;
+      const query = window.IS.removeAccents(String(searchInput.value || '').toLocaleLowerCase().trim());
+      document.querySelectorAll('#is-set-categories-list .is-kanban-lead-card').forEach(card => {
+        const searchable = card.getAttribute('data-lead-search') || '';
+        card.style.display = !query || searchable.includes(query) ? '' : 'none';
+      });
     });
 
     const categoriesList = document.getElementById('is-set-categories-list');
@@ -571,7 +592,10 @@ window.IS.SettingsUI = {
         const capturedLabel = await window.IS.Scraper.captureOpenLabel(labelName);
         const normalizedName = window.IS.removeAccents(labelName.toLocaleLowerCase());
         const existingIndex = this.waLabels.findIndex(label => window.IS.removeAccents(label.name.toLocaleLowerCase()) === normalizedName);
-        if (existingIndex >= 0) this.waLabels[existingIndex] = capturedLabel;
+        if (existingIndex >= 0) {
+          await this.preserveKanbanAssignmentsForUpdatedLabel(this.waLabels[existingIndex], capturedLabel);
+          this.waLabels[existingIndex] = capturedLabel;
+        }
         else this.waLabels.push(capturedLabel);
         this.selectedWaLabelName = capturedLabel.name;
         await chrome.storage.local.set({ waLabels: this.waLabels });
@@ -853,7 +877,7 @@ window.IS.SettingsUI = {
       });
       const preview = stage.message.replace(/\s*===\s*/g, ' • ').replace(/\s+/g, ' ').trim().slice(0, 85);
       const leadCards = stageLeads.length
-        ? stageLeads.map(lead => `<div draggable="true" class="is-kanban-lead-card" data-lead-key="${encodeURIComponent(lead.key)}" style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
+        ? stageLeads.map(lead => `<div draggable="true" class="is-kanban-lead-card" data-lead-key="${encodeURIComponent(lead.key)}" data-lead-search="${window.IS.escapeHTML(window.IS.removeAccents(`${lead.contact.name} ${lead.labels.join(' ')}`.toLocaleLowerCase()))}" style="padding:8px; border:1px solid #a9d1ea; border-radius:6px; background:#eef8ff; color:#123d59; cursor:grab; box-shadow:0 1px 2px rgba(13,73,110,0.06);">
             <div style="display:flex; align-items:flex-start; gap:6px;">
             <input type="checkbox" class="is-kanban-lead-select" data-lead-key="${encodeURIComponent(lead.key)}" ${this.selectedKanbanLeadKeys.has(lead.key) ? 'checked' : ''} title="Selecionar lead" style="flex:0 0 auto; margin-top:2px; cursor:pointer;">
             <button type="button" class="is-kanban-lead" data-lead-key="${encodeURIComponent(lead.key)}" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="display:block; flex:1; min-width:0; padding:0; border:none; background:transparent; color:inherit; text-align:left; cursor:pointer;">
@@ -880,6 +904,7 @@ window.IS.SettingsUI = {
             <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${stageLeads.length}</span>
           </div>
           <div style="margin-top:4px; font-size:9px; line-height:1.3; opacity:0.84;">${window.IS.escapeHTML(preview || 'Etapa da resposta rápida')}</div>
+          ${stageLeads.length ? `<button type="button" class="is-kanban-select-stage" style="width:100%; margin-top:7px; padding:5px 8px; border:1px solid rgba(255,255,255,0.55); border-radius:5px; background:rgba(255,255,255,0.12); color:white; cursor:pointer; font-size:9px;">☑ Selecionar etapa</button>` : ''}
           ${isReplyStage && stageLeads.length ? `<button type="button" class="is-kanban-send-stage" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="width:100%; margin-top:7px; padding:6px 8px; border:1px solid rgba(255,255,255,0.65); border-radius:5px; background:rgba(255,255,255,0.16); color:white; cursor:pointer; font-size:10px; font-weight:bold;">▶ ${stage.pasteOnly ? 'Colar' : 'Enviar'} etapa para ${stageLeads.length} lead(s)</button>` : ''}
         </div>
         <div style="display:flex; flex-direction:column; gap:7px; min-height:80px; padding:9px;">${leadCards}</div>
@@ -901,6 +926,9 @@ window.IS.SettingsUI = {
         <button type="button" class="is-kanban-add-reply" style="padding:8px 12px; border:none; border-radius:6px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:11px; font-weight:bold;">+ Resposta em ${window.IS.escapeHTML(selectedCategory.name)}</button>
       </div>
       <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
+      <div style="margin-bottom:10px;">
+        <input type="search" id="is-kanban-lead-search" placeholder="Pesquisar lead no Kanban..." style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #87b8d8; border-radius:6px; background:white; color:#254c64; font-size:11px;">
+      </div>
       <div style="margin-bottom:10px; padding:9px; border:1px solid #87b8d8; border-radius:7px; background:#f4faff;">
         <div style="font-size:11px; font-weight:bold; color:#075f91; margin-bottom:7px;">Mover uma etiqueta do WhatsApp</div>
         <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;">
@@ -1210,6 +1238,57 @@ window.IS.SettingsUI = {
       });
     });
     return Array.from(leadsByKey.values()).sort((a, b) => a.contact.name.localeCompare(b.contact.name, 'pt-BR'));
+  },
+
+  async preserveKanbanAssignmentsForUpdatedLabel(previousLabel, capturedLabel) {
+    const previousContacts = Array.isArray(previousLabel?.contacts) ? previousLabel.contacts : [];
+    const capturedContacts = Array.isArray(capturedLabel?.contacts) ? capturedLabel.contacts : [];
+    const previousByName = new Map(previousContacts.map(contact => {
+      const normalizedName = window.IS.removeAccents(String(contact.name || '').toLocaleLowerCase().trim());
+      return [normalizedName, contact];
+    }).filter(([name]) => name));
+    const migrations = [];
+
+    capturedContacts.forEach(contact => {
+      const normalizedName = window.IS.removeAccents(String(contact.name || '').toLocaleLowerCase().trim());
+      const previous = previousByName.get(normalizedName);
+      if (!previous) return;
+      if (previous.id) contact.id = previous.id;
+      const previousKey = previous.chatId || normalizedName;
+      const capturedKey = contact.chatId || normalizedName;
+      if (previousKey && capturedKey && previousKey !== capturedKey) migrations.push([previousKey, capturedKey]);
+    });
+    if (!migrations.length) return;
+
+    const data = await chrome.storage.local.get([
+      'leadCategoryAssignments',
+      'leadStageAssignments',
+      'hiddenKanbanLeads'
+    ]);
+    const categoryAssignments = data.leadCategoryAssignments || {};
+    const stageAssignments = data.leadStageAssignments || {};
+    const hidden = new Set(Array.isArray(data.hiddenKanbanLeads) ? data.hiddenKanbanLeads : []);
+
+    migrations.forEach(([previousKey, capturedKey]) => {
+      if (categoryAssignments[previousKey] && !categoryAssignments[capturedKey]) {
+        categoryAssignments[capturedKey] = categoryAssignments[previousKey];
+      }
+      delete categoryAssignments[previousKey];
+      Object.keys(stageAssignments).forEach(key => {
+        if (!key.endsWith(`:${previousKey}`)) return;
+        const migratedKey = `${key.slice(0, -(previousKey.length))}${capturedKey}`;
+        if (!stageAssignments[migratedKey]) stageAssignments[migratedKey] = stageAssignments[key];
+        delete stageAssignments[key];
+      });
+      if (hidden.delete(previousKey)) hidden.add(capturedKey);
+      if (this.selectedKanbanLeadKeys.delete(previousKey)) this.selectedKanbanLeadKeys.add(capturedKey);
+    });
+
+    await chrome.storage.local.set({
+      leadCategoryAssignments: categoryAssignments,
+      leadStageAssignments: stageAssignments,
+      hiddenKanbanLeads: [...hidden]
+    });
   },
 
   async openKanbanLead(leadKey, stageId = 'unassigned', triggerButton = null, options = {}) {
