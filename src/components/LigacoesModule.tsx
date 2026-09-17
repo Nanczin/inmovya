@@ -79,6 +79,25 @@ const interessesCliente = [
   "Corretor"
 ];
 
+const etapasFunilPadrao = [
+  { id: "1", name: "Novo" },
+  { id: "2", name: "Contatado" },
+  { id: "3", name: "Interessado" },
+  { id: "4", name: "Visita Agendada" },
+  { id: "5", name: "Proposta" },
+  { id: "6", name: "Fechado" }
+];
+
+const carregarEtapasFunil = () => {
+  const etapasSalvas = localStorage.getItem("inmovya_funnel_stages");
+  if (!etapasSalvas) return etapasFunilPadrao;
+  try {
+    return JSON.parse(etapasSalvas) as { id: string; name: string }[];
+  } catch {
+    return etapasFunilPadrao;
+  }
+};
+
 const formatPhoneNumber = (phone: string) => {
   if (!phone) return '-';
 
@@ -215,6 +234,9 @@ export function LigacoesModule() {
   const [classificacaoSelecionada, setClassificacaoSelecionada] = useState("");
   const [interesseCliente, setInteresseCliente] = useState("");
   const [descricaoCliente, setDescricaoCliente] = useState("");
+  const [etiquetaInteressado, setEtiquetaInteressado] = useState("");
+  const [etapaInteressado, setEtapaInteressado] = useState("");
+  const [etapasFunil, setEtapasFunil] = useState<{ id: string; name: string }[]>(carregarEtapasFunil);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingCall, setLoadingCall] = useState(false);
@@ -374,6 +396,12 @@ export function LigacoesModule() {
     loadGmailAccounts();
   }, []);
 
+  useEffect(() => {
+    const atualizarEtapas = () => setEtapasFunil(carregarEtapasFunil());
+    window.addEventListener('funnelStagesUpdated', atualizarEtapas);
+    return () => window.removeEventListener('funnelStagesUpdated', atualizarEtapas);
+  }, []);
+
   const handleSetDefaultTemplate = (type: 'whatsapp' | 'email', id: string) => {
     if (type === 'whatsapp') {
       setTemplateWhatsappId(id);
@@ -510,6 +538,8 @@ export function LigacoesModule() {
     setClassificacaoSelecionada(contato.dados_extras?.classificacao || "");
     setInteresseCliente(contato.dados_extras?.interesse || "");
     setDescricaoCliente(contato.dados_extras?.descricao || "");
+    setEtiquetaInteressado("");
+    setEtapaInteressado("");
     setShowClientData(true);
   };
 
@@ -656,6 +686,8 @@ export function LigacoesModule() {
         setInteresseCliente((contato.dados_extras as any)?.interesse || "");
         setClassificacaoSelecionada((contato.dados_extras as any)?.classificacao || "");
         setDescricaoCliente((contato.dados_extras as any)?.descricao || "");
+        setEtiquetaInteressado("");
+        setEtapaInteressado("");
         setShowClientData(true);
 
         // Salvar progresso IMEDIATAMENTE ao exibir o contato
@@ -776,10 +808,11 @@ export function LigacoesModule() {
       });
 
       if (temInteresse) {
+        const etiquetaNormalizada = etiquetaInteressado.trim();
         // Verificar se já existe um lead com este telefone
         const { data: leadExistente } = await supabase
           .from('leads')
-          .select('id')
+          .select('id, tags, status')
           .eq('telefone', contatoSelecionado.telefone)
           .maybeSingle();
 
@@ -794,7 +827,8 @@ export function LigacoesModule() {
               nome: contatoSelecionado.nome,
               telefone: formatPhoneNumber(contatoSelecionado.telefone),
               email: contatoSelecionado.email,
-              status: 'novo',
+              status: etapaInteressado || 'novo',
+              tags: etiquetaNormalizada ? [etiquetaNormalizada] : [],
               origem: listas.find(l => l.id === mailingSelecionado)?.nome || 'Mailing',
               observacoes: observacoesLead,
               empreendimento_id: empreendimentoSelecionado || null,
@@ -837,6 +871,18 @@ export function LigacoesModule() {
           }
         } else {
           console.log('Lead já existe para o telefone:', contatoSelecionado.telefone);
+          const atualizacoesLead: Record<string, unknown> = {};
+          if (etapaInteressado) atualizacoesLead.status = etapaInteressado;
+          if (etiquetaNormalizada) {
+            atualizacoesLead.tags = Array.from(new Set([...(leadExistente.tags || []), etiquetaNormalizada]));
+          }
+          if (Object.keys(atualizacoesLead).length > 0) {
+            const { error: atualizacaoError } = await supabase
+              .from('leads')
+              .update(atualizacoesLead)
+              .eq('id', leadExistente.id);
+            if (atualizacaoError) throw atualizacaoError;
+          }
         }
       }
 
@@ -922,6 +968,8 @@ export function LigacoesModule() {
       setInteresseCliente("");
       setClassificacaoSelecionada("");
       setDescricaoCliente("");
+      setEtiquetaInteressado("");
+      setEtapaInteressado("");
 
       // Salvar o progresso - marcar este contato como o último processado
       if (mailingSelecionado && contatoSelecionado) {
@@ -1700,6 +1748,37 @@ export function LigacoesModule() {
                                   className="hover:bg-accent hover:text-accent-foreground"
                                 >
                                   {emp.nome} ({emp.cidade})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="etiqueta-interessado" className="text-sm font-medium">Etiqueta (opcional)</Label>
+                          <Input
+                            id="etiqueta-interessado"
+                            value={etiquetaInteressado}
+                            onChange={(event) => setEtiquetaInteressado(event.target.value)}
+                            placeholder="Ex: cliente quente"
+                            maxLength={60}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Etapa do Kanban (opcional)</Label>
+                          <Select
+                            value={etapaInteressado || "__sem_etapa__"}
+                            onValueChange={(value) => setEtapaInteressado(value === "__sem_etapa__" ? "" : value)}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Não definir etapa" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background border shadow-lg z-50">
+                              <SelectItem value="__sem_etapa__">Não definir etapa</SelectItem>
+                              {etapasFunil.map((etapa) => (
+                                <SelectItem key={etapa.id} value={etapa.name}>
+                                  {etapa.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>

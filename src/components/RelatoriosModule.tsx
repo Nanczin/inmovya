@@ -24,7 +24,8 @@ import {
   ArrowUp,
   ArrowDown,
   Target,
-  Clock
+  Clock,
+  Send
 } from "lucide-react";
 
 const metricasGrafico = [
@@ -35,6 +36,7 @@ const metricasGrafico = [
   { id: "convertidos", nome: "Leads convertidos", cor: "#16a34a" },
   { id: "emails", nome: "Emails disparados", cor: "#db2777" },
   { id: "emailsSucesso", nome: "Emails enviados com sucesso", cor: "#059669" },
+  { id: "disparos", nome: "Disparos realizados", cor: "#0284c7" },
   { id: "receita", nome: "Receita estimada", cor: "#0f766e", moeda: true }
 ];
 
@@ -90,6 +92,9 @@ export function RelatoriosModule() {
       disparados: 0,
       sucesso: 0,
       falharam: 0
+    },
+    disparos: {
+      realizados: 0
     },
     interacoes: {
       total: 0
@@ -173,13 +178,15 @@ export function RelatoriosModule() {
       const range = getPeriodoDatas();
       const inicio = new Date(range.inicio);
       const fim = new Date(range.fim);
-      const [leadsData, callsData, emailsData] = await Promise.all([
+      const [leadsData, callsData, emailsData, disparosData] = await Promise.all([
         carregarTodasAsPaginas((from, to) => supabase.from('leads').select('created_at, status').eq('user_id', user.id)
           .gte('created_at', inicio.toISOString()).lte('created_at', fim.toISOString()).range(from, to)),
         carregarTodasAsPaginas((from, to) => supabase.from('ligacoes').select('data_ligacao, status').eq('user_id', user.id)
           .gte('data_ligacao', inicio.toISOString()).lte('data_ligacao', fim.toISOString()).range(from, to)),
         carregarTodasAsPaginas((from, to) => supabase.from('email_logs').select('sent_at, status').eq('user_id', user.id)
-          .gte('sent_at', inicio.toISOString()).lte('sent_at', fim.toISOString()).range(from, to))
+          .gte('sent_at', inicio.toISOString()).lte('sent_at', fim.toISOString()).range(from, to)),
+        carregarTodasAsPaginas((from, to) => supabase.from('whatsapp_campaign_messages').select('data_envio').eq('user_id', user.id)
+          .eq('status', 'Entregue').gte('data_envio', inicio.toISOString()).lte('data_envio', fim.toISOString()).range(from, to))
       ]);
 
       const porDia = new Map<string, any>();
@@ -196,6 +203,7 @@ export function RelatoriosModule() {
           convertidos: 0,
           emails: 0,
           emailsSucesso: 0,
+          disparos: 0,
           receita: 0
         });
         cursor.setDate(cursor.getDate() + 1);
@@ -226,6 +234,11 @@ export function RelatoriosModule() {
         point.emails += 1;
         if (email.status === 'success') point.emailsSucesso += 1;
       });
+      disparosData.forEach(disparo => {
+        if (!disparo.data_envio) return;
+        const point = porDia.get(getChaveLocal(disparo.data_envio));
+        if (point) point.disparos += 1;
+      });
       setSerieTemporal(Array.from(porDia.values()));
     } catch (error) {
       console.error('Erro ao carregar série temporal:', error);
@@ -243,6 +256,7 @@ export function RelatoriosModule() {
         carregarDadosLeads(),
         carregarDadosLigacoes(),
         carregarDadosEmails(),
+        carregarDadosDisparos(),
         carregarCampanhas(),
         carregarTopLeads()
       ]);
@@ -482,6 +496,28 @@ export function RelatoriosModule() {
         disparados: totalDisparados,
         sucesso: emailsSucesso,
         falharam: emailsFalharam
+      }
+    }));
+  };
+
+  const carregarDadosDisparos = async () => {
+    const { inicio, fim } = getPeriodoDatas();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const disparosRealizados = await carregarTodasAsPaginas((from, to) => supabase
+      .from('whatsapp_campaign_messages')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('status', 'Entregue')
+      .gte('data_envio', inicio)
+      .lte('data_envio', fim)
+      .range(from, to));
+
+    setMetricas(prev => ({
+      ...prev,
+      disparos: {
+        realizados: disparosRealizados.length
       }
     }));
   };
@@ -1135,6 +1171,20 @@ export function RelatoriosModule() {
               <div>Sucesso: {metricas.emails.sucesso}</div>
               <div>Falharam: {metricas.emails.falharam}</div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-2 rounded-lg bg-sky-600 text-white">
+                <Send className="w-6 h-6" />
+              </div>
+              <Badge variant="secondary">WhatsApp</Badge>
+            </div>
+            <div className="text-3xl font-bold text-foreground mb-1">{metricas.disparos.realizados}</div>
+            <div className="text-sm text-muted-foreground mb-3">Disparos realizados</div>
+            <div className="text-xs text-muted-foreground">Envios confirmados no período</div>
           </CardContent>
         </Card>
 
