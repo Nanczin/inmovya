@@ -538,6 +538,7 @@ export function LigacoesModule() {
     setClassificacaoSelecionada(contato.dados_extras?.classificacao || "");
     setInteresseCliente(contato.dados_extras?.interesse || "");
     setDescricaoCliente(contato.dados_extras?.descricao || "");
+    setEmpreendimentoSelecionado("");
     setEtiquetaInteressado("");
     setEtapaInteressado("");
     setShowClientData(true);
@@ -686,6 +687,7 @@ export function LigacoesModule() {
         setInteresseCliente((contato.dados_extras as any)?.interesse || "");
         setClassificacaoSelecionada((contato.dados_extras as any)?.classificacao || "");
         setDescricaoCliente((contato.dados_extras as any)?.descricao || "");
+        setEmpreendimentoSelecionado("");
         setEtiquetaInteressado("");
         setEtapaInteressado("");
         setShowClientData(true);
@@ -968,6 +970,7 @@ export function LigacoesModule() {
       setInteresseCliente("");
       setClassificacaoSelecionada("");
       setDescricaoCliente("");
+      setEmpreendimentoSelecionado("");
       setEtiquetaInteressado("");
       setEtapaInteressado("");
 
@@ -1735,12 +1738,16 @@ export function LigacoesModule() {
                     {(classificacaoSelecionada === "Cliente Interessado") && (
                       <div className="space-y-4 pt-2 border-t border-border mt-2">
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium">Empreendimento de Interesse</Label>
-                          <Select value={empreendimentoSelecionado} onValueChange={setEmpreendimentoSelecionado}>
+                          <Label className="text-sm font-medium">Empreendimento de Interesse (opcional)</Label>
+                          <Select
+                            value={empreendimentoSelecionado || "__sem_empreendimento__"}
+                            onValueChange={(value) => setEmpreendimentoSelecionado(value === "__sem_empreendimento__" ? "" : value)}
+                          >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Selecione um empreendimento" />
+                              <SelectValue placeholder="Não definir empreendimento" />
                             </SelectTrigger>
                             <SelectContent className="bg-background border shadow-lg z-50">
+                              <SelectItem value="__sem_empreendimento__">Não definir empreendimento</SelectItem>
                               {empreendimentos.map((emp) => (
                                 <SelectItem
                                   key={emp.id}
