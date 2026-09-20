@@ -1252,35 +1252,28 @@ window.IS.SettingsUI = {
   },
 
   mergeUpdatedLabelContacts(previousLabel, capturedLabel) {
-    const mergedContacts = (Array.isArray(previousLabel?.contacts) ? previousLabel.contacts : [])
-      .map(contact => ({ ...contact }));
+    const previousContacts = Array.isArray(previousLabel?.contacts) ? previousLabel.contacts : [];
     const normalizedName = contact => window.IS.removeAccents(String(contact?.name || '').toLocaleLowerCase().trim());
-
-    (Array.isArray(capturedLabel?.contacts) ? capturedLabel.contacts : []).forEach(capturedContact => {
+    const reconciledContacts = (Array.isArray(capturedLabel?.contacts) ? capturedLabel.contacts : []).map(capturedContact => {
       const capturedId = String(capturedContact.chatId || '').trim();
       const capturedName = normalizedName(capturedContact);
-      const existingIndex = mergedContacts.findIndex(existingContact => {
+      const previousContact = previousContacts.find(existingContact => {
         const existingId = String(existingContact.chatId || '').trim();
         return (capturedId && existingId && capturedId === existingId) ||
           (capturedName && normalizedName(existingContact) === capturedName);
       });
-      if (existingIndex >= 0) {
-        const existingContact = mergedContacts[existingIndex];
-        mergedContacts[existingIndex] = {
-          ...existingContact,
-          ...capturedContact,
-          id: existingContact.id || capturedContact.id
-        };
-      } else {
-        mergedContacts.push({ ...capturedContact });
-      }
+      return previousContact
+        ? { ...previousContact, ...capturedContact, id: previousContact.id || capturedContact.id }
+        : { ...capturedContact };
     });
 
     return {
       ...previousLabel,
       ...capturedLabel,
       id: previousLabel?.id || capturedLabel?.id,
-      contacts: mergedContacts
+      // A captura atual é a fonte da verdade. Contatos ausentes foram removidos
+      // da etiqueta no WhatsApp e não devem permanecer no CRM sincronizado.
+      contacts: reconciledContacts
     };
   },
 
@@ -1302,8 +1295,6 @@ window.IS.SettingsUI = {
       const capturedKey = contact.chatId || normalizedName;
       if (previousKey && capturedKey && previousKey !== capturedKey) migrations.push([previousKey, capturedKey]);
     });
-    if (!migrations.length) return;
-
     const data = await chrome.storage.local.get([
       'leadCategoryAssignments',
       'leadStageAssignments',
@@ -1326,6 +1317,28 @@ window.IS.SettingsUI = {
       });
       if (hidden.delete(previousKey)) hidden.add(capturedKey);
       if (this.selectedKanbanLeadKeys.delete(previousKey)) this.selectedKanbanLeadKeys.add(capturedKey);
+    });
+
+    const futureLabels = this.waLabels.map(label => label === previousLabel ? capturedLabel : label);
+    const activeLeadKeys = new Set();
+    futureLabels.forEach(label => {
+      (Array.isArray(label.contacts) ? label.contacts : []).forEach(contact => {
+        const normalizedName = window.IS.removeAccents(String(contact.name || '').toLocaleLowerCase().trim());
+        const key = contact.chatId || normalizedName;
+        if (key) activeLeadKeys.add(key);
+      });
+    });
+
+    previousContacts.forEach(contact => {
+      const normalizedName = window.IS.removeAccents(String(contact.name || '').toLocaleLowerCase().trim());
+      const previousKey = contact.chatId || normalizedName;
+      if (!previousKey || activeLeadKeys.has(previousKey)) return;
+      delete categoryAssignments[previousKey];
+      Object.keys(stageAssignments).forEach(key => {
+        if (key.endsWith(`:${previousKey}`)) delete stageAssignments[key];
+      });
+      hidden.delete(previousKey);
+      this.selectedKanbanLeadKeys.delete(previousKey);
     });
 
     await chrome.storage.local.set({
@@ -1604,7 +1617,7 @@ window.IS.SettingsUI = {
       await chrome.storage.local.set({ waLabels: this.waLabels });
       this.renderWaLabels();
       await this.renderCategories();
-      this.showToast(`${mergedLabel.name} atualizada: ${mergedLabel.contacts.length} contato(s). As posições antigas foram preservadas.`);
+      this.showToast(`${mergedLabel.name} atualizada: ${mergedLabel.contacts.length} contato(s). Etapas preservadas; contatos removidos da etiqueta foram retirados do Kanban.`);
       return true;
     } catch (error) {
       window.IS.error('Erro ao atualizar contatos da etiqueta', error);
@@ -1690,7 +1703,7 @@ window.IS.SettingsUI = {
       </div>
       <div style="font-size:12px; font-weight:bold; margin-top:6px;">Contatos em ${window.IS.escapeHTML(selectedLabel.name)}</div>
       <button type="button" class="is-update-synced-label" data-label-name="${encodeURIComponent(selectedLabel.name)}" style="width:100%; margin:7px 0 8px; padding:8px; border:1px solid var(--inmovya-primary); border-radius:6px; background:#eef8ff; color:var(--inmovya-primary); cursor:pointer; font-size:11px; font-weight:bold;">↻ Atualizar contatos</button>
-      <div style="margin:-3px 0 8px; color:var(--inmovya-text-secondary); font-size:9px; line-height:1.35;">Abra esta etiqueta no WhatsApp antes de atualizar. As categorias e etapas já organizadas serão mantidas.</div>
+      <div style="margin:-3px 0 8px; color:var(--inmovya-text-secondary); font-size:9px; line-height:1.35;">Abra esta etiqueta no WhatsApp antes de atualizar. Categorias e etapas dos contatos mantidos serão preservadas; quem saiu da etiqueta será removido do CRM e do Kanban.</div>
       <div style="display:flex; flex-direction:column; gap:6px;">
         ${contacts.length ? contacts.map((contact, contactIndex) => {
           const normalizedName = window.IS.removeAccents((contact.name || '').toLocaleLowerCase().trim());
