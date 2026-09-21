@@ -48,7 +48,9 @@ const isInteracaoEfetiva = (status?: string, resultado?: string) => {
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase()
     .trim();
-  return classificacao === 'cliente interessado' || classificacao === 'interessado';
+  return classificacao === 'interessado e interacao efetiva' ||
+    classificacao === 'interessado' ||
+    classificacao === 'interacao efetiva';
 };
 
 async function carregarTodasAsPaginas<T>(consulta: (inicio: number, fim: number) => PromiseLike<{ data: T[] | null; error: any }>) {
@@ -1262,7 +1264,6 @@ export function RelatoriosModule() {
           rangeStart={rangeStartKey}
           rangeEnd={rangeEndKey}
           leadsCount={metricas.leads.novos}
-          interacoesRegistradasCount={metricas.interacoes.total}
           interacoesEfetivasCount={metricas.interacoes.efetivas}
           onMetricsChange={setManualMetrics}
           onDailyMetricsChange={setDailyManualMetrics}

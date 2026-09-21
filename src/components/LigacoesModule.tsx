@@ -67,6 +67,7 @@ interface Empreendimento {
 
 const classificacoes = [
   "Cliente Interessado",
+  "Interessado e Interação Efetiva",
   "Deny List",
   "Caixa Postal/Cliente Não Atendeu",
   "Número não existe"
@@ -734,7 +735,7 @@ export function LigacoesModule() {
 
       let finalClassificacao = forcedClassification || classificacaoSelecionada || contatoSelecionado.dados_extras?.classificacao;
 
-      if (classificacaoSelecionada === "Cliente Interessado") {
+      if (classificacaoSelecionada === "Cliente Interessado" || classificacaoSelecionada === "Interessado e Interação Efetiva") {
         interesseAutomatico = "Tem Interesse";
         if (empreendimentoSelecionado) {
           dadosExtrasAtualizados.empreendimento_interesse = empreendimentoSelecionado;
@@ -765,7 +766,10 @@ export function LigacoesModule() {
 
       // Se formos deletar o contato (Deny List ou Cliente Interessado), não precisamos atualizar antes
       // Isso evita chamadas redundantes e possíveis conflitos
-      const vaiDeletar = finalClassificacao === "Deny List" || finalClassificacao === "Cliente Interessado" || finalClassificacao === "Número não existe";
+      const vaiDeletar = finalClassificacao === "Deny List" ||
+        finalClassificacao === "Cliente Interessado" ||
+        finalClassificacao === "Interessado e Interação Efetiva" ||
+        finalClassificacao === "Número não existe";
 
       if (!vaiDeletar) {
         const { error } = await supabase
@@ -782,11 +786,13 @@ export function LigacoesModule() {
         if (error) throw error;
       }
 
-      // Registrar a ligação explicitamente para métricas do Relatório
+      // Registrar uma única ocorrência para as métricas do relatório.
+      // Somente classificações efetivas recebem o status de interação.
       try {
+        const classificacaoEfetiva = finalClassificacao === "Interessado e Interação Efetiva";
         await supabase.from('ligacoes').insert({
           numero_telefone: formatPhoneNumber(contatoSelecionado.telefone) || contatoSelecionado.telefone,
-          status: 'realizada',
+          status: classificacaoEfetiva ? 'interacao' : 'realizada',
           resultado: finalClassificacao || 'Processado',
           duracao: 0,
           data_ligacao: new Date().toISOString(),
@@ -800,7 +806,8 @@ export function LigacoesModule() {
 
       // Se cliente tem interesse, cadastrar como lead
       const temInteresse = interesseAutomatico === "Tem Interesse" ||
-        finalClassificacao === "Cliente Interessado";
+        finalClassificacao === "Cliente Interessado" ||
+        finalClassificacao === "Interessado e Interação Efetiva";
 
       console.log('Debug lead creation:', {
         interesseAutomatico,
@@ -893,21 +900,6 @@ export function LigacoesModule() {
       // LOGICA DE EXCLUSÃO SE FOR DENY LIST OU CLIENTE INTERESSADO
       // Se virou Lead (Interessado), sai do mailing. Se é Deny List, sai do mailing.
       if (vaiDeletar) {
-        // Registrar interação na tabela de ligações se for Cliente Interessado ou Deny List
-        if (finalClassificacao === "Cliente Interessado" || finalClassificacao === "Deny List") {
-          try {
-            await supabase.from('ligacoes').insert({
-              numero_telefone: formatPhoneNumber(contatoSelecionado.telefone),
-              lead_id: null,
-              status: 'interacao',
-              resultado: finalClassificacao,
-              user_id: user?.id
-            });
-          } catch (interacaoError) {
-            console.error('Erro ao registrar interação:', interacaoError);
-          }
-        }
-
         // 1. Excluir contato da tabela contatos
         const { error: deleteError } = await supabase
           .from('contatos')
@@ -1174,6 +1166,7 @@ export function LigacoesModule() {
 
     switch (classificacao) {
       case "Cliente Interessado": return "bg-success text-success-foreground";
+      case "Interessado e Interação Efetiva": return "bg-emerald-500 text-white";
       case "Corretor de Imóvel": return "bg-primary text-primary-foreground";
       case "Caixa Postal/Cliente Não Atendeu": return "bg-warning text-warning-foreground";
       case "Deny List": return "bg-destructive text-destructive-foreground";
@@ -1735,7 +1728,7 @@ export function LigacoesModule() {
                     </div>
 
                     {/* Empreendimento - aparece apenas quando cliente tem interesse */}
-                    {(classificacaoSelecionada === "Cliente Interessado") && (
+                    {(classificacaoSelecionada === "Cliente Interessado" || classificacaoSelecionada === "Interessado e Interação Efetiva") && (
                       <div className="space-y-4 pt-2 border-t border-border mt-2">
                         <div className="space-y-2">
                           <Label className="text-sm font-medium">Empreendimento de Interesse (opcional)</Label>

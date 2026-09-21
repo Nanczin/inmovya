@@ -20,7 +20,6 @@ export interface ManualFunnelMetrics {
 
 interface PowerBIFunnelProps {
   leadsCount: number;
-  interacoesRegistradasCount: number;
   interacoesEfetivasCount: number;
   periodo: string;
   onPeriodoChange?: (periodo: string) => void;
@@ -45,7 +44,7 @@ const localDateKey = (value: string | Date) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
-export function PowerBIFunnel({ leadsCount, interacoesRegistradasCount, interacoesEfetivasCount, periodo, onPeriodoChange, dataInicioPersonalizada = '', dataFimPersonalizada = '', onDataInicioChange, onDataFimChange, onMetricsChange, onDailyMetricsChange, rangeStart, rangeEnd }: PowerBIFunnelProps) {
+export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, onPeriodoChange, dataInicioPersonalizada = '', dataFimPersonalizada = '', onDataInicioChange, onDataFimChange, onMetricsChange, onDailyMetricsChange, rangeStart, rangeEnd }: PowerBIFunnelProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -229,10 +228,10 @@ export function PowerBIFunnel({ leadsCount, interacoesRegistradasCount, interaco
   const data = [
     { name: 'Leads', valor: leadsCount, fill: '#3b82f6' },
     {
-      name: 'Interações',
-      valor: Math.max(0, interacoesRegistradasCount + manualMetrics.interacaoAjuste),
+      name: 'Interações efetivas',
+      valor: Math.max(0, interacoesEfetivasCount + manualMetrics.interacaoEfetivaAjuste),
       fill: '#8b5cf6',
-      detalhe: `${Math.max(0, interacoesEfetivasCount + manualMetrics.interacaoEfetivaAjuste)} efetivas • ${interacoesRegistradasCount} registradas${manualMetrics.interacaoAjuste ? ` + ${manualMetrics.interacaoAjuste} de ajuste` : ''}`
+      detalhe: `${interacoesEfetivasCount} registradas${manualMetrics.interacaoEfetivaAjuste ? ` + ${manualMetrics.interacaoEfetivaAjuste} de ajuste` : ''}`
     },
     { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#06b6d4' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
