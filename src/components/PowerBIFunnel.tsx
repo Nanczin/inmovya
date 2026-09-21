@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Cell, Funnel, FunnelChart, LabelList, ResponsiveContainer, Tooltip } from 'recharts';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -194,13 +193,20 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
 
   const data = [
     { name: 'Leads', valor: leadsCount, fill: '#3b82f6' },
-    { name: 'Interações efetivas', valor: Math.max(0, interacoesEfetivasCount), fill: '#8b5cf6' },
+    {
+      name: 'Interações efetivas',
+      valor: Math.max(0, interacoesEfetivasCount + manualMetrics.interacaoAjuste),
+      fill: '#8b5cf6',
+      detalhe: manualMetrics.interacaoAjuste
+        ? `${interacoesEfetivasCount} registradas + ${manualMetrics.interacaoAjuste} de ajuste`
+        : undefined
+    },
     { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#06b6d4' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
     { name: 'Documentação', valor: Number(manualMetrics.documentacao) || 0, fill: '#10b981' },
     { name: 'Vendas', valor: Number(manualMetrics.venda) || 0, fill: '#22c55e' },
   ];
-  const funnelData = data.map(item => ({ ...item, visualValor: Math.max(item.valor, 1) }));
+  const numberFormatter = new Intl.NumberFormat('pt-BR');
 
   return (
     <Card className="col-span-full shadow-card mt-6 relative border-blue-500/20">
@@ -261,19 +267,30 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <FunnelChart margin={{ top: 10, right: 90, left: 90, bottom: 10 }}>
-                <Tooltip formatter={(_value: number, _name: string, item: any) => [new Intl.NumberFormat('pt-BR').format(item?.payload?.valor || 0), 'Quantidade']} />
-                <Funnel dataKey="visualValor" data={funnelData} isAnimationActive>
-                  {funnelData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                  <LabelList position="right" dataKey="name" fill="hsl(var(--foreground))" stroke="none" />
-                  <LabelList position="center" dataKey="valor" fill="#ffffff" stroke="none" fontWeight={700} />
-                </Funnel>
-              </FunnelChart>
-            </ResponsiveContainer>
+          <div className="lg:col-span-2 min-h-[400px] rounded-xl border bg-gradient-to-b from-blue-50/70 to-background p-4 sm:p-6">
+            <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-1.5" aria-label="Funil de conversão">
+              {data.map((entry, index) => {
+                const width = 100 - index * 11;
+                return (
+                  <div
+                    key={entry.name}
+                    className="relative flex min-h-[54px] items-center justify-center px-10 text-center text-white shadow-sm transition-all duration-300 hover:brightness-105"
+                    style={{
+                      width: `${width}%`,
+                      backgroundColor: entry.fill,
+                      clipPath: 'polygon(0 0, 100% 0, 94% 100%, 6% 100%)'
+                    }}
+                    title={entry.detalhe || `${entry.name}: ${numberFormatter.format(entry.valor)}`}
+                  >
+                    <div className="flex flex-col items-center leading-tight">
+                      <span className="text-xs font-medium opacity-90 sm:text-sm">{entry.name}</span>
+                      <span className="text-lg font-bold sm:text-xl">{numberFormatter.format(entry.valor)}</span>
+                      {entry.detalhe && <span className="hidden text-[10px] opacity-80 sm:block">{entry.detalhe}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <div className="space-y-4 bg-muted/20 p-4 rounded-lg border">
             <h4 className="font-semibold text-sm mb-4">Ajustes Manuais ({periodo})</h4>
@@ -304,7 +321,7 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-4">
-              * Leads e Interações base são calculados automaticamente para este período.
+              * Leads e interações base são calculados automaticamente. Os ajustes manuais compõem o funil no período selecionado.
             </p>
           </div>
         </div>
