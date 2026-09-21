@@ -206,6 +206,19 @@ export function PowerBIFunnel({ leadsCount, interacoesRegistradasCount, interaco
     { name: 'Vendas', valor: Number(manualMetrics.venda) || 0, fill: '#22c55e' },
   ];
   const numberFormatter = new Intl.NumberFormat('pt-BR');
+  const percentFormatter = new Intl.NumberFormat('pt-BR', {
+    style: 'percent',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1
+  });
+  const funnelData = data.map((entry, index) => {
+    if (index === 0) return { ...entry, conversao: 1 };
+    const previousValue = data[index - 1].valor;
+    return {
+      ...entry,
+      conversao: previousValue > 0 ? entry.valor / previousValue : 0
+    };
+  });
 
   return (
     <Card className="col-span-full shadow-card mt-6 relative border-blue-500/20">
@@ -268,7 +281,7 @@ export function PowerBIFunnel({ leadsCount, interacoesRegistradasCount, interaco
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 min-h-[400px] rounded-xl border bg-gradient-to-b from-blue-50/70 to-background p-4 sm:p-6">
             <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-1.5" aria-label="Funil de conversão">
-              {data.map((entry, index) => {
+              {funnelData.map((entry, index) => {
                 const width = 100 - index * 11;
                 return (
                   <div
@@ -283,12 +296,20 @@ export function PowerBIFunnel({ leadsCount, interacoesRegistradasCount, interaco
                   >
                     <div className="flex flex-col items-center leading-tight">
                       <span className="text-xs font-medium opacity-90 sm:text-sm">{entry.name}</span>
-                      <span className="text-lg font-bold sm:text-xl">{numberFormatter.format(entry.valor)}</span>
+                      <span className="text-lg font-bold sm:text-xl">
+                        {numberFormatter.format(entry.valor)}
+                        <span className="ml-2 text-xs font-semibold opacity-90 sm:text-sm">
+                          ({percentFormatter.format(entry.conversao)})
+                        </span>
+                      </span>
                       {entry.detalhe && <span className="hidden text-[10px] opacity-80 sm:block">{entry.detalhe}</span>}
                     </div>
                   </div>
                 );
               })}
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                A porcentagem representa a conversão em relação à etapa anterior.
+              </p>
             </div>
           </div>
           <div className="space-y-4 bg-muted/20 p-4 rounded-lg border">
