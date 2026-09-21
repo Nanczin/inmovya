@@ -31,6 +31,7 @@ import {
 const metricasGrafico = [
   { id: "ligacoes", nome: "Ligações", cor: "#2563eb" },
   { id: "interacoes", nome: "Interações", cor: "#7c3aed" },
+  { id: "interacoesEfetivas", nome: "Interações efetivas", cor: "#16a34a" },
   { id: "leads", nome: "Novos leads", cor: "#0891b2" },
   { id: "qualificados", nome: "Leads qualificados", cor: "#d97706" },
   { id: "convertidos", nome: "Leads convertidos", cor: "#16a34a" },
@@ -39,6 +40,16 @@ const metricasGrafico = [
   { id: "disparos", nome: "Disparos realizados", cor: "#0284c7" },
   { id: "receita", nome: "Receita estimada", cor: "#0f766e", moeda: true }
 ];
+
+const isInteracaoEfetiva = (status?: string, resultado?: string) => {
+  if (status !== 'interacao') return false;
+  const classificacao = String(resultado || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase()
+    .trim();
+  return classificacao === 'cliente interessado' || classificacao === 'interessado';
+};
 
 async function carregarTodasAsPaginas<T>(consulta: (inicio: number, fim: number) => PromiseLike<{ data: T[] | null; error: any }>) {
   const pageSize = 1000;
@@ -97,7 +108,8 @@ export function RelatoriosModule() {
       realizados: 0
     },
     interacoes: {
-      total: 0
+      total: 0,
+      efetivas: 0
     }
   });
   const [campanhasPerformance, setCampanhasPerformance] = useState<any[]>([]);
@@ -181,7 +193,7 @@ export function RelatoriosModule() {
       const [leadsData, callsData, emailsData, disparosData] = await Promise.all([
         carregarTodasAsPaginas((from, to) => supabase.from('leads').select('created_at, status').eq('user_id', user.id)
           .gte('created_at', inicio.toISOString()).lte('created_at', fim.toISOString()).range(from, to)),
-        carregarTodasAsPaginas((from, to) => supabase.from('ligacoes').select('data_ligacao, status').eq('user_id', user.id)
+        carregarTodasAsPaginas((from, to) => supabase.from('ligacoes').select('data_ligacao, status, resultado').eq('user_id', user.id)
           .gte('data_ligacao', inicio.toISOString()).lte('data_ligacao', fim.toISOString()).range(from, to)),
         carregarTodasAsPaginas((from, to) => supabase.from('email_logs').select('sent_at, status').eq('user_id', user.id)
           .gte('sent_at', inicio.toISOString()).lte('sent_at', fim.toISOString()).range(from, to)),
@@ -198,6 +210,7 @@ export function RelatoriosModule() {
           label: cursor.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
           ligacoes: 0,
           interacoes: 0,
+          interacoesEfetivas: 0,
           leads: 0,
           qualificados: 0,
           convertidos: 0,
@@ -217,6 +230,7 @@ export function RelatoriosModule() {
         if (!point) return;
         point.ligacoes += 1;
         if (call.status === 'interacao') point.interacoes += 1;
+        if (isInteracaoEfetiva(call.status, call.resultado)) point.interacoesEfetivas += 1;
       });
       leadsData.forEach(lead => {
         const point = porDia.get(getChaveLocal(lead.created_at));
@@ -458,6 +472,7 @@ export function RelatoriosModule() {
     const metaLigacoes = metaLigacoesSalva ? parseInt(metaLigacoesSalva, 10) : 200;
 
     const interacoesPeriodo = ligacoesPeriodo?.filter(l => l.status === 'interacao').length || 0;
+    const interacoesEfetivasPeriodo = ligacoesPeriodo?.filter(l => isInteracaoEfetiva(l.status, l.resultado)).length || 0;
 
     setMetricas(prev => ({
       ...prev,
@@ -467,7 +482,8 @@ export function RelatoriosModule() {
         meta: metaLigacoes
       },
       interacoes: {
-        total: interacoesPeriodo
+        total: interacoesPeriodo,
+        efetivas: interacoesEfetivasPeriodo
       }
     }));
   };
@@ -611,6 +627,8 @@ export function RelatoriosModule() {
         ["Métrica", "Valor Atual", "Valor Anterior", "Meta"],
         ["Taxa de Conversão (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
         ["Ligações no Período", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
+        ["Interações Registradas", metricas.interacoes.total, "-", "-"],
+        ["Interações Efetivas (Interessados)", metricas.interacoes.efetivas, "-", "-"],
         ["Leads Novos", metricas.leads.novos, "-", "-"],
         ["Leads Qualificados", metricas.leads.qualificados, "-", "-"],
         ["Leads Convertidos", metricas.leads.convertidos, "-", "-"],
@@ -730,6 +748,8 @@ export function RelatoriosModule() {
         ligacoes: {
           total: ligacoesData?.length || 0,
           realizadas: ligacoesData?.filter(l => l.status === 'realizada' || l.status === 'conectada').length || 0,
+          interacoes: ligacoesData?.filter(l => l.status === 'interacao').length || 0,
+          interacoesEfetivas: ligacoesData?.filter(l => isInteracaoEfetiva(l.status, l.resultado)).length || 0,
           naoAtendidas: ligacoesData?.filter(l => l.status === 'nao_atendeu').length || 0,
           ocupadas: ligacoesData?.filter(l => l.status === 'ocupado').length || 0,
           duracaoMedia: ligacoesData?.length > 0 ?
@@ -860,6 +880,8 @@ export function RelatoriosModule() {
               <tr><th>Métrica</th><th>Valor</th></tr>
               <tr><td>Total de Ligações</td><td>${relatorioCompleto.ligacoes.total}</td></tr>
               <tr><td>Ligações Realizadas</td><td>${relatorioCompleto.ligacoes.realizadas}</td></tr>
+              <tr><td>Interações Registradas</td><td>${relatorioCompleto.ligacoes.interacoes}</td></tr>
+              <tr><td>Interações Efetivas (Interessados)</td><td>${relatorioCompleto.ligacoes.interacoesEfetivas}</td></tr>
               <tr><td>Não Atendidas</td><td>${relatorioCompleto.ligacoes.naoAtendidas}</td></tr>
               <tr><td>Duração Média (min)</td><td>${relatorioCompleto.ligacoes.duracaoMedia}</td></tr>
             </table>
@@ -1201,8 +1223,8 @@ export function RelatoriosModule() {
             <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total + manualMetrics.interacaoAjuste}</div>
             <div className="text-sm text-muted-foreground mb-3">Interações</div>
             <div className="text-xs space-y-1">
-              <div>Interessados e Deny List</div>
-              <div>Registradas: <span className="text-success">{metricas.interacoes.total}</span> (Ajuste: {manualMetrics.interacaoAjuste})</div>
+              <div>Registradas: <span className="font-medium">{metricas.interacoes.total}</span> (Ajuste: {manualMetrics.interacaoAjuste})</div>
+              <div>Efetivas — interessados: <span className="font-semibold text-success">{metricas.interacoes.efetivas}</span></div>
             </div>
           </CardContent>
         </Card>
@@ -1238,7 +1260,7 @@ export function RelatoriosModule() {
           rangeStart={rangeStartKey}
           rangeEnd={rangeEndKey}
           leadsCount={metricas.leads.novos}
-          interacoesCount={metricas.interacoes.total}
+          interacoesEfetivasCount={metricas.interacoes.efetivas}
           onMetricsChange={setManualMetrics}
           onDailyMetricsChange={setDailyManualMetrics}
         />
