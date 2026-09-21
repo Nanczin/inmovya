@@ -1260,6 +1260,7 @@ export function RelatoriosModule() {
           rangeStart={rangeStartKey}
           rangeEnd={rangeEndKey}
           leadsCount={metricas.leads.novos}
+          interacoesRegistradasCount={metricas.interacoes.total}
           interacoesEfetivasCount={metricas.interacoes.efetivas}
           onMetricsChange={setManualMetrics}
           onDailyMetricsChange={setDailyManualMetrics}
