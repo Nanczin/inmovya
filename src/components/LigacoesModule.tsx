@@ -787,12 +787,15 @@ export function LigacoesModule() {
       }
 
       // Registrar uma única ocorrência para as métricas do relatório.
-      // Somente classificações efetivas recebem o status de interação.
+      // Deny List e Cliente Interessado contam como interações comuns;
+      // somente a classificação combinada também conta como interação efetiva.
       try {
-        const classificacaoEfetiva = finalClassificacao === "Interessado e Interação Efetiva";
+        const classificacaoInteracao = finalClassificacao === "Deny List" ||
+          finalClassificacao === "Cliente Interessado" ||
+          finalClassificacao === "Interessado e Interação Efetiva";
         await supabase.from('ligacoes').insert({
           numero_telefone: formatPhoneNumber(contatoSelecionado.telefone) || contatoSelecionado.telefone,
-          status: classificacaoEfetiva ? 'interacao' : 'realizada',
+          status: classificacaoInteracao ? 'interacao' : 'realizada',
           resultado: finalClassificacao || 'Processado',
           duracao: 0,
           data_ligacao: new Date().toISOString(),
