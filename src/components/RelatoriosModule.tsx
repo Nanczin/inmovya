@@ -74,7 +74,8 @@ export function RelatoriosModule() {
     documentacao: 0,
     negociacao: 0,
     venda: 0,
-    interacaoAjuste: 0
+    interacaoAjuste: 0,
+    interacaoEfetivaAjuste: 0
   });
   const [dailyManualMetrics, setDailyManualMetrics] = useState<Record<string, ManualFunnelMetrics>>({});
   const [classificacoesOferta, setClassificacoesOferta] = useState<Record<string, number>>({});
@@ -628,7 +629,7 @@ export function RelatoriosModule() {
         ["Taxa de Conversão (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
         ["Ligações no Período", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
         ["Interações Registradas", metricas.interacoes.total, "-", "-"],
-        ["Interações Efetivas (Interessados)", metricas.interacoes.efetivas, "-", "-"],
+        ["Interações Efetivas (Interessados)", metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste, "-", "-"],
         ["Leads Novos", metricas.leads.novos, "-", "-"],
         ["Leads Qualificados", metricas.leads.qualificados, "-", "-"],
         ["Leads Convertidos", metricas.leads.convertidos, "-", "-"],
@@ -748,8 +749,8 @@ export function RelatoriosModule() {
         ligacoes: {
           total: ligacoesData?.length || 0,
           realizadas: ligacoesData?.filter(l => l.status === 'realizada' || l.status === 'conectada').length || 0,
-          interacoes: ligacoesData?.filter(l => l.status === 'interacao').length || 0,
-          interacoesEfetivas: ligacoesData?.filter(l => isInteracaoEfetiva(l.status, l.resultado)).length || 0,
+          interacoes: (ligacoesData?.filter(l => l.status === 'interacao').length || 0) + manualMetrics.interacaoAjuste,
+          interacoesEfetivas: (ligacoesData?.filter(l => isInteracaoEfetiva(l.status, l.resultado)).length || 0) + manualMetrics.interacaoEfetivaAjuste,
           naoAtendidas: ligacoesData?.filter(l => l.status === 'nao_atendeu').length || 0,
           ocupadas: ligacoesData?.filter(l => l.status === 'ocupado').length || 0,
           duracaoMedia: ligacoesData?.length > 0 ?
@@ -1058,6 +1059,7 @@ export function RelatoriosModule() {
       if (!daily) return;
       point.ligacoes += daily.ligacoes;
       point.interacoes = Math.max(0, point.interacoes + daily.interacaoAjuste);
+      point.interacoesEfetivas = Math.max(0, point.interacoesEfetivas + daily.interacaoEfetivaAjuste);
     });
     return adjusted;
   })();
@@ -1224,7 +1226,10 @@ export function RelatoriosModule() {
             <div className="text-sm text-muted-foreground mb-3">Interações</div>
             <div className="text-xs space-y-1">
               <div>Registradas: <span className="font-medium">{metricas.interacoes.total}</span> (Ajuste: {manualMetrics.interacaoAjuste})</div>
-              <div>Efetivas — interessados: <span className="font-semibold text-success">{metricas.interacoes.efetivas}</span></div>
+              <div>
+                Efetivas — interessados: <span className="font-semibold text-success">{metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste}</span>
+                {manualMetrics.interacaoEfetivaAjuste !== 0 && <span> (Ajuste: {manualMetrics.interacaoEfetivaAjuste})</span>}
+              </div>
             </div>
           </CardContent>
         </Card>
