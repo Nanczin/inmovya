@@ -1222,14 +1222,11 @@ export function RelatoriosModule() {
                 <span className="text-sm ml-1 text-success">Em tempo real</span>
               </div>
             </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total + manualMetrics.interacaoAjuste}</div>
-            <div className="text-sm text-muted-foreground mb-3">Interações</div>
+            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste}</div>
+            <div className="text-sm text-muted-foreground mb-3">Interações efetivas</div>
             <div className="text-xs space-y-1">
-              <div>Registradas: <span className="font-medium">{metricas.interacoes.total}</span> (Ajuste: {manualMetrics.interacaoAjuste})</div>
-              <div>
-                Efetivas — interessados: <span className="font-semibold text-success">{metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste}</span>
-                {manualMetrics.interacaoEfetivaAjuste !== 0 && <span> (Ajuste: {manualMetrics.interacaoEfetivaAjuste})</span>}
-              </div>
+              <div>Interessados registrados: <span className="font-medium">{metricas.interacoes.efetivas}</span></div>
+              <div>Ajuste manual: <span className="font-semibold text-success">{manualMetrics.interacaoEfetivaAjuste}</span></div>
             </div>
           </CardContent>
         </Card>
