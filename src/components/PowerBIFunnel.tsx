@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Cell, Funnel, FunnelChart, LabelList, ResponsiveContainer, Tooltip } from 'recharts';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Save, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,9 +20,13 @@ export interface ManualFunnelMetrics {
 
 interface PowerBIFunnelProps {
   leadsCount: number;
-  ligacoesCount: number;
   interacoesCount: number;
   periodo: string;
+  onPeriodoChange?: (periodo: string) => void;
+  dataInicioPersonalizada?: string;
+  dataFimPersonalizada?: string;
+  onDataInicioChange?: (data: string) => void;
+  onDataFimChange?: (data: string) => void;
   storagePeriod?: string;
   onMetricsChange?: (metrics: ManualFunnelMetrics) => void;
   onDailyMetricsChange?: (metrics: Record<string, ManualFunnelMetrics>) => void;
@@ -39,7 +44,7 @@ const localDateKey = (value: string | Date) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
-export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, periodo, onMetricsChange, onDailyMetricsChange, rangeStart, rangeEnd }: PowerBIFunnelProps) {
+export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onPeriodoChange, dataInicioPersonalizada = '', dataFimPersonalizada = '', onDataInicioChange, onDataFimChange, onMetricsChange, onDailyMetricsChange, rangeStart, rangeEnd }: PowerBIFunnelProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -188,17 +193,16 @@ export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, peri
   };
 
   const finalInteracoes = Math.max(0, interacoesCount + (Number(manualMetrics.interacaoAjuste) || 0));
-  const finalLigacoes = Math.max(0, ligacoesCount + (Number(manualMetrics.ligacoes) || 0));
 
   const data = [
     { name: 'Leads', valor: leadsCount, fill: '#3b82f6' },
     { name: 'Interações', valor: finalInteracoes, fill: '#8b5cf6' },
-    { name: 'Ligações', valor: finalLigacoes, fill: '#06b6d4' },
+    { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#06b6d4' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
     { name: 'Documentação', valor: Number(manualMetrics.documentacao) || 0, fill: '#10b981' },
-    { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#ef4444' },
     { name: 'Vendas', valor: Number(manualMetrics.venda) || 0, fill: '#22c55e' },
   ];
+  const funnelData = data.map(item => ({ ...item, visualValor: Math.max(item.valor, 1) }));
 
   return (
     <Card className="col-span-full shadow-card mt-6 relative border-blue-500/20">
@@ -208,27 +212,69 @@ export function PowerBIFunnel({ leadsCount, ligacoesCount, interacoesCount, peri
         </div>
       )}
       <CardHeader>
-        <CardTitle className="text-xl font-bold flex items-center justify-between text-blue-600">
-          <span>Métricas Nine Box</span>
-          <Button onClick={handleSave} disabled={saving} size="sm" className="bg-blue-600 hover:bg-blue-700">
-            <Save className="w-4 h-4 mr-2" /> {saving ? 'Salvando...' : 'Salvar Métricas'}
-          </Button>
-        </CardTitle>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-xl font-bold text-blue-600">Funil de conversão</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">Leads até vendas no período selecionado.</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Select value={periodo} onValueChange={onPeriodoChange}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Selecionar período" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="hoje">Hoje</SelectItem>
+                <SelectItem value="ontem">Ontem</SelectItem>
+                <SelectItem value="7dias">Últimos 7 dias</SelectItem>
+                <SelectItem value="30dias">Últimos 30 dias</SelectItem>
+                <SelectItem value="90dias">Últimos 90 dias</SelectItem>
+                <SelectItem value="ano">Este ano</SelectItem>
+                <SelectItem value="personalizado">Período personalizado</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleSave} disabled={saving} size="sm" className="bg-blue-600 hover:bg-blue-700">
+              <Save className="w-4 h-4 mr-2" /> {saving ? 'Salvando...' : 'Salvar Métricas'}
+            </Button>
+          </div>
+        </div>
+        {periodo === 'personalizado' && (
+          <div className="grid gap-2 sm:grid-cols-2 sm:max-w-md sm:ml-auto">
+            <div>
+              <Label className="mb-1 block text-xs">Data inicial</Label>
+              <Input
+                type="date"
+                value={dataInicioPersonalizada}
+                max={dataFimPersonalizada || undefined}
+                onChange={event => onDataInicioChange?.(event.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs">Data final</Label>
+              <Input
+                type="date"
+                value={dataFimPersonalizada}
+                min={dataInicioPersonalizada || undefined}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={event => onDataFimChange?.(event.target.value)}
+              />
+            </div>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout="vertical" margin={{ top: 20, right: 30, left: 40, bottom: 5 }}>
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={100} />
-                <Tooltip cursor={{fill: 'transparent'}} />
-                <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
-                  {data.map((entry, index) => (
+              <FunnelChart margin={{ top: 10, right: 90, left: 90, bottom: 10 }}>
+                <Tooltip formatter={(_value: number, _name: string, item: any) => [new Intl.NumberFormat('pt-BR').format(item?.payload?.valor || 0), 'Quantidade']} />
+                <Funnel dataKey="visualValor" data={funnelData} isAnimationActive>
+                  {funnelData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
-                </Bar>
-              </BarChart>
+                  <LabelList position="right" dataKey="name" fill="hsl(var(--foreground))" stroke="none" />
+                  <LabelList position="center" dataKey="valor" fill="#ffffff" stroke="none" fontWeight={700} />
+                </Funnel>
+              </FunnelChart>
             </ResponsiveContainer>
           </div>
           <div className="space-y-4 bg-muted/20 p-4 rounded-lg border">

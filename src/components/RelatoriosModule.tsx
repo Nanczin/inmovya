@@ -1229,11 +1229,15 @@ export function RelatoriosModule() {
 
         <PowerBIFunnel
           periodo={periodoSelecionado}
+          onPeriodoChange={setPeriodoSelecionado}
+          dataInicioPersonalizada={dataInicioPersonalizada}
+          dataFimPersonalizada={dataFimPersonalizada}
+          onDataInicioChange={setDataInicioPersonalizada}
+          onDataFimChange={setDataFimPersonalizada}
           storagePeriod={chavePeriodoManual}
           rangeStart={rangeStartKey}
           rangeEnd={rangeEndKey}
           leadsCount={metricas.leads.novos}
-          ligacoesCount={metricas.ligacoes.hoje}
           interacoesCount={metricas.interacoes.total}
           onMetricsChange={setManualMetrics}
           onDailyMetricsChange={setDailyManualMetrics}
