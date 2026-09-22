@@ -15,12 +15,11 @@ export interface ManualFunnelMetrics {
   negociacao: number;
   venda: number;
   interacaoAjuste: number;
-  interacaoEfetivaAjuste: number;
 }
 
 interface PowerBIFunnelProps {
   leadsCount: number;
-  interacoesEfetivasCount: number;
+  interacoesCount: number;
   periodo: string;
   onPeriodoChange?: (periodo: string) => void;
   dataInicioPersonalizada?: string;
@@ -35,7 +34,7 @@ interface PowerBIFunnelProps {
 }
 
 const emptyMetrics = (): ManualFunnelMetrics => ({
-  ligacoes: 0, visitas: 0, documentacao: 0, negociacao: 0, venda: 0, interacaoAjuste: 0, interacaoEfetivaAjuste: 0
+  ligacoes: 0, visitas: 0, documentacao: 0, negociacao: 0, venda: 0, interacaoAjuste: 0
 });
 
 const localDateKey = (value: string | Date) => {
@@ -44,7 +43,7 @@ const localDateKey = (value: string | Date) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
-export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, onPeriodoChange, dataInicioPersonalizada = '', dataFimPersonalizada = '', onDataInicioChange, onDataFimChange, onMetricsChange, onDailyMetricsChange, rangeStart, rangeEnd }: PowerBIFunnelProps) {
+export function PowerBIFunnel({ leadsCount, interacoesCount, periodo, onPeriodoChange, dataInicioPersonalizada = '', dataFimPersonalizada = '', onDataInicioChange, onDataFimChange, onMetricsChange, onDailyMetricsChange, rangeStart, rangeEnd }: PowerBIFunnelProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -55,8 +54,7 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
     documentacao: 0,
     negociacao: 0,
     venda: 0,
-    interacaoAjuste: 0,
-    interacaoEfetivaAjuste: 0
+    interacaoAjuste: 0
   });
   const [loadedMetrics, setLoadedMetrics] = useState<ManualFunnelMetrics>(emptyMetrics());
   const [targetMetrics, setTargetMetrics] = useState<ManualFunnelMetrics>(emptyMetrics());
@@ -83,32 +81,21 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
         (data || []).forEach(row => {
           const effectivePrefix = 'interacao_efetiva:';
           const isEffectiveAdjustment = row.period?.startsWith(effectivePrefix);
-          const key = isEffectiveAdjustment
-            ? row.period.slice(effectivePrefix.length)
-            : row.period?.startsWith('dia:')
+          // Ajustes antigos de "interação efetiva" são preservados no banco,
+          // mas não participam mais da métrica unificada de interações.
+          if (isEffectiveAdjustment) return;
+          const key = row.period?.startsWith('dia:')
               ? row.period.slice(4)
               : localDateKey(row.updated_at || row.created_at);
           if (key < startKey || key > endKey) return;
           const current = daily[key] || emptyMetrics();
-          if (isEffectiveAdjustment) {
-            const effectiveAdjustment = Number(row.interacao_ajuste) || 0;
-            daily[key] = {
-              ...current,
-              interacaoEfetivaAjuste: current.interacaoEfetivaAjuste + effectiveAdjustment
-            };
-            if (key === endKey) {
-              explicitTarget = { ...explicitTarget, interacaoEfetivaAjuste: effectiveAdjustment };
-            }
-            return;
-          }
           daily[key] = {
             ligacoes: current.ligacoes + (Number(row.ligacoes) || 0),
             visitas: current.visitas + (Number(row.visitas) || 0),
             documentacao: current.documentacao + (Number(row.documentacao) || 0),
             negociacao: current.negociacao + (Number(row.negociacao) || 0),
             venda: current.venda + (Number(row.venda) || 0),
-            interacaoAjuste: current.interacaoAjuste + (Number(row.interacao_ajuste) || 0),
-            interacaoEfetivaAjuste: current.interacaoEfetivaAjuste
+            interacaoAjuste: current.interacaoAjuste + (Number(row.interacao_ajuste) || 0)
           };
           if (row.period === `dia:${endKey}`) {
             explicitTarget = {
@@ -128,8 +115,7 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
           documentacao: total.documentacao + item.documentacao,
           negociacao: total.negociacao + item.negociacao,
           venda: total.venda + item.venda,
-          interacaoAjuste: total.interacaoAjuste + item.interacaoAjuste,
-          interacaoEfetivaAjuste: total.interacaoEfetivaAjuste + item.interacaoEfetivaAjuste
+          interacaoAjuste: total.interacaoAjuste + item.interacaoAjuste
         }), emptyMetrics());
         setManualMetrics(aggregate);
         setLoadedMetrics(aggregate);
@@ -163,8 +149,7 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
         documentacao: Math.max(0, targetMetrics.documentacao + manualMetrics.documentacao - loadedMetrics.documentacao),
         negociacao: Math.max(0, targetMetrics.negociacao + manualMetrics.negociacao - loadedMetrics.negociacao),
         venda: Math.max(0, targetMetrics.venda + manualMetrics.venda - loadedMetrics.venda),
-        interacaoAjuste: targetMetrics.interacaoAjuste + manualMetrics.interacaoAjuste - loadedMetrics.interacaoAjuste,
-        interacaoEfetivaAjuste: targetMetrics.interacaoEfetivaAjuste + manualMetrics.interacaoEfetivaAjuste - loadedMetrics.interacaoEfetivaAjuste
+        interacaoAjuste: targetMetrics.interacaoAjuste + manualMetrics.interacaoAjuste - loadedMetrics.interacaoAjuste
       };
       const { error } = await supabase
         .from('powerbi_funnel_metrics')
@@ -181,16 +166,6 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
         }, { onConflict: 'user_id, period' });
 
       if (error) throw error;
-      const { error: effectiveError } = await supabase
-        .from('powerbi_funnel_metrics')
-        .upsert({
-          user_id: user.id,
-          period: `interacao_efetiva:${targetKey}`,
-          interacao_ajuste: savedMetrics.interacaoEfetivaAjuste,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id, period' });
-
-      if (effectiveError) throw effectiveError;
       setLoadedMetrics(manualMetrics);
       setTargetMetrics(savedMetrics);
       const nextDailyMetrics = {
@@ -202,8 +177,7 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
           documentacao: (dailyMetrics[targetKey]?.documentacao || 0) + manualMetrics.documentacao - loadedMetrics.documentacao,
           negociacao: (dailyMetrics[targetKey]?.negociacao || 0) + manualMetrics.negociacao - loadedMetrics.negociacao,
           venda: (dailyMetrics[targetKey]?.venda || 0) + manualMetrics.venda - loadedMetrics.venda,
-          interacaoAjuste: (dailyMetrics[targetKey]?.interacaoAjuste || 0) + manualMetrics.interacaoAjuste - loadedMetrics.interacaoAjuste,
-          interacaoEfetivaAjuste: (dailyMetrics[targetKey]?.interacaoEfetivaAjuste || 0) + manualMetrics.interacaoEfetivaAjuste - loadedMetrics.interacaoEfetivaAjuste
+          interacaoAjuste: (dailyMetrics[targetKey]?.interacaoAjuste || 0) + manualMetrics.interacaoAjuste - loadedMetrics.interacaoAjuste
         }
       };
       setDailyMetrics(nextDailyMetrics);
@@ -228,10 +202,10 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
   const data = [
     { name: 'Leads', valor: leadsCount, fill: '#3b82f6' },
     {
-      name: 'Interações efetivas',
-      valor: Math.max(0, interacoesEfetivasCount + manualMetrics.interacaoEfetivaAjuste),
+      name: 'Interações',
+      valor: Math.max(0, interacoesCount + manualMetrics.interacaoAjuste),
       fill: '#8b5cf6',
-      detalhe: `${interacoesEfetivasCount} registradas${manualMetrics.interacaoEfetivaAjuste ? ` + ${manualMetrics.interacaoEfetivaAjuste} de ajuste` : ''}`
+      detalhe: `${interacoesCount} registradas${manualMetrics.interacaoAjuste ? ` + ${manualMetrics.interacaoAjuste} de ajuste` : ''}`
     },
     { name: 'Negociações', valor: Number(manualMetrics.negociacao) || 0, fill: '#06b6d4' },
     { name: 'Visitas', valor: Number(manualMetrics.visitas) || 0, fill: '#f59e0b' },
@@ -351,10 +325,6 @@ export function PowerBIFunnel({ leadsCount, interacoesEfetivasCount, periodo, on
               <div className="flex items-center justify-between gap-4">
                 <Label className="w-1/2 text-xs">Interações (Ajuste)</Label>
                 <Input type="number" value={manualMetrics.interacaoAjuste} onChange={e => setManualMetrics({...manualMetrics, interacaoAjuste: parseInt(e.target.value) || 0})} className="w-1/2" />
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <Label className="w-1/2 text-xs">Interações efetivas</Label>
-                <Input type="number" value={manualMetrics.interacaoEfetivaAjuste} onChange={e => setManualMetrics({...manualMetrics, interacaoEfetivaAjuste: parseInt(e.target.value) || 0})} className="w-1/2" />
               </div>
               <div className="flex items-center justify-between gap-4">
                 <Label className="w-1/2 text-xs">Ligações</Label>

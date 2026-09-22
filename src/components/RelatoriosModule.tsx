@@ -31,7 +31,6 @@ import {
 const metricasGrafico = [
   { id: "ligacoes", nome: "Ligações", cor: "#2563eb" },
   { id: "interacoes", nome: "Interações", cor: "#7c3aed" },
-  { id: "interacoesEfetivas", nome: "Interações efetivas", cor: "#16a34a" },
   { id: "leads", nome: "Novos leads", cor: "#0891b2" },
   { id: "emails", nome: "Emails disparados", cor: "#db2777" },
   { id: "disparos", nome: "Disparos realizados", cor: "#0284c7" },
@@ -40,18 +39,6 @@ const metricasGrafico = [
   { id: "documentacao", nome: "Documentação", cor: "#10b981" },
   { id: "vendas", nome: "Vendas", cor: "#22c55e" }
 ];
-
-const isInteracaoEfetiva = (status?: string, resultado?: string) => {
-  if (status !== 'interacao') return false;
-  const classificacao = String(resultado || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase()
-    .trim();
-  return classificacao === 'interessado e interacao efetiva' ||
-    classificacao === 'interessado' ||
-    classificacao === 'interacao efetiva';
-};
 
 async function carregarTodasAsPaginas<T>(consulta: (inicio: number, fim: number) => PromiseLike<{ data: T[] | null; error: any }>) {
   const pageSize = 1000;
@@ -76,8 +63,7 @@ export function RelatoriosModule() {
     documentacao: 0,
     negociacao: 0,
     venda: 0,
-    interacaoAjuste: 0,
-    interacaoEfetivaAjuste: 0
+    interacaoAjuste: 0
   });
   const [dailyManualMetrics, setDailyManualMetrics] = useState<Record<string, ManualFunnelMetrics>>({});
   const [classificacoesOferta, setClassificacoesOferta] = useState<Record<string, number>>({});
@@ -111,8 +97,7 @@ export function RelatoriosModule() {
       realizados: 0
     },
     interacoes: {
-      total: 0,
-      efetivas: 0
+      total: 0
     }
   });
   const [campanhasPerformance, setCampanhasPerformance] = useState<any[]>([]);
@@ -213,7 +198,6 @@ export function RelatoriosModule() {
           label: cursor.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
           ligacoes: 0,
           interacoes: 0,
-          interacoesEfetivas: 0,
           leads: 0,
           qualificados: 0,
           convertidos: 0,
@@ -237,7 +221,6 @@ export function RelatoriosModule() {
         if (!point) return;
         point.ligacoes += 1;
         if (call.status === 'interacao') point.interacoes += 1;
-        if (isInteracaoEfetiva(call.status, call.resultado)) point.interacoesEfetivas += 1;
       });
       leadsData.forEach(lead => {
         const point = porDia.get(getChaveLocal(lead.created_at));
@@ -479,7 +462,6 @@ export function RelatoriosModule() {
     const metaLigacoes = metaLigacoesSalva ? parseInt(metaLigacoesSalva, 10) : 200;
 
     const interacoesPeriodo = ligacoesPeriodo?.filter(l => l.status === 'interacao').length || 0;
-    const interacoesEfetivasPeriodo = ligacoesPeriodo?.filter(l => isInteracaoEfetiva(l.status, l.resultado)).length || 0;
 
     setMetricas(prev => ({
       ...prev,
@@ -489,8 +471,7 @@ export function RelatoriosModule() {
         meta: metaLigacoes
       },
       interacoes: {
-        total: interacoesPeriodo,
-        efetivas: interacoesEfetivasPeriodo
+        total: interacoesPeriodo
       }
     }));
   };
@@ -635,7 +616,6 @@ export function RelatoriosModule() {
         ["Taxa de Conversão (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
         ["Ligações no Período", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
         ["Interações Registradas", metricas.interacoes.total + manualMetrics.interacaoAjuste, "-", "-"],
-        ["Interações Efetivas (Interessados)", metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste, "-", "-"],
         ["Leads Novos", metricas.leads.novos, "-", "-"],
         ["Leads Qualificados", metricas.leads.qualificados, "-", "-"],
         ["Leads Convertidos", metricas.leads.convertidos, "-", "-"],
@@ -756,7 +736,6 @@ export function RelatoriosModule() {
           total: ligacoesData?.length || 0,
           realizadas: ligacoesData?.filter(l => l.status === 'realizada' || l.status === 'conectada').length || 0,
           interacoes: (ligacoesData?.filter(l => l.status === 'interacao').length || 0) + manualMetrics.interacaoAjuste,
-          interacoesEfetivas: (ligacoesData?.filter(l => isInteracaoEfetiva(l.status, l.resultado)).length || 0) + manualMetrics.interacaoEfetivaAjuste,
           naoAtendidas: ligacoesData?.filter(l => l.status === 'nao_atendeu').length || 0,
           ocupadas: ligacoesData?.filter(l => l.status === 'ocupado').length || 0,
           duracaoMedia: ligacoesData?.length > 0 ?
@@ -888,7 +867,6 @@ export function RelatoriosModule() {
               <tr><td>Total de Ligações</td><td>${relatorioCompleto.ligacoes.total}</td></tr>
               <tr><td>Ligações Realizadas</td><td>${relatorioCompleto.ligacoes.realizadas}</td></tr>
               <tr><td>Interações Registradas</td><td>${relatorioCompleto.ligacoes.interacoes}</td></tr>
-              <tr><td>Interações Efetivas (Interessados)</td><td>${relatorioCompleto.ligacoes.interacoesEfetivas}</td></tr>
               <tr><td>Não Atendidas</td><td>${relatorioCompleto.ligacoes.naoAtendidas}</td></tr>
               <tr><td>Duração Média (min)</td><td>${relatorioCompleto.ligacoes.duracaoMedia}</td></tr>
             </table>
@@ -1065,7 +1043,6 @@ export function RelatoriosModule() {
       if (!daily) return;
       point.ligacoes += daily.ligacoes;
       point.interacoes = Math.max(0, point.interacoes + daily.interacaoAjuste);
-      point.interacoesEfetivas = Math.max(0, point.interacoesEfetivas + daily.interacaoEfetivaAjuste);
       point.negociacoes = Math.max(0, point.negociacoes + daily.negociacao);
       point.visitas = Math.max(0, point.visitas + daily.visitas);
       point.documentacao = Math.max(0, point.documentacao + daily.documentacao);
@@ -1232,11 +1209,11 @@ export function RelatoriosModule() {
                 <span className="text-sm ml-1 text-success">Em tempo real</span>
               </div>
             </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste}</div>
-            <div className="text-sm text-muted-foreground mb-3">Interações efetivas</div>
+            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total + manualMetrics.interacaoAjuste}</div>
+            <div className="text-sm text-muted-foreground mb-3">Interações</div>
             <div className="text-xs space-y-1">
-              <div>Interessados registrados: <span className="font-medium">{metricas.interacoes.efetivas}</span></div>
-              <div>Ajuste manual: <span className="font-semibold text-success">{manualMetrics.interacaoEfetivaAjuste}</span></div>
+              <div>Registradas: <span className="font-medium">{metricas.interacoes.total}</span></div>
+              <div>Ajuste manual: <span className="font-semibold text-success">{manualMetrics.interacaoAjuste}</span></div>
             </div>
           </CardContent>
         </Card>
@@ -1272,7 +1249,7 @@ export function RelatoriosModule() {
           rangeStart={rangeStartKey}
           rangeEnd={rangeEndKey}
           leadsCount={metricas.leads.novos}
-          interacoesEfetivasCount={metricas.interacoes.efetivas}
+          interacoesCount={metricas.interacoes.total}
           onMetricsChange={setManualMetrics}
           onDailyMetricsChange={setDailyManualMetrics}
         />
@@ -1285,11 +1262,11 @@ export function RelatoriosModule() {
             Detalhamento de interações
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Totais do período selecionado, exibidos separadamente do Nine Box.
+            Total unificado do período selecionado.
           </p>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-1">
             <div className="rounded-lg border bg-violet-50/50 p-4">
               <div className="text-sm text-muted-foreground">Interações totais</div>
               <div className="mt-1 text-2xl font-bold text-violet-700">
@@ -1298,22 +1275,6 @@ export function RelatoriosModule() {
               <div className="mt-1 text-xs text-muted-foreground">
                 {metricas.interacoes.total} registradas + {manualMetrics.interacaoAjuste} de ajuste
               </div>
-            </div>
-            <div className="rounded-lg border bg-emerald-50/50 p-4">
-              <div className="text-sm text-muted-foreground">Interações efetivas</div>
-              <div className="mt-1 text-2xl font-bold text-emerald-700">
-                {metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {metricas.interacoes.efetivas} registradas + {manualMetrics.interacaoEfetivaAjuste} de ajuste
-              </div>
-            </div>
-            <div className="rounded-lg border bg-slate-50 p-4">
-              <div className="text-sm text-muted-foreground">Interações não efetivas</div>
-              <div className="mt-1 text-2xl font-bold text-slate-700">
-                {Math.max(0, metricas.interacoes.total + manualMetrics.interacaoAjuste - metricas.interacoes.efetivas - manualMetrics.interacaoEfetivaAjuste)}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">Total menos interações efetivas</div>
             </div>
           </div>
         </CardContent>

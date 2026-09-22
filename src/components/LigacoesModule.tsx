@@ -67,7 +67,6 @@ interface Empreendimento {
 
 const classificacoes = [
   "Cliente Interessado",
-  "Interessado e Interação Efetiva",
   "Deny List",
   "Caixa Postal/Cliente Não Atendeu",
   "Número não existe"
@@ -786,9 +785,8 @@ export function LigacoesModule() {
         if (error) throw error;
       }
 
-      // Registrar uma única ocorrência para as métricas do relatório.
-      // Deny List e Cliente Interessado contam como interações comuns;
-      // somente a classificação combinada também conta como interação efetiva.
+      // Registrar uma única ocorrência para a métrica unificada de interações.
+      // A classificação combinada é mantida apenas para compatibilidade com registros antigos.
       try {
         const classificacaoInteracao = finalClassificacao === "Deny List" ||
           finalClassificacao === "Cliente Interessado" ||
