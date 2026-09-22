@@ -630,7 +630,7 @@ export function RelatoriosModule() {
         ["Métrica", "Valor Atual", "Valor Anterior", "Meta"],
         ["Taxa de Conversão (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
         ["Ligações no Período", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
-        ["Interações Registradas", metricas.interacoes.total, "-", "-"],
+        ["Interações Registradas", metricas.interacoes.total + manualMetrics.interacaoAjuste, "-", "-"],
         ["Interações Efetivas (Interessados)", metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste, "-", "-"],
         ["Leads Novos", metricas.leads.novos, "-", "-"],
         ["Leads Qualificados", metricas.leads.qualificados, "-", "-"],
@@ -1269,6 +1269,47 @@ export function RelatoriosModule() {
           onDailyMetricsChange={setDailyManualMetrics}
         />
       </div>
+
+      <Card className="shadow-card border-violet-500/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <TrendingUp className="h-5 w-5 text-violet-600" />
+            Detalhamento de interações
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Totais do período selecionado, exibidos separadamente do Nine Box.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border bg-violet-50/50 p-4">
+              <div className="text-sm text-muted-foreground">Interações totais</div>
+              <div className="mt-1 text-2xl font-bold text-violet-700">
+                {metricas.interacoes.total + manualMetrics.interacaoAjuste}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {metricas.interacoes.total} registradas + {manualMetrics.interacaoAjuste} de ajuste
+              </div>
+            </div>
+            <div className="rounded-lg border bg-emerald-50/50 p-4">
+              <div className="text-sm text-muted-foreground">Interações efetivas</div>
+              <div className="mt-1 text-2xl font-bold text-emerald-700">
+                {metricas.interacoes.efetivas + manualMetrics.interacaoEfetivaAjuste}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {metricas.interacoes.efetivas} registradas + {manualMetrics.interacaoEfetivaAjuste} de ajuste
+              </div>
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-4">
+              <div className="text-sm text-muted-foreground">Interações não efetivas</div>
+              <div className="mt-1 text-2xl font-bold text-slate-700">
+                {Math.max(0, metricas.interacoes.total + manualMetrics.interacaoAjuste - metricas.interacoes.efetivas - manualMetrics.interacaoEfetivaAjuste)}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">Total menos interações efetivas</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="shadow-card">
         <CardHeader className="space-y-4">
