@@ -33,12 +33,12 @@ const metricasGrafico = [
   { id: "interacoes", nome: "Interações", cor: "#7c3aed" },
   { id: "interacoesEfetivas", nome: "Interações efetivas", cor: "#16a34a" },
   { id: "leads", nome: "Novos leads", cor: "#0891b2" },
-  { id: "qualificados", nome: "Leads qualificados", cor: "#d97706" },
-  { id: "convertidos", nome: "Leads convertidos", cor: "#16a34a" },
   { id: "emails", nome: "Emails disparados", cor: "#db2777" },
-  { id: "emailsSucesso", nome: "Emails enviados com sucesso", cor: "#059669" },
   { id: "disparos", nome: "Disparos realizados", cor: "#0284c7" },
-  { id: "receita", nome: "Receita estimada", cor: "#0f766e", moeda: true }
+  { id: "negociacoes", nome: "Negociações", cor: "#06b6d4" },
+  { id: "visitas", nome: "Visitas", cor: "#f59e0b" },
+  { id: "documentacao", nome: "Documentação", cor: "#10b981" },
+  { id: "vendas", nome: "Vendas", cor: "#22c55e" }
 ];
 
 const isInteracaoEfetiva = (status?: string, resultado?: string) => {
@@ -220,7 +220,11 @@ export function RelatoriosModule() {
           emails: 0,
           emailsSucesso: 0,
           disparos: 0,
-          receita: 0
+          receita: 0,
+          negociacoes: 0,
+          visitas: 0,
+          documentacao: 0,
+          vendas: 0
         });
         cursor.setDate(cursor.getDate() + 1);
       }
@@ -1062,6 +1066,10 @@ export function RelatoriosModule() {
       point.ligacoes += daily.ligacoes;
       point.interacoes = Math.max(0, point.interacoes + daily.interacaoAjuste);
       point.interacoesEfetivas = Math.max(0, point.interacoesEfetivas + daily.interacaoEfetivaAjuste);
+      point.negociacoes = Math.max(0, point.negociacoes + daily.negociacao);
+      point.visitas = Math.max(0, point.visitas + daily.visitas);
+      point.documentacao = Math.max(0, point.documentacao + daily.documentacao);
+      point.vendas = Math.max(0, point.vendas + daily.venda);
     });
     return adjusted;
   })();
