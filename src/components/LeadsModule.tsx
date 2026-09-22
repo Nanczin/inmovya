@@ -53,6 +53,12 @@ import {
 } from "lucide-react";
 import { LeadsKanbanBoard } from "@/components/LeadsKanbanBoard";
 
+const normalizeLeadTag = (tag: string) => tag
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .trim()
+  .toLocaleLowerCase("pt-BR");
+
 export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   const { leads, refreshLeads } = useLeads();
   const { addNotification } = useNotifications();
@@ -340,7 +346,14 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       // Retornar apenas tags normais, ignorando as de sistema
       return !tagsExtrasPrefixes.some(prefix => t.startsWith(prefix));
     });
-    return [...new Set(allTags)].sort();
+    const uniqueTags = new Map<string, string>();
+    allTags.forEach((tag: string) => {
+      const normalizedTag = normalizeLeadTag(tag);
+      if (normalizedTag && !uniqueTags.has(normalizedTag)) {
+        uniqueTags.set(normalizedTag, tag.trim());
+      }
+    });
+    return Array.from(uniqueTags.values()).sort((a, b) => a.localeCompare(b, "pt-BR"));
   };
 
   // Função para obter origens únicas, normalizando letras minúsculas/maiúsculas
@@ -407,8 +420,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
     // Filtro por tags
     if (activeFilters.tags.length > 0) {
-      const leadTags = lead.tags || [];
-      const hasMatchingTag = activeFilters.tags.some(tag => leadTags.includes(tag));
+      const selectedTags = new Set(activeFilters.tags.map(normalizeLeadTag));
+      const hasMatchingTag = (lead.tags || []).some(tag => selectedTags.has(normalizeLeadTag(tag)));
       if (!hasMatchingTag) return false;
     }
 
