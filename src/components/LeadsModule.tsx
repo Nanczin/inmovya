@@ -48,7 +48,8 @@ import {
   Phone,
   Loader2,
   LayoutGrid,
-  List
+  List,
+  Tag
 } from "lucide-react";
 import { LeadsKanbanBoard } from "@/components/LeadsKanbanBoard";
 
@@ -93,6 +94,9 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [selectedLeadsIds, setSelectedLeadsIds] = useState<string[]>([]);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
+  const [isBulkTagDialogOpen, setIsBulkTagDialogOpen] = useState(false);
+  const [bulkTagsRaw, setBulkTagsRaw] = useState("");
+  const [isBulkTagging, setIsBulkTagging] = useState(false);
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const [selectedLeadForTask, setSelectedLeadForTask] = useState<any>(null);
   const [editLead, setEditLead] = useState({
@@ -544,7 +548,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     try {
       const { error } = await supabase.from('tasks').delete().eq('id', taskId);
       if (error) throw error;
-      toast({ title: 'Lembrete exclu�do', description: 'O lembrete foi removido com sucesso.' });
+      toast({ title: 'Lembrete excluído', description: 'O lembrete foi removido com sucesso.' });
       refreshLeads();
     } catch (error: any) {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
@@ -833,6 +837,50 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       setSelectedLeadsIds(filteredLeads.map(l => l.id));
     } else {
       setSelectedLeadsIds([]);
+    }
+  };
+
+  const handleBulkAddTags = async () => {
+    const newTags = Array.from(new Set(
+      bulkTagsRaw.split(',').map(tag => tag.trim()).filter(Boolean)
+    ));
+
+    if (selectedLeadsIds.length === 0 || newTags.length === 0) {
+      toast({
+        title: "Informe uma etiqueta",
+        description: "Digite pelo menos uma etiqueta para aplicar aos leads selecionados.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsBulkTagging(true);
+    try {
+      const selectedLeads = leads.filter(lead => selectedLeadsIds.includes(lead.id));
+      const results = await Promise.all(selectedLeads.map(lead => {
+        const mergedTags = Array.from(new Set([...(lead.tags || []), ...newTags]));
+        return supabase.from('leads').update({ tags: mergedTags }).eq('id', lead.id);
+      }));
+      const failedUpdate = results.find(result => result.error);
+      if (failedUpdate?.error) throw failedUpdate.error;
+
+      toast({
+        title: "Etiquetas adicionadas",
+        description: `${newTags.length} etiqueta(s) aplicada(s) a ${selectedLeads.length} lead(s).`,
+      });
+      setBulkTagsRaw("");
+      setIsBulkTagDialogOpen(false);
+      setSelectedLeadsIds([]);
+      await refreshLeads();
+    } catch (error) {
+      console.error('Erro ao etiquetar leads em massa:', error);
+      toast({
+        title: "Erro ao adicionar etiquetas",
+        description: "Não foi possível atualizar todos os leads selecionados.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBulkTagging(false);
     }
   };
 
@@ -1486,14 +1534,24 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
             {/* Bulk Actions */}
             {selectedLeadsIds.length > 0 && (
-              <Button
-                variant="destructive"
-                onClick={() => setIsBulkDeleteDialogOpen(true)}
-                className="col-span-2 sm:col-span-1 w-full sm:w-auto animate-in fade-in"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Excluir ({selectedLeadsIds.length})
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsBulkTagDialogOpen(true)}
+                  className="col-span-2 sm:col-span-1 w-full sm:w-auto animate-in fade-in border-primary text-primary hover:bg-primary/10"
+                >
+                  <Tag className="w-4 h-4 mr-2" />
+                  Etiquetar ({selectedLeadsIds.length})
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setIsBulkDeleteDialogOpen(true)}
+                  className="col-span-2 sm:col-span-1 w-full sm:w-auto animate-in fade-in"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir ({selectedLeadsIds.length})
+                </Button>
+              </>
             )}
 
             <input
@@ -2133,6 +2191,45 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={isBulkTagDialogOpen} onOpenChange={setIsBulkTagDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Adicionar etiquetas em massa</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              As etiquetas serão adicionadas aos {selectedLeadsIds.length} leads selecionados sem remover as atuais.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-lead-tags">Etiquetas</Label>
+              <Input
+                id="bulk-lead-tags"
+                value={bulkTagsRaw}
+                onChange={event => setBulkTagsRaw(event.target.value)}
+                placeholder="Ex: prioridade, retorno"
+                list="available-lead-tags"
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !isBulkTagging) handleBulkAddTags();
+                }}
+              />
+              <datalist id="available-lead-tags">
+                {getAvailableTags().map(tag => <option key={tag} value={tag} />)}
+              </datalist>
+              <p className="text-xs text-muted-foreground">Separe várias etiquetas com vírgulas.</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsBulkTagDialogOpen(false)} disabled={isBulkTagging}>
+                Cancelar
+              </Button>
+              <Button onClick={handleBulkAddTags} disabled={isBulkTagging || !bulkTagsRaw.trim()}>
+                {isBulkTagging && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Aplicar etiquetas
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Bulk Delete Confirmation Dialog */}
       <AlertDialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
