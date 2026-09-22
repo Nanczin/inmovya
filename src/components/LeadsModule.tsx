@@ -96,6 +96,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [isBulkTagDialogOpen, setIsBulkTagDialogOpen] = useState(false);
   const [bulkTagsRaw, setBulkTagsRaw] = useState("");
+  const [bulkSelectedTags, setBulkSelectedTags] = useState<string[]>([]);
   const [isBulkTagging, setIsBulkTagging] = useState(false);
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
   const [selectedLeadForTask, setSelectedLeadForTask] = useState<any>(null);
@@ -841,9 +842,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   };
 
   const handleBulkAddTags = async () => {
-    const newTags = Array.from(new Set(
-      bulkTagsRaw.split(',').map(tag => tag.trim()).filter(Boolean)
-    ));
+    const typedTags = bulkTagsRaw.split(',').map(tag => tag.trim()).filter(Boolean);
+    const newTags = Array.from(new Set([...bulkSelectedTags, ...typedTags]));
 
     if (selectedLeadsIds.length === 0 || newTags.length === 0) {
       toast({
@@ -869,6 +869,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         description: `${newTags.length} etiqueta(s) aplicada(s) a ${selectedLeads.length} lead(s).`,
       });
       setBulkTagsRaw("");
+      setBulkSelectedTags([]);
       setIsBulkTagDialogOpen(false);
       setSelectedLeadsIds([]);
       await refreshLeads();
@@ -2192,7 +2193,16 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={isBulkTagDialogOpen} onOpenChange={setIsBulkTagDialogOpen}>
+      <Dialog
+        open={isBulkTagDialogOpen}
+        onOpenChange={open => {
+          setIsBulkTagDialogOpen(open);
+          if (!open && !isBulkTagging) {
+            setBulkTagsRaw("");
+            setBulkSelectedTags([]);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Adicionar etiquetas em massa</DialogTitle>
@@ -2202,27 +2212,50 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
               As etiquetas serão adicionadas aos {selectedLeadsIds.length} leads selecionados sem remover as atuais.
             </p>
             <div className="space-y-2">
-              <Label htmlFor="bulk-lead-tags">Etiquetas</Label>
+              <Label>Etiquetas existentes</Label>
+              {getAvailableTags().length > 0 ? (
+                <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3">
+                  {getAvailableTags().map(tag => (
+                    <label key={tag} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-muted">
+                      <Checkbox
+                        checked={bulkSelectedTags.includes(tag)}
+                        onCheckedChange={checked => {
+                          setBulkSelectedTags(current => checked
+                            ? Array.from(new Set([...current, tag]))
+                            : current.filter(item => item !== tag));
+                        }}
+                      />
+                      <span className="text-sm">{tag}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  Nenhuma etiqueta existente. Crie uma nova abaixo.
+                </p>
+              )}
+              {bulkSelectedTags.length > 0 && (
+                <p className="text-xs text-primary">{bulkSelectedTags.length} etiqueta(s) existente(s) selecionada(s).</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-lead-tags">Criar novas etiquetas</Label>
               <Input
                 id="bulk-lead-tags"
                 value={bulkTagsRaw}
                 onChange={event => setBulkTagsRaw(event.target.value)}
                 placeholder="Ex: prioridade, retorno"
-                list="available-lead-tags"
                 onKeyDown={event => {
                   if (event.key === 'Enter' && !isBulkTagging) handleBulkAddTags();
                 }}
               />
-              <datalist id="available-lead-tags">
-                {getAvailableTags().map(tag => <option key={tag} value={tag} />)}
-              </datalist>
               <p className="text-xs text-muted-foreground">Separe várias etiquetas com vírgulas.</p>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsBulkTagDialogOpen(false)} disabled={isBulkTagging}>
                 Cancelar
               </Button>
-              <Button onClick={handleBulkAddTags} disabled={isBulkTagging || !bulkTagsRaw.trim()}>
+              <Button onClick={handleBulkAddTags} disabled={isBulkTagging || (!bulkTagsRaw.trim() && bulkSelectedTags.length === 0)}>
                 {isBulkTagging && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Aplicar etiquetas
               </Button>
