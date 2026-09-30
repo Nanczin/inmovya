@@ -180,7 +180,8 @@ export function Dashboard({
         .from('ligacoes')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .eq('status', 'interacao');
+        .eq('status', 'interacao')
+        .or('resultado.is.null,resultado.neq."Deny List"');
         
       if (interacoesCount !== null) setInteracoes(interacoesCount);
 
