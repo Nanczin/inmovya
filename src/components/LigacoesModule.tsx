@@ -788,8 +788,8 @@ export function LigacoesModule() {
       // Registrar uma única ocorrência para a métrica unificada de interações.
       // A classificação combinada é mantida apenas para compatibilidade com registros antigos.
       try {
-        const classificacaoInteracao = finalClassificacao === "Deny List" ||
-          finalClassificacao === "Cliente Interessado" ||
+        // Deny List NÃO conta como interação (fica registrada apenas como ligação realizada)
+        const classificacaoInteracao = finalClassificacao === "Cliente Interessado" ||
           finalClassificacao === "Interessado e Interação Efetiva";
         await supabase.from('ligacoes').insert({
           numero_telefone: formatPhoneNumber(contatoSelecionado.telefone) || contatoSelecionado.telefone,
