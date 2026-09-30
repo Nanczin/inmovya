@@ -220,7 +220,7 @@ export function RelatoriosModule() {
         const point = porDia.get(getChaveLocal(call.data_ligacao));
         if (!point) return;
         point.ligacoes += 1;
-        if (call.status === 'interacao') point.interacoes += 1;
+        if (call.status === 'interacao' && call.resultado !== 'Deny List') point.interacoes += 1;
       });
       leadsData.forEach(lead => {
         const point = porDia.get(getChaveLocal(lead.created_at));
@@ -461,7 +461,7 @@ export function RelatoriosModule() {
     const metaLigacoesSalva = localStorage.getItem('meta_ligacoes_diarias');
     const metaLigacoes = metaLigacoesSalva ? parseInt(metaLigacoesSalva, 10) : 200;
 
-    const interacoesPeriodo = ligacoesPeriodo?.filter(l => l.status === 'interacao').length || 0;
+    const interacoesPeriodo = ligacoesPeriodo?.filter(l => l.status === 'interacao' && l.resultado !== 'Deny List').length || 0;
 
     setMetricas(prev => ({
       ...prev,
@@ -735,7 +735,7 @@ export function RelatoriosModule() {
         ligacoes: {
           total: ligacoesData?.length || 0,
           realizadas: ligacoesData?.filter(l => l.status === 'realizada' || l.status === 'conectada').length || 0,
-          interacoes: (ligacoesData?.filter(l => l.status === 'interacao').length || 0) + manualMetrics.interacaoAjuste,
+          interacoes: (ligacoesData?.filter(l => l.status === 'interacao' && l.resultado !== 'Deny List').length || 0) + manualMetrics.interacaoAjuste,
           naoAtendidas: ligacoesData?.filter(l => l.status === 'nao_atendeu').length || 0,
           ocupadas: ligacoesData?.filter(l => l.status === 'ocupado').length || 0,
           duracaoMedia: ligacoesData?.length > 0 ?
