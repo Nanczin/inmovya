@@ -18,6 +18,7 @@ import { RelatoriosModule } from "@/components/RelatoriosModule";
 import { SettingsModule } from "@/components/SettingsModule";
 import { AgendaModule } from "@/components/AgendaModule";
 import { FunilModule } from "@/components/FunilModule";
+import { NegociosModule } from "@/components/NegociosModule";
 import { WhatsappModule } from "@/components/WhatsappModule";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
 
@@ -98,6 +99,8 @@ const Index = () => {
         return <LeadsModule initialLeadId={navigationParams?.id} />;
       case "email-marketing":
         return <GmailSystemModule />;
+      case "negocios":
+        return <NegociosModule onNavigate={handleNavigation} />;
       case "empreendimentos":
         return <EmpreendimentosModule />;
       case "materiais":

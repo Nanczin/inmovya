@@ -9,6 +9,7 @@ import { useLeads } from "@/context/LeadsContext";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
+import { FUNIL_TIERS, getFunilTier } from "@/lib/negociosStages";
 
 export function FunilModule() {
     const { leads } = useLeads();
@@ -106,7 +107,9 @@ export function FunilModule() {
     // Funnel calculations
     const calculateFunnelMetrics = () => {
         // First filter leads by date if set
+        // O funil só considera leads nas etapas 20%, 50%, 70% e Fechado
         const filteredLeads = leads.filter(l => {
+            if (!getFunilTier(l.status)) return false;
             if (!l.created_at) return true; // fallback
             const leadDate = new Date(l.created_at);
 
@@ -126,11 +129,16 @@ export function FunilModule() {
         const totalLeads = filteredLeads.length;
 
         // Count leads by finding the closest match in stage names vs lead status
-        const stageCounts = stages.map(stage => {
-            const thisStageLeads = filteredLeads.filter(l =>
-                l.status?.toLowerCase() === stage.name.toLowerCase()
-            );
-            return { ...stage, count: thisStageLeads.length, leads: thisStageLeads };
+        const stageCounts = FUNIL_TIERS.map(tier => {
+            const thisStageLeads = filteredLeads.filter(l => getFunilTier(l.status)?.stageId === tier.stageId);
+            const configured = stages.find(s => s.name.trim().toLowerCase() === tier.name.toLowerCase());
+            return {
+                id: tier.stageId,
+                name: tier.name,
+                color: configured?.color || tier.color,
+                count: thisStageLeads.length,
+                leads: thisStageLeads
+            };
         });
 
         // Add "Others" for leads that don't match any stage
@@ -262,14 +270,14 @@ export function FunilModule() {
         });
 
         // Unmapped leads (Others)
-        const others = leads.filter(l => {
+        const others = leads.filter(l => !!getFunilTier(l.status)).filter(l => {
             // Also respecting date filters for 'Others' export
             if (!l.created_at) return true;
             const d = new Date(l.created_at);
             if (startDate && d < new Date(startDate)) return false;
             if (endDate && d > new Date(`${endDate}T23:59:59`)) return false;
             return true;
-        }).filter(l => !stages.some(s => s.name.toLowerCase() === l.status?.toLowerCase()));
+        }).filter(l => !enrichedStages.some(s => s.id === getFunilTier(l.status)?.stageId));
 
         if (others.length > 0) {
             dataset['Sem Etapa Correspondente'] = others.map((l: any) => ({
@@ -398,7 +406,7 @@ export function FunilModule() {
                             Etapas do Funil
                         </CardTitle>
                         <CardDescription>
-                            As etapas são mapeadas usando o campo "status" dos seus leads.
+                            Etapas disponíveis no cadastro de leads. O gráfico considera só quem está em 20%, 50%, 70% e Fechado.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -525,7 +533,7 @@ export function FunilModule() {
                                 <h3 className="text-lg font-medium text-slate-600">Nenhum lead encontrado</h3>
                                 <p className="max-w-xs mt-2">Ajuste os filtros de período, pois não encontramos correspondência.</p>
                             </div>
-                        ) : stages.length === 0 ? (
+                        ) : enrichedStages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-20 text-slate-400 text-center">
                                 <Info className="w-10 h-10 text-primary/40 mb-4" />
                                 <h3 className="text-lg font-medium text-slate-600">Configure as etapas</h3>

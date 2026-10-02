@@ -47,11 +47,8 @@ import {
   CalendarPlus,
   Phone,
   Loader2,
-  LayoutGrid,
-  List,
   Tag
 } from "lucide-react";
-import { LeadsKanbanBoard } from "@/components/LeadsKanbanBoard";
 
 const normalizeLeadTag = (tag: string) => tag
   .normalize("NFD")
@@ -88,7 +85,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   };
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isTimelineOpen, setIsTimelineOpen] = useState(false);
   const [isJourneyMapOpen, setIsJourneyMapOpen] = useState(false);
@@ -1612,7 +1608,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
             <Filter className="w-4 h-4 mr-2" />
             <span className="hidden sm:inline">Filtros</span>
             <span className="sm:hidden">Filtrar</span>
-            {getActiveFiltersCount() > 0 && (<Badge variant="destructive" className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 text-xs flex items-center justify-center">{getActiveFiltersCount()}</Badge>)}</Button><div className="flex border border-border rounded-md bg-muted/20 ml-2"><Button variant={viewMode === "list" ? "secondary" : "ghost"} size="sm" onClick={() => setViewMode("list")} className="px-3" title="Lista"><List className="w-4 h-4" /></Button><Button variant={viewMode === "kanban" ? "secondary" : "ghost"} size="sm" onClick={() => setViewMode("kanban")} className="px-3" title="Kanban"><LayoutGrid className="w-4 h-4" /></Button></div></div></div>
+            {getActiveFiltersCount() > 0 && (<Badge variant="destructive" className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 text-xs flex items-center justify-center">{getActiveFiltersCount()}</Badge>)}</Button></div></div>
 
       {/* Stats Summary */}
       <div className="grid grid-cols-2 gap-4">
@@ -1634,7 +1630,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         </Card>
       </div>
 
-      {viewMode === "kanban" ? (<LeadsKanbanBoard leads={filteredLeads} stages={funnelStages} getStatusColor={getStatusColor} onStatusChange={handleKanbanStatusChange} onViewTimeline={handleViewTimeline} onEditLead={handleEditLead} onRegisterContact={handleRegisterContact} onWhatsApp={handleWhatsApp} onScheduleTask={handleCreateTask} onDeleteTask={handleDeleteTask} />) : (<Card className="shadow-card">
+      {(<Card className="shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5" />
