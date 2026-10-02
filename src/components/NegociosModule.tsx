@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, Mail, Clock } from "lucide-react";
 import {
   NEGOCIO_PHASES,
   NEGOCIO_STAGES,
@@ -189,59 +189,96 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         e.dataTransfer.setData("leadId", lead.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className="bg-white rounded-lg border border-slate-200 shadow-sm p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+      className="group bg-white rounded-xl border border-slate-200 shadow-sm p-3 min-w-0 overflow-hidden cursor-grab active:cursor-grabbing hover:shadow-md hover:border-slate-300 transition-all"
     >
-      <button
-        type="button"
-        onClick={() => openLead(lead)}
-        className="font-semibold text-[13px] text-slate-900 leading-tight text-left hover:underline w-full truncate block"
-        title={lead.nome}
-      >
-        {lead.nome || "Sem nome"}
-      </button>
-
-      <div className="flex flex-wrap gap-1 mt-2">
-        {lead.origem && (
-          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${origemBadgeClass(lead.origem)}`}>{lead.origem}</span>
-        )}
-        {lead.empreendimento?.nome && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200 truncate max-w-full">
-            {lead.empreendimento.nome}
-          </span>
+      {/* Nome + WhatsApp */}
+      <div className="flex items-start justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => openLead(lead)}
+          className="min-w-0 flex-1 font-semibold text-sm text-slate-900 leading-snug text-left hover:text-blue-800 truncate"
+          title={lead.nome}
+        >
+          {lead.nome || "Sem nome"}
+        </button>
+        {lead.telefone && (
+          <button
+            type="button"
+            onClick={() => handleWhatsApp(lead)}
+            className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md text-green-600 hover:bg-green-50"
+            title="Abrir no WhatsApp"
+          >
+            <MessageCircle className="w-4 h-4" />
+          </button>
         )}
       </div>
 
-      {lead.telefone && (
-        <div className="flex items-center gap-1.5 text-[12px] text-slate-700 mt-2">
-          <Phone className="w-3 h-3" />
-          {lead.telefone}
+      {/* Etiquetas */}
+      {(lead.origem || lead.empreendimento?.nome) && (
+        <div className="flex flex-wrap gap-1 mt-2 min-w-0">
+          {lead.origem && (
+            <span
+              className={`max-w-full truncate text-[10px] font-medium px-1.5 py-0.5 rounded-md border ${origemBadgeClass(lead.origem)}`}
+              title={lead.origem}
+            >
+              {lead.origem}
+            </span>
+          )}
+          {lead.empreendimento?.nome && (
+            <span
+              className="max-w-full truncate text-[10px] font-medium px-1.5 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200"
+              title={lead.empreendimento.nome}
+            >
+              {lead.empreendimento.nome}
+            </span>
+          )}
         </div>
       )}
-      {lead.email && <div className="text-[11px] text-slate-500 truncate mt-1" title={lead.email}>{lead.email}</div>}
+
+      {/* Contato */}
+      <div className="mt-2 space-y-0.5">
+        {lead.telefone && (
+          <div className="flex items-center gap-1.5 text-xs text-slate-700">
+            <Phone className="w-3 h-3 shrink-0 text-slate-400" />
+            <span className="truncate">{lead.telefone}</span>
+          </div>
+        )}
+        {lead.email && (
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 min-w-0" title={lead.email}>
+            <Mail className="w-3 h-3 shrink-0 text-slate-400" />
+            <span className="truncate">{lead.email}</span>
+          </div>
+        )}
+      </div>
+
       {lead.observacoes && (
-        <div className="text-[11px] text-slate-500 mt-2 line-clamp-2" title={lead.observacoes}>
+        <div className="mt-2 text-[11px] leading-snug text-slate-600 bg-slate-50 rounded-md px-2 py-1.5 line-clamp-2 break-words" title={lead.observacoes}>
           {lead.observacoes}
         </div>
       )}
-      <div className="text-[11px] text-slate-500 mt-2">Chegou {formatChegou(lead.created_at)}</div>
 
-      {isValidacao ? (
-        <div className="flex gap-2 mt-3">
-          <Button size="sm" className="h-7 flex-1 bg-blue-800 hover:bg-blue-900 text-white text-xs" onClick={() => handleValidar(lead)}>
-            <Check className="w-3.5 h-3.5 mr-1" /> Validar
+      <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-400">
+        <Clock className="w-3 h-3 shrink-0" />
+        <span className="truncate">Chegou {formatChegou(lead.created_at)}</span>
+      </div>
+
+      {isValidacao && (
+        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100">
+          <Button
+            size="sm"
+            className="h-8 px-2 min-w-0 whitespace-nowrap bg-blue-800 hover:bg-blue-900 text-white text-xs"
+            onClick={() => handleValidar(lead)}
+          >
+            <Check className="w-3.5 h-3.5 mr-1 shrink-0" /> Validar
           </Button>
-          <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" onClick={() => handleDescartar(lead)}>
-            <X className="w-3.5 h-3.5 mr-1" /> Descartar
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-2 min-w-0 whitespace-nowrap text-xs text-slate-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50"
+            onClick={() => handleDescartar(lead)}
+          >
+            <X className="w-3.5 h-3.5 mr-1 shrink-0" /> Descartar
           </Button>
-        </div>
-      ) : (
-        <div className="flex justify-end gap-1 mt-2">
-          <button type="button" onClick={() => handleWhatsApp(lead)} className="p-1 rounded hover:bg-green-50 text-green-600" title="WhatsApp">
-            <MessageCircle className="w-3.5 h-3.5" />
-          </button>
-          <button type="button" onClick={() => openLead(lead)} className="p-1 rounded hover:bg-slate-100 text-slate-500" title="Abrir lead">
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
         </div>
       )}
     </div>
@@ -253,7 +290,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     return (
       <div
         key={stage.id}
-        className={`flex-shrink-0 w-[190px] rounded-lg bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100vh-260px)] min-h-[160px] transition-colors ${
+        className={`flex-shrink-0 w-[260px] rounded-xl bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100vh-260px)] min-h-[160px] transition-colors ${
           dragOverStage === stage.id ? "ring-2 ring-blue-400 bg-blue-50" : ""
         }`}
         style={{ borderTopColor: accent }}
@@ -270,7 +307,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           if (leadId) moveLead(leadId, stage);
         }}
       >
-        <div className="px-2.5 pt-2.5 pb-2">
+        <div className="px-3 pt-3 pb-2">
           <div className="flex items-center justify-between gap-1">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="font-semibold text-[13px] text-slate-900 truncate" title={stage.name}>{stage.name}</span>
@@ -288,7 +325,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-2">
+        <div className="flex-1 overflow-y-auto px-2.5 pb-2.5 flex flex-col gap-2.5">
           {stageLeads.map((lead) => renderCard(lead, isValidacao))}
           {stageLeads.length === 0 && (
             <div className="h-24 flex items-center justify-center text-center text-[11px] text-slate-400 border border-dashed border-slate-300 rounded-md px-2">
@@ -372,7 +409,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
       {/* Novo negócio */}
       <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>Novo negócio</DialogTitle>
           </DialogHeader>
