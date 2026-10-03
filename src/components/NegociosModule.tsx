@@ -276,11 +276,13 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
       {isValidacao ? (
         <div className="grid grid-cols-2 gap-1.5 mt-3">
-          <Button size="sm" className="h-8 min-w-0 px-1.5 whitespace-nowrap bg-blue-800 hover:bg-blue-900 text-white text-xs" onClick={() => handleValidar(lead)}>
-            <Check className="w-3.5 h-3.5 mr-1 shrink-0" /> Validar
+          <Button size="sm" className="h-8 min-w-0 px-1 gap-1 whitespace-nowrap bg-blue-800 hover:bg-blue-900 text-white text-[11px]" onClick={() => handleValidar(lead)}>
+            <Check className="w-3 h-3 shrink-0" />
+            <span className="truncate">Validar</span>
           </Button>
-          <Button size="sm" variant="outline" className="h-8 min-w-0 px-1.5 whitespace-nowrap text-xs" onClick={() => handleDescartar(lead)}>
-            <X className="w-3.5 h-3.5 mr-1 shrink-0" /> Descartar
+          <Button size="sm" variant="outline" className="h-8 min-w-0 px-1 gap-1 whitespace-nowrap text-[11px]" onClick={() => handleDescartar(lead)}>
+            <X className="w-3 h-3 shrink-0" />
+            <span className="truncate">Descartar</span>
           </Button>
         </div>
       ) : (
@@ -302,7 +304,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     return (
       <div
         key={stage.id}
-        className={`flex-shrink-0 w-[calc(100vw-56px)] max-w-[280px] sm:w-[224px] snap-start rounded-lg bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100dvh-260px)] min-h-[160px] transition-colors ${
+        className={`flex-shrink-0 w-[calc(100vw-56px)] max-w-[280px] sm:w-[240px] snap-start rounded-lg bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100dvh-260px)] min-h-[160px] transition-colors ${
           dragOverStage === stage.id ? "ring-2 ring-blue-400 bg-blue-50" : ""
         }`}
         style={{ borderTopColor: accent }}
@@ -337,7 +339,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden pl-2 pr-1.5 pb-2 flex flex-col gap-2 [scrollbar-gutter:stable] [scrollbar-width:thin]">
           {stageLeads.map((lead) => renderCard(lead, isValidacao))}
           {stageLeads.length === 0 && (
             <div className="h-24 flex items-center justify-center text-center text-[11px] text-slate-400 border border-dashed border-slate-300 rounded-md px-2">
