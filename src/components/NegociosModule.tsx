@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History } from "lucide-react";
+import { LeadTimeline } from "@/components/LeadTimeline";
 import {
   NEGOCIO_PHASES,
   NEGOCIO_STAGES,
@@ -54,6 +55,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [search, setSearch] = useState("");
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
+  const [timelineLeadId, setTimelineLeadId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [newDeal, setNewDeal] = useState({
     nome: "",
@@ -240,14 +242,25 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       }}
       className="shrink-0 min-w-0 bg-white rounded-lg border border-slate-200 shadow-sm p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
     >
-      <button
-        type="button"
-        onClick={() => openLead(lead)}
-        className="font-semibold text-[13px] text-slate-900 leading-tight text-left hover:underline w-full truncate block"
-        title={lead.nome}
-      >
-        {lead.nome || "Sem nome"}
-      </button>
+      <div className="flex items-start gap-1 min-w-0">
+        <button
+          type="button"
+          onClick={() => openLead(lead)}
+          className="flex-1 min-w-0 font-semibold text-[13px] text-slate-900 leading-tight text-left hover:underline truncate block"
+          title={lead.nome}
+        >
+          {lead.nome || "Sem nome"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTimelineLeadId(lead.id)}
+          className="shrink-0 -mt-0.5 -mr-1 p-1 rounded text-slate-400 hover:text-blue-800 hover:bg-blue-50"
+          title="Ver histórico (timeline)"
+          aria-label="Ver histórico do lead"
+        >
+          <History className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       <div className="flex flex-wrap gap-1 mt-2 min-w-0">
         {lead.origem && (
@@ -514,6 +527,12 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Timeline / histórico do lead */}
+      <LeadTimeline
+        leadId={timelineLeadId}
+        isOpen={!!timelineLeadId}
+        onClose={() => setTimelineLeadId(null)}
+      />
     </div>
   );
 }
