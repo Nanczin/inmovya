@@ -131,11 +131,10 @@ export function FunilModule() {
         // Count leads by finding the closest match in stage names vs lead status
         const stageCounts = FUNIL_TIERS.map(tier => {
             const thisStageLeads = filteredLeads.filter(l => getFunilTier(l.status)?.stageId === tier.stageId);
-            const configured = stages.find(s => s.name.trim().toLowerCase() === tier.name.toLowerCase());
             return {
                 id: tier.stageId,
                 name: tier.name,
-                color: configured?.color || tier.color,
+                color: tier.color,
                 count: thisStageLeads.length,
                 leads: thisStageLeads
             };
@@ -402,117 +401,28 @@ export function FunilModule() {
                 <Card className="lg:col-span-1 shadow-sm border-slate-200">
                     <CardHeader className="pb-4">
                         <CardTitle className="text-xl flex items-center gap-2">
-                            <Plus className="w-5 h-5 text-primary" />
+                            <FilterIcon className="w-5 h-5 text-primary" />
                             Etapas do Funil
                         </CardTitle>
                         <CardDescription>
-                            Etapas disponíveis no cadastro de leads. O gráfico considera só quem está em 20%, 50%, 70% e Fechado.
+                            O funil considera só os leads em 20%, 50%, 70% e Fechado. As etapas são as mesmas das abas Negócios e Leads.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        {/* Add new Stage */}
-                        <div className="flex gap-2 mb-4">
-                            <Input
-                                placeholder="Nova etapa (ex: Visita)"
-                                value={newStageName}
-                                onChange={(e) => setNewStageName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddStage()}
-                                className="bg-slate-50 focus-visible:ring-1"
-                            />
-                            <Button onClick={handleAddStage} size="icon" className="shrink-0 bg-primary hover:bg-primary/90">
-                                <Plus className="w-4 h-4" />
-                            </Button>
-                        </div>
-
-                        {/* Drag and Drop notice */}
-                        <p className="text-xs text-slate-400 mb-4 bg-slate-50 p-2 rounded border border-slate-100 flex items-center gap-2">
-                            <GripVertical className="w-3.5 h-3.5 shrink-0" />
-                            Arraste nas alças para reordenar a lista. O gráfico se ajusta sozinho!
-                        </p>
-
-                        {/* Stage List */}
-                        <div className="space-y-3">
-                            {stages.map((stage, index) => (
-                                <div
-                                    key={stage.id}
-                                    draggable
-                                    onDragStart={(e) => (dragItem.current = index)}
-                                    onDragEnter={(e) => (dragOverItem.current = index)}
-                                    onDragEnd={handleSort}
-                                    onDragOver={(e) => e.preventDefault()}
-                                    className="flex items-center gap-3 p-3 rounded-lg border border-slate-100 bg-white shadow-sm group hover:border-slate-300 hover:shadow-md transition-all cursor-move"
-                                >
-                                    <div className="bg-slate-50 p-1.5 rounded text-slate-400 cursor-grab active:cursor-grabbing hover:bg-slate-100">
-                                        <GripVertical className="w-4 h-4" />
+                        <div className="space-y-2">
+                            {enrichedStages.map((stage) => (
+                                <div key={stage.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: stage.color }} />
+                                        <span className="font-medium text-slate-700">{stage.name}</span>
                                     </div>
-
-                                    <div className="flex-1 flex items-center justify-between">
-                                        {editingId === stage.id ? (
-                                            <div className="flex items-center gap-1 w-full">
-                                                <Input
-                                                    value={editName}
-                                                    onChange={(e) => setEditName(e.target.value)}
-                                                    className="h-8 text-sm"
-                                                    autoFocus
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') handleEditSave();
-                                                        if (e.key === 'Escape') handleEditCancel();
-                                                    }}
-                                                />
-                                                <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600" onClick={handleEditSave}>
-                                                    <Check className="w-4 h-4" />
-                                                </Button>
-                                                <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400" onClick={handleEditCancel}>
-                                                    <X className="w-4 h-4" />
-                                                </Button>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <div className="flex items-center gap-2">
-                                                    <div 
-                                                        className="flex items-center shrink-0 relative w-6 h-6"
-                                                        draggable
-                                                        onDragStart={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                        }}
-                                                    >
-                                                        <label className="cursor-pointer w-full h-full relative block">
-                                                            <input
-                                                                type="color"
-                                                                value={stage.color || "#94a3b8"}
-                                                                onChange={(e) => handleColorChange(stage.id, e.target.value)}
-                                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                                            />
-                                                            <div
-                                                                className="absolute inset-0 w-full h-full rounded-full border border-slate-200 shadow-sm transition-transform hover:scale-110"
-                                                                style={{ backgroundColor: stage.color || "#94a3b8" }}
-                                                                title="Clique para mudar a cor"
-                                                            />
-                                                        </label>
-                                                    </div>
-                                                    <span className="font-medium text-slate-700">{stage.name}</span>
-                                                </div>
-                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400" onClick={() => handleEditStart(stage)}>
-                                                        <Edit2 className="w-3.5 h-3.5" />
-                                                    </Button>
-                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-red-400 hover:text-red-500 hover:bg-red-50" onClick={() => handleDeleteStage(stage.id)}>
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </Button>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
+                                    <span className="text-sm font-semibold text-slate-900">{stage.count}</span>
                                 </div>
                             ))}
-
-                            {stages.length === 0 && (
-                                <div className="text-center p-6 border border-dashed rounded-lg text-slate-400 bg-slate-50">
-                                    Nenhuma etapa configurada
-                                </div>
-                            )}
                         </div>
+                        <p className="text-xs text-muted-foreground mt-4">
+                            Para mudar a etapa de um lead, arraste o card na aba Negócios ou edite o lead na aba Leads.
+                        </p>
                     </CardContent>
                 </Card>
 

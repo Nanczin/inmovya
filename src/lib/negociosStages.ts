@@ -41,9 +41,9 @@ export const PRIMEIRO_IMPACTO_STAGE_ID = "primeiro-impacto";
 export const PERDIDO_STAGE_ID = "perdido";
 
 export const NEGOCIO_STAGES: NegocioStage[] = [
-  { id: VALIDACAO_STAGE_ID, name: "Validação", value: "Validação", phase: "entrada", aliases: ["novo"] },
+  { id: VALIDACAO_STAGE_ID, name: "Validação", value: "Validação", phase: "entrada", aliases: ["novo", "pendente"] },
 
-  { id: PRIMEIRO_IMPACTO_STAGE_ID, name: "Primeiro impacto", value: "Primeiro impacto", phase: "prospeccao" },
+  { id: PRIMEIRO_IMPACTO_STAGE_ID, name: "Primeiro impacto", value: "Primeiro impacto", phase: "prospeccao", aliases: ["contatado", "nao atendeu"] },
   { id: "p1", name: "P1", value: "P1", phase: "prospeccao" },
   { id: "p2", name: "P2", value: "P2", phase: "prospeccao" },
   { id: "p3", name: "P3", value: "P3", phase: "prospeccao" },
@@ -51,10 +51,10 @@ export const NEGOCIO_STAGES: NegocioStage[] = [
   { id: "p5", name: "P5", value: "P5", phase: "prospeccao" },
   { id: "p6", name: "P6", value: "P6", phase: "prospeccao" },
   { id: "p7", name: "P7", value: "P7", phase: "prospeccao" },
-  { id: "respondeu", name: "Respondeu", value: "Respondeu", phase: "prospeccao" },
+  { id: "respondeu", name: "Respondeu", value: "Respondeu", phase: "prospeccao", aliases: ["interessado"] },
   { id: "lista-fria", name: "Lista fria", value: "Lista fria", phase: "prospeccao" },
 
-  { id: "diagnostico", name: "Diagnóstico", value: "Diagnóstico", phase: "diagnostico" },
+  { id: "diagnostico", name: "Diagnóstico", value: "Diagnóstico", phase: "diagnostico", aliases: ["qualificado"] },
 
   { id: "visita", name: "Visita", value: "Visita", phase: "proposta", aliases: ["visita agendada"] },
   { id: "fluxo-pagamento", name: "Fluxo de pagamento", value: "Fluxo de pagamento", phase: "proposta" },
@@ -111,4 +111,15 @@ export const getFunilTier = (status?: string | null) => {
   const stage = getStageForStatus(status);
   if (!stage) return undefined;
   return FUNIL_TIERS.find((t) => t.stageId === stage.id);
+};
+
+/**
+ * Status que precisam ser padronizados: o lead está numa etapa reconhecida,
+ * mas gravado com outro nome (ex.: "75%" → "70%", "Novo" → "Validação").
+ */
+export const getStatusNormalization = (status?: string | null) => {
+  if (!status) return undefined;
+  const stage = getStageForStatus(status);
+  if (!stage || stage.value === status) return undefined;
+  return stage;
 };

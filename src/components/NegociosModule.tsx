@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight } from "lucide-react";
 import {
   NEGOCIO_PHASES,
   NEGOCIO_STAGES,
@@ -19,6 +19,7 @@ import {
   PERDIDO_STAGE_ID,
   getStageForStatus,
   getFunilTier,
+  getStatusNormalization,
   normalizeStatus,
 } from "@/lib/negociosStages";
 
@@ -179,6 +180,54 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     setIsNewOpen(true);
   };
 
+  // Padronização: leads com status antigo/alternativo (ex.: "75%", "Novo")
+  const [isNormalizeOpen, setIsNormalizeOpen] = useState(false);
+  const [normalizing, setNormalizing] = useState(false);
+  const normalizationGroups = useMemo(() => {
+    const groups: Record<string, { from: string; to: string; toName: string; ids: string[] }> = {};
+    (leads || []).forEach((lead) => {
+      const stage = getStatusNormalization(lead.status);
+      if (!stage) return;
+      const key = `${lead.status}→${stage.value}`;
+      if (!groups[key]) groups[key] = { from: lead.status, to: stage.value, toName: stage.name, ids: [] };
+      groups[key].ids.push(lead.id);
+    });
+    return Object.values(groups).sort((a, b) => b.ids.length - a.ids.length);
+  }, [leads]);
+  const normalizationTotal = normalizationGroups.reduce((acc, g) => acc + g.ids.length, 0);
+
+  // Status que não correspondem a nenhuma etapa (ficam na Validação)
+  const unmatchedStatuses = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (leads || []).forEach((lead) => {
+      if (!lead.status || getStageForStatus(lead.status)) return;
+      counts[lead.status] = (counts[lead.status] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [leads]);
+
+  const applyNormalization = async () => {
+    setNormalizing(true);
+    try {
+      for (const group of normalizationGroups) {
+        for (let i = 0; i < group.ids.length; i += 200) {
+          const chunk = group.ids.slice(i, i + 200);
+          const { error } = await supabase.from("leads").update({ status: group.to }).in("id", chunk);
+          if (error) throw error;
+        }
+      }
+      toast({ title: "Etapas padronizadas", description: `${normalizationTotal} lead(s) atualizados.` });
+      setIsNormalizeOpen(false);
+      await refreshLeads();
+    } catch (err: any) {
+      console.error("Erro ao padronizar etapas:", err);
+      toast({ title: "Erro ao padronizar", description: err?.message || "Tente novamente.", variant: "destructive" });
+      await refreshLeads();
+    } finally {
+      setNormalizing(false);
+    }
+  };
+
   const visiblePhases = NEGOCIO_PHASES.filter((p) => activePhase === "all" || p.id === activePhase);
 
   const renderCard = (lead: Lead, isValidacao: boolean) => (
@@ -313,6 +362,11 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar negócio..." className="pl-8 h-9 w-full sm:w-56" />
           </div>
+          {normalizationTotal > 0 && (
+            <Button variant="outline" className="h-9 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setIsNormalizeOpen(true)}>
+              <Wand2 className="w-4 h-4 mr-1" /> Padronizar etapas ({normalizationTotal})
+            </Button>
+          )}
           <Button className="h-9 bg-blue-800 hover:bg-blue-900 text-white" onClick={() => openNewInStage(VALIDACAO_STAGE_ID)}>
             <Plus className="w-4 h-4 mr-1" /> Novo negócio
           </Button>
@@ -419,6 +473,41 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancelar</Button>
             <Button onClick={handleCreate} disabled={saving} className="bg-blue-800 hover:bg-blue-900 text-white">
               {saving ? "Salvando..." : "Criar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Padronizar etapas */}
+      <Dialog open={isNormalizeOpen} onOpenChange={setIsNormalizeOpen}>
+        <DialogContent className="sm:max-w-[480px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Padronizar etapas</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Estes leads estão gravados com nomes antigos ou alternativos. Ao aplicar, o status passa a ser o mesmo nas abas Leads, Funil e Negócios.
+          </p>
+          <div className="space-y-2">
+            {normalizationGroups.map((g) => (
+              <div key={`${g.from}-${g.to}`} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium truncate">{g.from}</span>
+                  <ArrowRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                  <span className="font-medium truncate">{g.toName === g.to ? g.to : `${g.toName} (${g.to})`}</span>
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0 ml-2">{g.ids.length} lead(s)</span>
+              </div>
+            ))}
+          </div>
+          {unmatchedStatuses.length > 0 && (
+            <div className="text-xs text-muted-foreground border-t pt-3">
+              <span className="font-medium text-foreground">Sem etapa correspondente (não serão alterados, ficam na Validação):</span>{" "}
+              {unmatchedStatuses.map(([st, n]) => `${st} (${n})`).join(", ")}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsNormalizeOpen(false)} disabled={normalizing}>Cancelar</Button>
+            <Button onClick={applyNormalization} disabled={normalizing} className="bg-blue-800 hover:bg-blue-900 text-white">
+              {normalizing ? "Aplicando..." : `Aplicar em ${normalizationTotal} lead(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>

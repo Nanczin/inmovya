@@ -22,6 +22,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { findBestSheetData } from "@/utils/excelUtils";
 import { formatCurrency } from "@/utils/formatUtils";
+import { NEGOCIO_STAGES, getStageForStatus } from "@/lib/negociosStages";
 import {
   Plus,
   Upload,
@@ -138,7 +139,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     profissao: "",
     possuiEntrada: "",
     valorEntrada: "",
-    status: "Novo",
+    status: "Validação",
     tagsRaw: undefined as string | undefined
   });
 
@@ -148,44 +149,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
 
 
-  const defaultStages = [
-    { id: "1", name: "Novo" },
-    { id: "2", name: "Contatado" },
-    { id: "3", name: "Interessado" },
-    { id: "4", name: "Visita Agendada" },
-    { id: "5", name: "Proposta" },
-    { id: "6", name: "Fechado" }
-  ];
-
-  const [funnelStages, setFunnelStages] = useState<{ id: string; name: string }[]>(() => {
-    const saved = localStorage.getItem("inmovya_funnel_stages");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return defaultStages;
-      }
-    }
-    return defaultStages;
-  });
-
-  useEffect(() => {
-    const loadStages = () => {
-      const saved = localStorage.getItem("inmovya_funnel_stages");
-      if (saved) {
-        try {
-          setFunnelStages(JSON.parse(saved));
-        } catch (e) {
-          setFunnelStages(defaultStages);
-        }
-      } else {
-        setFunnelStages(defaultStages);
-      }
-    };
-
-    window.addEventListener('funnelStagesUpdated', loadStages);
-    return () => window.removeEventListener('funnelStagesUpdated', loadStages);
-  }, []);
+  // Etapas únicas do sistema: as mesmas da aba Negócios (e do Funil)
+  const funnelStages = NEGOCIO_STAGES.map(stage => ({ id: stage.id, name: stage.value }));
 
   const [statsReais, setStatsReais] = useState({
     total: 0,
@@ -398,7 +363,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     if (!matchesSearch) return false;
 
     // Filtros específicos
-    if (activeFilters.status.length > 0 && !activeFilters.status.includes(lead.status)) {
+    if (activeFilters.status.length > 0 && !activeFilters.status.includes(getStageForStatus(lead.status)?.value ?? lead.status)) {
       return false;
     }
 
@@ -474,7 +439,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           observacoes: newLead.observacoes || null,
           ultimo_contato: new Date().toISOString(),
           empreendimento_id: newLead.interesse.length > 0 ? newLead.interesse[0] : null,
-          status: newLead.status || 'Novo',
+          status: newLead.status || 'Validação',
           tags: [
             ...newLead.tags,
             ...newLead.interesse.map(id => {
@@ -512,7 +477,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         profissao: "",
         possuiEntrada: "",
         valorEntrada: "",
-        status: "Novo"
+        status: "Validação"
       });
       setIsDialogOpen(false);
 
@@ -610,7 +575,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       profissao: profissaoTag ? profissaoTag.replace("Profissão: ", "") : "",
       possuiEntrada: entradaTag ? (entradaTag.includes("Sim") ? "sim" : "nao") : "",
       valorEntrada: entradaTag && entradaTag.includes("(") ? entradaTag.split("(")[1].replace(")", "") : "",
-      status: lead.status || "Novo",
+      status: getStageForStatus(lead.status)?.value ?? (lead.status || "Validação"),
       tagsRaw: tagsNormais.join(', ')
     });
     setIsEditDialogOpen(true);
@@ -714,7 +679,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           email: editLead.email,
           origem: editLead.origem || null,
           observacoes: editLead.observacoes || null,
-          status: editLead.status || 'Novo',
+          status: editLead.status || 'Validação',
           // Se tiver empreendimentos selecionados, salvar o primeiro como empreendimento_id
           empreendimento_id: editLead.interesse.length > 0 ? editLead.interesse[0] : null,
           // Salvar interesses como tags para persistir múltiplos
