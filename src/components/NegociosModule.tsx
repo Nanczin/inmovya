@@ -238,7 +238,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         e.dataTransfer.setData("leadId", lead.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className="bg-white rounded-lg border border-slate-200 shadow-sm p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+      className="shrink-0 min-w-0 bg-white rounded-lg border border-slate-200 shadow-sm p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
     >
       <button
         type="button"
@@ -249,9 +249,9 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         {lead.nome || "Sem nome"}
       </button>
 
-      <div className="flex flex-wrap gap-1 mt-2">
+      <div className="flex flex-wrap gap-1 mt-2 min-w-0">
         {lead.origem && (
-          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${origemBadgeClass(lead.origem)}`}>{lead.origem}</span>
+          <span className={`max-w-full truncate text-[10px] px-1.5 py-0.5 rounded border ${origemBadgeClass(lead.origem)}`} title={lead.origem}>{lead.origem}</span>
         )}
         {lead.empreendimento?.nome && (
           <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200 truncate max-w-full">
@@ -261,26 +261,26 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       </div>
 
       {lead.telefone && (
-        <div className="flex items-center gap-1.5 text-[12px] text-slate-700 mt-2">
-          <Phone className="w-3 h-3" />
-          {lead.telefone}
+        <div className="flex items-center gap-1.5 text-[12px] text-slate-700 mt-2 min-w-0">
+          <Phone className="w-3 h-3 shrink-0" />
+          <span className="truncate">{lead.telefone}</span>
         </div>
       )}
       {lead.email && <div className="text-[11px] text-slate-500 truncate mt-1" title={lead.email}>{lead.email}</div>}
       {lead.observacoes && (
-        <div className="text-[11px] text-slate-500 mt-2 line-clamp-2" title={lead.observacoes}>
+        <div className="text-[11px] text-slate-500 mt-2 line-clamp-2 break-words" title={lead.observacoes}>
           {lead.observacoes}
         </div>
       )}
       <div className="text-[11px] text-slate-500 mt-2">Chegou {formatChegou(lead.created_at)}</div>
 
       {isValidacao ? (
-        <div className="flex gap-2 mt-3">
-          <Button size="sm" className="h-7 flex-1 bg-blue-800 hover:bg-blue-900 text-white text-xs" onClick={() => handleValidar(lead)}>
-            <Check className="w-3.5 h-3.5 mr-1" /> Validar
+        <div className="grid grid-cols-2 gap-1.5 mt-3">
+          <Button size="sm" className="h-8 min-w-0 px-1.5 whitespace-nowrap bg-blue-800 hover:bg-blue-900 text-white text-xs" onClick={() => handleValidar(lead)}>
+            <Check className="w-3.5 h-3.5 mr-1 shrink-0" /> Validar
           </Button>
-          <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" onClick={() => handleDescartar(lead)}>
-            <X className="w-3.5 h-3.5 mr-1" /> Descartar
+          <Button size="sm" variant="outline" className="h-8 min-w-0 px-1.5 whitespace-nowrap text-xs" onClick={() => handleDescartar(lead)}>
+            <X className="w-3.5 h-3.5 mr-1 shrink-0" /> Descartar
           </Button>
         </div>
       ) : (
@@ -302,7 +302,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     return (
       <div
         key={stage.id}
-        className={`flex-shrink-0 w-[190px] rounded-lg bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100vh-260px)] min-h-[160px] transition-colors ${
+        className={`flex-shrink-0 w-[calc(100vw-56px)] max-w-[280px] sm:w-[224px] snap-start rounded-lg bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100dvh-260px)] min-h-[160px] transition-colors ${
           dragOverStage === stage.id ? "ring-2 ring-blue-400 bg-blue-50" : ""
         }`}
         style={{ borderTopColor: accent }}
@@ -408,7 +408,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       </div>
 
       {/* Quadro */}
-      <div className="flex gap-4 overflow-x-auto pb-4 min-w-0">
+      <div className="flex gap-4 overflow-x-auto pb-4 min-w-0 snap-x snap-mandatory sm:snap-none overscroll-x-contain">
         {visiblePhases.map((phase) => {
           const stages = NEGOCIO_STAGES.filter((s) => s.phase === phase.id);
           return (
