@@ -1,11 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/utils/formatUtils";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, Mail, Clock } from "lucide-react";
@@ -54,14 +57,44 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [newDeal, setNewDeal] = useState({
+  const emptyDeal = {
     nome: "",
     telefone: "",
     email: "",
     origem: "",
+    renda: "",
+    profissao: "",
+    possuiEntrada: "",
+    valorEntrada: "",
+    interesse: [] as string[],
     observacoes: "",
+    tagsRaw: "",
     stageId: VALIDACAO_STAGE_ID,
-  });
+  };
+  const [newDeal, setNewDeal] = useState(emptyDeal);
+  const [empreendimentos, setEmpreendimentos] = useState<{ id: string; nome: string; status?: string }[]>([]);
+
+  // Mesma lista de empreendimentos usada no cadastro de lead
+  useEffect(() => {
+    supabase
+      .from("empreendimentos")
+      .select("id, nome, status")
+      .not("status", "in", '("Entregue","Inativo")')
+      .order("nome")
+      .then(({ data, error }) => {
+        if (error) console.error("Erro ao carregar empreendimentos:", error);
+        else setEmpreendimentos(data || []);
+      });
+  }, []);
+
+  const formatPhone = (value: string) => {
+    const d = value.replace(/\D/g, "").slice(0, 11);
+    if (d.length <= 2) return d ? `(${d}` : "";
+    if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+    return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  };
+
+  const dealTags = newDeal.tagsRaw.split(",").map((t) => t.trim()).filter(Boolean);
 
   // Distribui os leads pelas etapas
   const leadsByStage = useMemo(() => {
@@ -150,6 +183,19 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
       const stage = stageById(newDeal.stageId);
+      // Mesmo formato do cadastro de lead (campos extras viram tags)
+      const tags = [
+        ...dealTags,
+        ...newDeal.interesse.map((id) => {
+          const emp = empreendimentos.find((e) => e.id === id);
+          return emp ? `Interesse: ${emp.nome}` : null;
+        }),
+        newDeal.renda ? `Renda: ${newDeal.renda}` : null,
+        newDeal.profissao ? `Profissão: ${newDeal.profissao}` : null,
+        newDeal.possuiEntrada
+          ? `Entrada: ${newDeal.possuiEntrada === "sim" ? (newDeal.valorEntrada ? `Sim (${newDeal.valorEntrada})` : "Sim") : "Não"}`
+          : null,
+      ].filter(Boolean) as string[];
       const { error } = await supabase.from("leads").insert([
         {
           nome: newDeal.nome.trim(),
@@ -157,14 +203,17 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           email: newDeal.email.trim(),
           origem: newDeal.origem.trim() || null,
           observacoes: newDeal.observacoes.trim() || null,
+          ultimo_contato: new Date().toISOString(),
+          empreendimento_id: newDeal.interesse.length > 0 ? newDeal.interesse[0] : null,
           status: stage.value,
+          tags,
           user_id: user.id,
         },
       ]);
       if (error) throw error;
       toast({ title: "Negócio criado", description: `${newDeal.nome} em ${stage.name}` });
       setIsNewOpen(false);
-      setNewDeal({ nome: "", telefone: "", email: "", origem: "", observacoes: "", stageId: VALIDACAO_STAGE_ID });
+      setNewDeal(emptyDeal);
       refreshLeads();
     } catch (err: any) {
       console.error("Erro ao criar negócio:", err);
@@ -407,33 +456,43 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         })}
       </div>
 
-      {/* Novo negócio */}
+      {/* Novo negócio — mesmos campos do cadastro de lead */}
       <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="w-[95vw] max-w-[560px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo negócio</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-1.5">
-              <Label>Nome *</Label>
-              <Input value={newDeal.nome} onChange={(e) => setNewDeal({ ...newDeal, nome: e.target.value })} />
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="nd-nome">Nome *</Label>
+              <Input id="nd-nome" value={newDeal.nome} onChange={(e) => setNewDeal({ ...newDeal, nome: e.target.value })} placeholder="Nome completo" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-1.5">
-                <Label>Telefone *</Label>
-                <Input value={newDeal.telefone} onChange={(e) => setNewDeal({ ...newDeal, telefone: e.target.value })} placeholder="(11) 99999-9999" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="nd-tel">Telefone *</Label>
+                <Input id="nd-tel" value={newDeal.telefone} onChange={(e) => setNewDeal({ ...newDeal, telefone: formatPhone(e.target.value) })} placeholder="(11) 99999-9999" />
               </div>
-              <div className="grid gap-1.5">
-                <Label>Origem</Label>
-                <Input value={newDeal.origem} onChange={(e) => setNewDeal({ ...newDeal, origem: e.target.value })} placeholder="roleta, Instagram..." />
+              <div className="space-y-2">
+                <Label htmlFor="nd-email">Email *</Label>
+                <Input id="nd-email" type="email" value={newDeal.email} onChange={(e) => setNewDeal({ ...newDeal, email: e.target.value })} placeholder="email@exemplo.com" />
               </div>
             </div>
-            <div className="grid gap-1.5">
-              <Label>E-mail *</Label>
-              <Input value={newDeal.email} onChange={(e) => setNewDeal({ ...newDeal, email: e.target.value })} />
+            <div className="space-y-2">
+              <Label htmlFor="nd-origem">Origem</Label>
+              <Input id="nd-origem" value={newDeal.origem} onChange={(e) => setNewDeal({ ...newDeal, origem: e.target.value })} placeholder="Ex: roleta, Facebook, Indicação..." />
             </div>
-            <div className="grid gap-1.5">
-              <Label>Etapa</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="nd-renda">Renda Mensal (Opcional)</Label>
+                <Input id="nd-renda" value={newDeal.renda} onChange={(e) => setNewDeal({ ...newDeal, renda: formatCurrency(e.target.value) })} placeholder="Ex: R$ 5.000,00" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="nd-prof">Profissão (Opcional)</Label>
+                <Input id="nd-prof" value={newDeal.profissao} onChange={(e) => setNewDeal({ ...newDeal, profissao: e.target.value })} placeholder="Ex: Médico" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Etapa do Funil</Label>
               <Select value={newDeal.stageId} onValueChange={(v) => setNewDeal({ ...newDeal, stageId: v })}>
                 <SelectTrigger>
                   <SelectValue />
@@ -447,15 +506,85 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-1.5">
-              <Label>Observações</Label>
-              <Textarea rows={2} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Empreendimento de interesse..." />
+            <div className="space-y-2">
+              <Label>Possui Entrada? (Opcional)</Label>
+              <div className="flex gap-2">
+                <Select value={newDeal.possuiEntrada} onValueChange={(v) => setNewDeal({ ...newDeal, possuiEntrada: v })}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sim">Sim</SelectItem>
+                    <SelectItem value="nao">Não</SelectItem>
+                  </SelectContent>
+                </Select>
+                {newDeal.possuiEntrada === "sim" && (
+                  <Input
+                    className="flex-1"
+                    placeholder="Valor (R$)"
+                    value={newDeal.valorEntrada}
+                    onChange={(e) => setNewDeal({ ...newDeal, valorEntrada: formatCurrency(e.target.value) })}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Empreendimentos de Interesse</Label>
+              <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2">
+                {empreendimentos.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Nenhum empreendimento cadastrado</div>
+                ) : (
+                  empreendimentos.map((emp) => (
+                    <div key={emp.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`nd-int-${emp.id}`}
+                        checked={newDeal.interesse.includes(emp.id)}
+                        onCheckedChange={(checked) =>
+                          setNewDeal({
+                            ...newDeal,
+                            interesse: checked ? [...newDeal.interesse, emp.id] : newDeal.interesse.filter((id) => id !== emp.id),
+                          })
+                        }
+                      />
+                      <Label htmlFor={`nd-int-${emp.id}`} className="text-sm font-normal cursor-pointer flex items-center gap-2">
+                        {emp.nome}
+                        {emp.status && (
+                          <Badge variant="outline" className="text-xs">
+                            {emp.status}
+                          </Badge>
+                        )}
+                      </Label>
+                    </div>
+                  ))
+                )}
+              </div>
+              {newDeal.interesse.length > 0 && (
+                <div className="text-xs text-muted-foreground">{newDeal.interesse.length} empreendimento(s) selecionado(s)</div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nd-obs">Observações</Label>
+              <Textarea id="nd-obs" rows={3} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Observações adicionais..." />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nd-tags">Tags/Etiquetas</Label>
+              <Input id="nd-tags" value={newDeal.tagsRaw} onChange={(e) => setNewDeal({ ...newDeal, tagsRaw: e.target.value })} placeholder="Digite as tags separadas por vírgula" />
+              <div className="text-xs text-muted-foreground">Separe múltiplas tags com vírgula. Ex: vip, interessado, follow-up</div>
+              {dealTags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {dealTags.map((tag, i) => (
+                    <Badge key={i} variant="secondary" className="text-xs">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancelar</Button>
             <Button onClick={handleCreate} disabled={saving} className="bg-blue-800 hover:bg-blue-900 text-white">
-              {saving ? "Salvando..." : "Criar"}
+              {saving ? "Salvando..." : "Criar negócio"}
             </Button>
           </DialogFooter>
         </DialogContent>
