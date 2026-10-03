@@ -1,17 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/utils/formatUtils";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, Mail, Clock } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink } from "lucide-react";
 import {
   NEGOCIO_PHASES,
   NEGOCIO_STAGES,
@@ -57,44 +54,14 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const emptyDeal = {
+  const [newDeal, setNewDeal] = useState({
     nome: "",
     telefone: "",
     email: "",
     origem: "",
-    renda: "",
-    profissao: "",
-    possuiEntrada: "",
-    valorEntrada: "",
-    interesse: [] as string[],
     observacoes: "",
-    tagsRaw: "",
     stageId: VALIDACAO_STAGE_ID,
-  };
-  const [newDeal, setNewDeal] = useState(emptyDeal);
-  const [empreendimentos, setEmpreendimentos] = useState<{ id: string; nome: string; status?: string }[]>([]);
-
-  // Mesma lista de empreendimentos usada no cadastro de lead
-  useEffect(() => {
-    supabase
-      .from("empreendimentos")
-      .select("id, nome, status")
-      .not("status", "in", '("Entregue","Inativo")')
-      .order("nome")
-      .then(({ data, error }) => {
-        if (error) console.error("Erro ao carregar empreendimentos:", error);
-        else setEmpreendimentos(data || []);
-      });
-  }, []);
-
-  const formatPhone = (value: string) => {
-    const d = value.replace(/\D/g, "").slice(0, 11);
-    if (d.length <= 2) return d ? `(${d}` : "";
-    if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-    return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  };
-
-  const dealTags = newDeal.tagsRaw.split(",").map((t) => t.trim()).filter(Boolean);
+  });
 
   // Distribui os leads pelas etapas
   const leadsByStage = useMemo(() => {
@@ -183,19 +150,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
       const stage = stageById(newDeal.stageId);
-      // Mesmo formato do cadastro de lead (campos extras viram tags)
-      const tags = [
-        ...dealTags,
-        ...newDeal.interesse.map((id) => {
-          const emp = empreendimentos.find((e) => e.id === id);
-          return emp ? `Interesse: ${emp.nome}` : null;
-        }),
-        newDeal.renda ? `Renda: ${newDeal.renda}` : null,
-        newDeal.profissao ? `Profissão: ${newDeal.profissao}` : null,
-        newDeal.possuiEntrada
-          ? `Entrada: ${newDeal.possuiEntrada === "sim" ? (newDeal.valorEntrada ? `Sim (${newDeal.valorEntrada})` : "Sim") : "Não"}`
-          : null,
-      ].filter(Boolean) as string[];
       const { error } = await supabase.from("leads").insert([
         {
           nome: newDeal.nome.trim(),
@@ -203,17 +157,14 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           email: newDeal.email.trim(),
           origem: newDeal.origem.trim() || null,
           observacoes: newDeal.observacoes.trim() || null,
-          ultimo_contato: new Date().toISOString(),
-          empreendimento_id: newDeal.interesse.length > 0 ? newDeal.interesse[0] : null,
           status: stage.value,
-          tags,
           user_id: user.id,
         },
       ]);
       if (error) throw error;
       toast({ title: "Negócio criado", description: `${newDeal.nome} em ${stage.name}` });
       setIsNewOpen(false);
-      setNewDeal(emptyDeal);
+      setNewDeal({ nome: "", telefone: "", email: "", origem: "", observacoes: "", stageId: VALIDACAO_STAGE_ID });
       refreshLeads();
     } catch (err: any) {
       console.error("Erro ao criar negócio:", err);
@@ -238,96 +189,59 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         e.dataTransfer.setData("leadId", lead.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className="group bg-white rounded-xl border border-slate-200 shadow-sm p-3 min-w-0 overflow-hidden cursor-grab active:cursor-grabbing hover:shadow-md hover:border-slate-300 transition-all"
+      className="bg-white rounded-lg border border-slate-200 shadow-sm p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
     >
-      {/* Nome + WhatsApp */}
-      <div className="flex items-start justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => openLead(lead)}
-          className="min-w-0 flex-1 font-semibold text-sm text-slate-900 leading-snug text-left hover:text-blue-800 truncate"
-          title={lead.nome}
-        >
-          {lead.nome || "Sem nome"}
-        </button>
-        {lead.telefone && (
-          <button
-            type="button"
-            onClick={() => handleWhatsApp(lead)}
-            className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md text-green-600 hover:bg-green-50"
-            title="Abrir no WhatsApp"
-          >
-            <MessageCircle className="w-4 h-4" />
-          </button>
+      <button
+        type="button"
+        onClick={() => openLead(lead)}
+        className="font-semibold text-[13px] text-slate-900 leading-tight text-left hover:underline w-full truncate block"
+        title={lead.nome}
+      >
+        {lead.nome || "Sem nome"}
+      </button>
+
+      <div className="flex flex-wrap gap-1 mt-2">
+        {lead.origem && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${origemBadgeClass(lead.origem)}`}>{lead.origem}</span>
+        )}
+        {lead.empreendimento?.nome && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200 truncate max-w-full">
+            {lead.empreendimento.nome}
+          </span>
         )}
       </div>
 
-      {/* Etiquetas */}
-      {(lead.origem || lead.empreendimento?.nome) && (
-        <div className="flex flex-wrap gap-1 mt-2 min-w-0">
-          {lead.origem && (
-            <span
-              className={`max-w-full truncate text-[10px] font-medium px-1.5 py-0.5 rounded-md border ${origemBadgeClass(lead.origem)}`}
-              title={lead.origem}
-            >
-              {lead.origem}
-            </span>
-          )}
-          {lead.empreendimento?.nome && (
-            <span
-              className="max-w-full truncate text-[10px] font-medium px-1.5 py-0.5 rounded-md border bg-slate-50 text-slate-600 border-slate-200"
-              title={lead.empreendimento.nome}
-            >
-              {lead.empreendimento.nome}
-            </span>
-          )}
+      {lead.telefone && (
+        <div className="flex items-center gap-1.5 text-[12px] text-slate-700 mt-2">
+          <Phone className="w-3 h-3" />
+          {lead.telefone}
         </div>
       )}
-
-      {/* Contato */}
-      <div className="mt-2 space-y-0.5">
-        {lead.telefone && (
-          <div className="flex items-center gap-1.5 text-xs text-slate-700">
-            <Phone className="w-3 h-3 shrink-0 text-slate-400" />
-            <span className="truncate">{lead.telefone}</span>
-          </div>
-        )}
-        {lead.email && (
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 min-w-0" title={lead.email}>
-            <Mail className="w-3 h-3 shrink-0 text-slate-400" />
-            <span className="truncate">{lead.email}</span>
-          </div>
-        )}
-      </div>
-
+      {lead.email && <div className="text-[11px] text-slate-500 truncate mt-1" title={lead.email}>{lead.email}</div>}
       {lead.observacoes && (
-        <div className="mt-2 text-[11px] leading-snug text-slate-600 bg-slate-50 rounded-md px-2 py-1.5 line-clamp-2 break-words" title={lead.observacoes}>
+        <div className="text-[11px] text-slate-500 mt-2 line-clamp-2" title={lead.observacoes}>
           {lead.observacoes}
         </div>
       )}
+      <div className="text-[11px] text-slate-500 mt-2">Chegou {formatChegou(lead.created_at)}</div>
 
-      <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-400">
-        <Clock className="w-3 h-3 shrink-0" />
-        <span className="truncate">Chegou {formatChegou(lead.created_at)}</span>
-      </div>
-
-      {isValidacao && (
-        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100">
-          <Button
-            size="sm"
-            className="h-8 px-2 min-w-0 whitespace-nowrap bg-blue-800 hover:bg-blue-900 text-white text-xs"
-            onClick={() => handleValidar(lead)}
-          >
-            <Check className="w-3.5 h-3.5 mr-1 shrink-0" /> Validar
+      {isValidacao ? (
+        <div className="flex gap-2 mt-3">
+          <Button size="sm" className="h-7 flex-1 bg-blue-800 hover:bg-blue-900 text-white text-xs" onClick={() => handleValidar(lead)}>
+            <Check className="w-3.5 h-3.5 mr-1" /> Validar
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 px-2 min-w-0 whitespace-nowrap text-xs text-slate-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50"
-            onClick={() => handleDescartar(lead)}
-          >
-            <X className="w-3.5 h-3.5 mr-1 shrink-0" /> Descartar
+          <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" onClick={() => handleDescartar(lead)}>
+            <X className="w-3.5 h-3.5 mr-1" /> Descartar
           </Button>
+        </div>
+      ) : (
+        <div className="flex justify-end gap-1 mt-2">
+          <button type="button" onClick={() => handleWhatsApp(lead)} className="p-1 rounded hover:bg-green-50 text-green-600" title="WhatsApp">
+            <MessageCircle className="w-3.5 h-3.5" />
+          </button>
+          <button type="button" onClick={() => openLead(lead)} className="p-1 rounded hover:bg-slate-100 text-slate-500" title="Abrir lead">
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>
@@ -339,7 +253,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     return (
       <div
         key={stage.id}
-        className={`flex-shrink-0 w-[260px] rounded-xl bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100vh-260px)] min-h-[160px] transition-colors ${
+        className={`flex-shrink-0 w-[190px] rounded-lg bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100vh-260px)] min-h-[160px] transition-colors ${
           dragOverStage === stage.id ? "ring-2 ring-blue-400 bg-blue-50" : ""
         }`}
         style={{ borderTopColor: accent }}
@@ -356,7 +270,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           if (leadId) moveLead(leadId, stage);
         }}
       >
-        <div className="px-3 pt-3 pb-2">
+        <div className="px-2.5 pt-2.5 pb-2">
           <div className="flex items-center justify-between gap-1">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="font-semibold text-[13px] text-slate-900 truncate" title={stage.name}>{stage.name}</span>
@@ -374,7 +288,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto px-2.5 pb-2.5 flex flex-col gap-2.5">
+        <div className="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-2">
           {stageLeads.map((lead) => renderCard(lead, isValidacao))}
           {stageLeads.length === 0 && (
             <div className="h-24 flex items-center justify-center text-center text-[11px] text-slate-400 border border-dashed border-slate-300 rounded-md px-2">
@@ -456,43 +370,33 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         })}
       </div>
 
-      {/* Novo negócio — mesmos campos do cadastro de lead */}
+      {/* Novo negócio */}
       <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
-        <DialogContent className="w-[95vw] max-w-[560px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle>Novo negócio</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="nd-nome">Nome *</Label>
-              <Input id="nd-nome" value={newDeal.nome} onChange={(e) => setNewDeal({ ...newDeal, nome: e.target.value })} placeholder="Nome completo" />
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label>Nome *</Label>
+              <Input value={newDeal.nome} onChange={(e) => setNewDeal({ ...newDeal, nome: e.target.value })} />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="nd-tel">Telefone *</Label>
-                <Input id="nd-tel" value={newDeal.telefone} onChange={(e) => setNewDeal({ ...newDeal, telefone: formatPhone(e.target.value) })} placeholder="(11) 99999-9999" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label>Telefone *</Label>
+                <Input value={newDeal.telefone} onChange={(e) => setNewDeal({ ...newDeal, telefone: e.target.value })} placeholder="(11) 99999-9999" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="nd-email">Email *</Label>
-                <Input id="nd-email" type="email" value={newDeal.email} onChange={(e) => setNewDeal({ ...newDeal, email: e.target.value })} placeholder="email@exemplo.com" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="nd-origem">Origem</Label>
-              <Input id="nd-origem" value={newDeal.origem} onChange={(e) => setNewDeal({ ...newDeal, origem: e.target.value })} placeholder="Ex: roleta, Facebook, Indicação..." />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="nd-renda">Renda Mensal (Opcional)</Label>
-                <Input id="nd-renda" value={newDeal.renda} onChange={(e) => setNewDeal({ ...newDeal, renda: formatCurrency(e.target.value) })} placeholder="Ex: R$ 5.000,00" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="nd-prof">Profissão (Opcional)</Label>
-                <Input id="nd-prof" value={newDeal.profissao} onChange={(e) => setNewDeal({ ...newDeal, profissao: e.target.value })} placeholder="Ex: Médico" />
+              <div className="grid gap-1.5">
+                <Label>Origem</Label>
+                <Input value={newDeal.origem} onChange={(e) => setNewDeal({ ...newDeal, origem: e.target.value })} placeholder="roleta, Instagram..." />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Etapa do Funil</Label>
+            <div className="grid gap-1.5">
+              <Label>E-mail *</Label>
+              <Input value={newDeal.email} onChange={(e) => setNewDeal({ ...newDeal, email: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label>Etapa</Label>
               <Select value={newDeal.stageId} onValueChange={(v) => setNewDeal({ ...newDeal, stageId: v })}>
                 <SelectTrigger>
                   <SelectValue />
@@ -506,85 +410,15 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Possui Entrada? (Opcional)</Label>
-              <div className="flex gap-2">
-                <Select value={newDeal.possuiEntrada} onValueChange={(v) => setNewDeal({ ...newDeal, possuiEntrada: v })}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Selecione..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="sim">Sim</SelectItem>
-                    <SelectItem value="nao">Não</SelectItem>
-                  </SelectContent>
-                </Select>
-                {newDeal.possuiEntrada === "sim" && (
-                  <Input
-                    className="flex-1"
-                    placeholder="Valor (R$)"
-                    value={newDeal.valorEntrada}
-                    onChange={(e) => setNewDeal({ ...newDeal, valorEntrada: formatCurrency(e.target.value) })}
-                  />
-                )}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Empreendimentos de Interesse</Label>
-              <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2">
-                {empreendimentos.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Nenhum empreendimento cadastrado</div>
-                ) : (
-                  empreendimentos.map((emp) => (
-                    <div key={emp.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`nd-int-${emp.id}`}
-                        checked={newDeal.interesse.includes(emp.id)}
-                        onCheckedChange={(checked) =>
-                          setNewDeal({
-                            ...newDeal,
-                            interesse: checked ? [...newDeal.interesse, emp.id] : newDeal.interesse.filter((id) => id !== emp.id),
-                          })
-                        }
-                      />
-                      <Label htmlFor={`nd-int-${emp.id}`} className="text-sm font-normal cursor-pointer flex items-center gap-2">
-                        {emp.nome}
-                        {emp.status && (
-                          <Badge variant="outline" className="text-xs">
-                            {emp.status}
-                          </Badge>
-                        )}
-                      </Label>
-                    </div>
-                  ))
-                )}
-              </div>
-              {newDeal.interesse.length > 0 && (
-                <div className="text-xs text-muted-foreground">{newDeal.interesse.length} empreendimento(s) selecionado(s)</div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="nd-obs">Observações</Label>
-              <Textarea id="nd-obs" rows={3} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Observações adicionais..." />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="nd-tags">Tags/Etiquetas</Label>
-              <Input id="nd-tags" value={newDeal.tagsRaw} onChange={(e) => setNewDeal({ ...newDeal, tagsRaw: e.target.value })} placeholder="Digite as tags separadas por vírgula" />
-              <div className="text-xs text-muted-foreground">Separe múltiplas tags com vírgula. Ex: vip, interessado, follow-up</div>
-              {dealTags.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {dealTags.map((tag, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+            <div className="grid gap-1.5">
+              <Label>Observações</Label>
+              <Textarea rows={2} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Empreendimento de interesse..." />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancelar</Button>
             <Button onClick={handleCreate} disabled={saving} className="bg-blue-800 hover:bg-blue-900 text-white">
-              {saving ? "Salvando..." : "Criar negócio"}
+              {saving ? "Salvando..." : "Criar"}
             </Button>
           </DialogFooter>
         </DialogContent>
