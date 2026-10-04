@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 vite.config.ts.timestamp*
 .vercel
+
+# Segredos da captura de leads
+captura-leads-config.txt
