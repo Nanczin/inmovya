@@ -39,7 +39,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         // Only keep notifications from the last 7 days to avoid unbounded growth
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const filtered = parsed.filter((n: any) => new Date(n.timestamp) > sevenDaysAgo);
+        const filtered = parsed.filter((n: any) => new Date(n.timestamp) > sevenDaysAgo && !String(n.title || '').includes('Lembrete de Follow-up (Temperatura'));
 
         // Update localStorage with filtered list if any were removed
         if (filtered.length !== parsed.length) {
