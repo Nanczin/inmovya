@@ -3,8 +3,6 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useLeads } from "@/context/LeadsContext";
@@ -145,213 +143,181 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
     markAllAsRead();
   };
 
+  const renderList = (emptyIcon: React.ReactNode, emptyText: string) => {
+    if (filteredNotifications.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center py-12 px-4">
+          {emptyIcon}
+          <p className="text-sm text-muted-foreground mt-3">{emptyText}</p>
+        </div>
+      );
+    }
+
+    return (
+      <ul className="space-y-2 sm:space-y-3">
+        {filteredNotifications.map((notification) => {
+          const leadName = notification.leadId ? getLeadById(notification.leadId)?.nome : undefined;
+          return (
+            <li key={notification.id}>
+              <div
+                role="button"
+                tabIndex={0}
+                className={`group rounded-lg border p-3 sm:p-4 cursor-pointer transition-colors ${!notification.read
+                  ? 'bg-primary/5 border-primary/20 hover:bg-primary/10'
+                  : 'bg-card hover:bg-muted/50'
+                  }`}
+                onClick={() => {
+                  if (notification.taskId && onNavigate) {
+                    onNavigate('view-task', notification.taskId);
+                    onClose();
+                  } else if (notification.leadId && onNavigate) {
+                    onNavigate('leads', notification.leadId);
+                    onClose();
+                  }
+                }}
+              >
+                <div className="flex items-start gap-2.5 sm:gap-3">
+                  <div className="mt-0.5 shrink-0">{getNotificationIcon(notification.type)}</div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-2">
+                      <h4 className="flex-1 min-w-0 text-sm font-medium leading-snug break-words line-clamp-2">
+                        {notification.title}
+                      </h4>
+                      {!notification.read && (
+                        <span className="mt-1.5 w-2 h-2 bg-primary rounded-full shrink-0" aria-label="Não lida" />
+                      )}
+                    </div>
+
+                    {notification.message && (
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1 break-words line-clamp-3">
+                        {notification.message}
+                      </p>
+                    )}
+
+                    {leadName && (
+                      <p className="text-xs sm:text-sm font-medium text-foreground mt-1.5 truncate">
+                        Lead: {leadName}
+                      </p>
+                    )}
+
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <span className="text-[11px] sm:text-xs text-muted-foreground mr-auto whitespace-nowrap">
+                        {new Date(notification.timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+
+                      {notification.leadId && !notification.actioned && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 sm:h-7 px-2.5 text-xs bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+                          onClick={(e) => handleRegisterContact(notification, e)}
+                          title="Marcar que o contato foi realizado"
+                        >
+                          <PhoneOutgoing className="w-3.5 h-3.5 mr-1" />
+                          Feito
+                        </Button>
+                      )}
+                      {!notification.read && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 sm:h-7 px-2.5 text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkAsRead(notification.id);
+                          }}
+                        >
+                          <MailCheck className="w-3.5 h-3.5 mr-1" />
+                          <span className="hidden min-[400px]:inline">Marcar como lida</span>
+                          <span className="min-[400px]:hidden">Lida</span>
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 sm:h-7 sm:w-7 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeNotification(notification.id);
+                        }}
+                        title="Excluir notificação"
+                        aria-label="Excluir notificação"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[95vw] sm:w-full max-w-2xl max-h-[90vh] p-4 sm:p-6 overflow-hidden">
-        <DialogHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0">
-            <DialogTitle className="flex items-center gap-2">
-              <Bell className="w-5 h-5" />
-              Notificações
-              {unreadCount > 0 && (
-                <Badge variant="destructive" className="ml-2">
-                  {unreadCount}
-                </Badge>
-              )}
-            </DialogTitle>
+      <DialogContent className="flex flex-col gap-0 p-0 overflow-hidden w-[calc(100vw-1rem)] max-w-2xl h-[calc(100dvh-1rem)] sm:h-auto sm:max-h-[85vh] rounded-lg">
+        <DialogHeader className="shrink-0 space-y-3 px-4 pt-4 pb-3 sm:px-6 sm:pt-6 border-b text-left">
+          <DialogTitle className="flex items-center gap-2 pr-8 text-base sm:text-lg">
+            <Bell className="w-5 h-5 shrink-0" />
+            Notificações
+            {unreadCount > 0 && (
+              <Badge variant="destructive" className="ml-1">
+                {unreadCount}
+              </Badge>
+            )}
+          </DialogTitle>
 
+          {notifications.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               {unreadCount > 0 && (
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={handleMarkAllAsRead}
-                  className="text-xs"
+                  className="h-8 text-xs"
                 >
                   <MailCheck className="w-4 h-4 mr-1" />
                   Marcar todas como lidas
                 </Button>
               )}
-
-              {notifications.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClearAll}
-                  className="text-xs text-destructive hover:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4 mr-1" />
-                  Limpar todas
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearAll}
+                className="h-8 text-xs text-destructive hover:text-destructive"
+              >
+                <Trash2 className="w-4 h-4 mr-1" />
+                Limpar todas
+              </Button>
             </div>
-          </div>
+          )}
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="all">
-              Todas ({notifications.length})
-            </TabsTrigger>
-            <TabsTrigger value="unread">
-              Não lidas ({unreadCount})
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0 w-full">
+          <div className="shrink-0 px-4 pt-3 sm:px-6">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="all" className="text-xs sm:text-sm">
+                Todas ({notifications.length})
+              </TabsTrigger>
+              <TabsTrigger value="unread" className="text-xs sm:text-sm">
+                Não lidas ({unreadCount})
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          <TabsContent value="all" className="mt-4">
-            <ScrollArea className="h-[400px] pr-4">
-              {filteredNotifications.length === 0 ? (
-                <div className="text-center py-8">
-                  <Bell className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">Nenhuma notificação encontrada</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredNotifications.map((notification, index) => (
-                    <div key={notification.id}>
-                      <div
-                        className={`p-4 rounded-lg border cursor-pointer transition-colors ${!notification.read
-                          ? 'bg-primary/5 border-primary/20 hover:bg-primary/10'
-                          : 'bg-card hover:bg-muted/50'
-                          }`}
-                        onClick={() => {
-                          if (notification.leadId) {
-                            if (notification.taskId && onNavigate) { onNavigate('view-task', notification.taskId); onClose(); } else if (notification.leadId && onNavigate) { onNavigate('leads', notification.leadId); onClose(); }
-                          }
-                          // handleMarkAsRead(notification.id);
-                        }}
-                      >
-                        <div className="flex items-start gap-3">
-                          {getNotificationIcon(notification.type)}
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                              <h4 className="text-sm font-medium truncate">
-                                {notification.title}
-                              </h4>
-                              <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
-                                {notification.leadId && !notification.actioned && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-6 px-2 text-xs bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
-                                    onClick={(e) => handleRegisterContact(notification, e)}
-                                    title="Marcar que o contato foi realizado"
-                                  >
-                                    <PhoneOutgoing className="w-3 h-3 mr-1" />
-                                    Feito
-                                  </Button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 px-2 text-xs"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleMarkAsRead(notification.id);
-                                  }}
-                                >
-                                  Marcar como lida
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    removeNotification(notification.id);
-                                  }}
-                                  title="Excluir notificação"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                                {!notification.read && (
-                                  <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0" />
-                                )}
-                              </div>
-                            </div>
-
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {notification.message}
-                            </p>
-                            {notification.leadId && (
-                              <p className="text-sm font-medium text-foreground mt-2">
-                                Lead: {getLeadById(notification.leadId)?.nome || 'Lead não encontrado'}
-                              </p>
-                            )}
-
-                            <p className="text-xs text-muted-foreground mt-2">
-                              {new Date(notification.timestamp).toLocaleString('pt-BR')}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {index < filteredNotifications.length - 1 && <Separator className="my-2" />}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
+          <TabsContent value="all" className="flex-1 min-h-0 mt-0 overflow-y-auto overscroll-contain px-4 py-3 sm:px-6 sm:py-4 data-[state=inactive]:hidden">
+            {renderList(<Bell className="w-10 h-10 text-muted-foreground" />, "Nenhuma notificação encontrada")}
           </TabsContent>
 
-          <TabsContent value="unread" className="mt-4">
-            <ScrollArea className="h-[400px] pr-4">
-              {filteredNotifications.length === 0 ? (
-                <div className="text-center py-8">
-                  <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-4" />
-                  <p className="text-muted-foreground">Todas as notificações foram lidas!</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredNotifications.map((notification, index) => (
-                    <div key={notification.id}>
-                      <div
-                        className="p-4 rounded-lg border bg-primary/5 border-primary/20 hover:bg-primary/10 cursor-pointer transition-colors"
-                        onClick={() => handleMarkAsRead(notification.id)}
-                      >
-                        <div className="flex items-start gap-3">
-                          {getNotificationIcon(notification.type)}
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <h4 className="text-sm font-medium truncate">
-                                {notification.title}
-                              </h4>
-                              <div className="w-2 h-2 bg-primary rounded-full flex-shrink-0" />
-                            </div>
-
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {notification.message}
-                            </p>
-                            {notification.leadId && (
-                              <p className="text-sm font-medium text-foreground mt-2">
-                                Lead: {getLeadById(notification.leadId)?.nome || 'Lead não encontrado'}
-                              </p>
-                            )}
-
-                            <p className="text-xs text-muted-foreground mt-2">
-                              {new Date(notification.timestamp).toLocaleString('pt-BR')}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {index < filteredNotifications.length - 1 && <Separator className="my-2" />}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
+          <TabsContent value="unread" className="flex-1 min-h-0 mt-0 overflow-y-auto overscroll-contain px-4 py-3 sm:px-6 sm:py-4 data-[state=inactive]:hidden">
+            {renderList(<CheckCircle className="w-10 h-10 text-green-500" />, "Todas as notificações foram lidas!")}
           </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
   );
 }
-
-
-
-
-
-
