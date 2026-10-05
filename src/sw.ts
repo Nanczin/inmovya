@@ -35,7 +35,7 @@ registerRoute(
 // --- PUSH NOTIFICATION LISTENERS ---
 
 self.addEventListener('push', (event) => {
-    let data = { title: 'Inmovya', body: 'Nova notificação', icon: '/icons/icon-192x192.png', url: '/' };
+    let data: { title: string; body: string; icon: string; url: string; tag?: string } = { title: 'Inmovya', body: 'Nova notificação', icon: '/icons/icon-192x192.png', url: '/' };
 
     if (event.data) {
         try {
@@ -52,8 +52,10 @@ self.addEventListener('push', (event) => {
             icon: data.icon,
             badge: data.icon, // Android small icon usually needs to be white/transparent, but using main icon as fallback
             vibrate: [100, 50, 100],
+            tag: data.tag,
+            requireInteraction: !!data.tag,
             data: { url: data.url }
-        })
+        } as NotificationOptions)
     );
 });
 

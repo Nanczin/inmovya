@@ -12,6 +12,7 @@ import Auth from "./pages/Auth";
 import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
 import { TaskNotificationPoller } from "./components/TaskNotificationPoller";
+import { NewLeadNotifier } from "./components/NewLeadNotifier";
 
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
               <Toaster />
               <Sonner />
               <TaskNotificationPoller />
+              <NewLeadNotifier />
               <BrowserRouter>
                 <Routes>
                   <Route path="/" element={<Index />} />

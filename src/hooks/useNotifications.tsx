@@ -12,6 +12,7 @@ interface Notification {
   leadId?: string;
   taskId?: string;
   actioned?: boolean;
+  tag?: string;
 }
 
 interface NotificationsContextType {
@@ -146,7 +147,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
               body: newNotification.message,
               icon: '/icons/icon-192x192.png',
               badge: '/icons/icon-192x192.png',
-              tag: newNotification.id, // Prevent duplicates
+              tag: notificationData.tag || newNotification.id, // Prevent duplicates (push + app use the same tag)
               data: { url: notificationData.taskId ? '/?taskId=' + notificationData.taskId : (notificationData.leadId ? '/?leadId=' + notificationData.leadId : '/') } // Route to journey if available
             });
           });
