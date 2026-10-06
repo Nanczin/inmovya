@@ -187,6 +187,19 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                       {!notification.read && (
                         <span className="mt-1.5 w-2 h-2 bg-primary rounded-full shrink-0" aria-label="Não lida" />
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="-mt-1 -mr-1 h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeNotification(notification.id);
+                        }}
+                        title="Excluir notificação"
+                        aria-label="Excluir notificação"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
                     </div>
 
                     {notification.message && (
@@ -233,19 +246,6 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                           <span className="min-[400px]:hidden">Lida</span>
                         </Button>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 sm:h-7 sm:w-7 p-0 text-muted-foreground hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeNotification(notification.id);
-                        }}
-                        title="Excluir notificação"
-                        aria-label="Excluir notificação"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -272,7 +272,7 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
           </DialogTitle>
 
           {notifications.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               {unreadCount > 0 && (
                 <Button
                   variant="outline"
@@ -280,8 +280,9 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                   onClick={handleMarkAllAsRead}
                   className="h-8 text-xs"
                 >
-                  <MailCheck className="w-4 h-4 mr-1" />
-                  Marcar todas como lidas
+                  <MailCheck className="w-4 h-4 mr-1 shrink-0" />
+                  <span className="hidden sm:inline">Marcar todas como lidas</span>
+                  <span className="sm:hidden">Ler todas</span>
                 </Button>
               )}
               <Button
@@ -290,8 +291,9 @@ export function NotificationsDialog({ isOpen, onClose, onNavigate }: Notificatio
                 onClick={handleClearAll}
                 className="h-8 text-xs text-destructive hover:text-destructive"
               >
-                <Trash2 className="w-4 h-4 mr-1" />
-                Limpar todas
+                <Trash2 className="w-4 h-4 mr-1 shrink-0" />
+                <span className="hidden sm:inline">Limpar todas</span>
+                <span className="sm:hidden">Limpar</span>
               </Button>
             </div>
           )}
