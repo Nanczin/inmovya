@@ -8,7 +8,8 @@ export interface Esteira {
   nome: string;
   ordem: number;
   ao_concluir_tag: string | null;
-  ao_concluir_etapa?: string | null; // coluna do Negócios para onde o lead vai ao terminar (ex.: "Lista fria")
+  ao_concluir_etapa?: string | null; // coluna do Negócios para onde o lead vai ao terminar (ex.: "Perdido")
+  ao_concluir_dias?: number | null; // dias sem resposta depois do último passo antes de finalizar
   etapa?: string | null; // etapa de Negócios ligada (ex.: "20%")
   empreendimento_id?: string | null; // projeto da esteira (null = geral)
   scale_id?: string | null;
@@ -304,6 +305,16 @@ export async function avancarLead(
       esteira_ultimo_envio: agora,
       ultimo_contato: agora,
     };
+  } else if ((esteira.ao_concluir_dias || 0) > 0) {
+    // último passo enviado: aguarda X dias sem resposta; depois o Inmovya finaliza sozinho
+    // (move para a coluna escolhida, ex.: Perdido, e põe a etiqueta, ex.: disparo)
+    update = {
+      ...(etapaDoPasso ? { status: etapaDoPasso } : {}),
+      esteira_passo: indice + 1,
+      esteira_proximo: addDias(esteira.ao_concluir_dias || 1),
+      esteira_ultimo_envio: agora,
+      ultimo_contato: agora,
+    };
   } else {
     concluiu = true;
     const tag = (esteira.ao_concluir_tag || "").trim();
@@ -522,4 +533,11 @@ export async function executarImportacao(plano: PlanoImportacao) {
       .eq("id", l.leadId);
     if (error) throw error;
   }
+}
+
+/** Finaliza quem terminou a esteira e não respondeu no prazo (também roda sozinho no banco a cada 30 min). */
+export async function finalizarEsteirasVencidas() {
+  const { data, error } = await supabase.rpc("finalizar_esteiras_vencidas" as any);
+  if (error) return 0;
+  return Number(data) || 0;
 }

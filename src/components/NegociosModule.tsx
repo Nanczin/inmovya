@@ -99,7 +99,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState<string>("");
   const [bulkMoving, setBulkMoving] = useState(false);
-  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; empreendimento_id?: string | null }[]>([]);
+  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; empreendimento_id?: string | null; ao_concluir_etapa?: string | null }[]>([]);
   const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string }[]>([]);
   const [bulkEsteira, setBulkEsteira] = useState<string>("");
 
@@ -147,13 +147,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       const est = esteirasLista.find((e) => e.id === passoDaColuna.esteira_id);
       if (est) return { ...est, nome: `${est.nome} · ${passoDaColuna.titulo || stage.name}` };
     }
-    const daEtapa = esteirasLista.filter((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
-    if (projeto !== "todos" && projeto !== "sem") {
-      return daEtapa.find((e) => e.empreendimento_id === projeto) || daEtapa.find((e) => !e.empreendimento_id);
-    }
-    if (projeto === "sem") return daEtapa.find((e) => !e.empreendimento_id);
-    // Todos os projetos: mostra a geral (ou indica que há esteiras por projeto)
-    return daEtapa.find((e) => !e.empreendimento_id) || (daEtapa.length ? { ...daEtapa[0], nome: daEtapa.length > 1 ? `${daEtapa.length} esteiras (por projeto)` : daEtapa[0].nome } : undefined);
+    return esteirasLista.find((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
   };
 
   const infoEsteira = (lead: Lead) => {
@@ -165,9 +159,10 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     const idx = Math.min(l.esteira_passo || 0, Math.max(ps.length - 1, 0));
     const prox = l.esteira_proximo ? new Date(l.esteira_proximo) : null;
     const hoje = !prox || prox.getTime() <= new Date().setHours(23, 59, 59, 999);
+    const aguardando = ps.length > 0 && (l.esteira_passo || 0) >= ps.length;
     return {
       nome: est.nome,
-      passo: ps[idx]?.titulo || `Passo ${idx + 1}`,
+      passo: aguardando ? `sem resposta → ${est.ao_concluir_etapa || "fim"}` : ps[idx]?.titulo || `Passo ${idx + 1}`,
       total: ps.length,
       idx,
       quando: hoje ? "hoje" : prox!.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
@@ -481,7 +476,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         >
           <History className="w-3.5 h-3.5" />
         </button>
-        {!selectMode && (esteirasLista.length > 0 || projetos.length > 0) && (
+        {!selectMode && esteirasLista.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -497,9 +492,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <DropdownMenuContent align="end" className="w-56" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuLabel className="text-xs">Esteira deste lead</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {esteirasLista
-                .filter((est) => !est.empreendimento_id || est.empreendimento_id === lead.empreendimento_id)
-                .map((est) => {
+              {esteirasLista.map((est) => {
                 const atual = (lead as any).esteira_id === est.id;
                 return (
                   <DropdownMenuItem
@@ -520,24 +513,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                   <DropdownMenuItem onSelect={() => setLeadEsteira(lead, null)} className="text-sm text-red-600">
                     Tirar da esteira
                   </DropdownMenuItem>
-                </>
-              )}
-              {projetos.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="text-sm">
-                      Projeto: {projetos.find((p) => p.id === lead.empreendimento_id)?.nome || "não definido"}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="max-h-[50vh] overflow-y-auto">
-                      {projetos.map((p) => (
-                        <DropdownMenuItem key={p.id} disabled={p.id === lead.empreendimento_id} onSelect={() => setLeadProjeto(lead, p.id)} className="text-sm">
-                          {p.id === lead.empreendimento_id ? "✓ " : ""}
-                          {p.nome}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
                 </>
               )}
             </DropdownMenuContent>
@@ -585,7 +560,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           >
             <Workflow className="w-3 h-3 shrink-0" />
             <span className="truncate">
-              {est.nome} · {est.passo} ({est.idx + 1}/{est.total || 1}) · {est.hoje ? "envio hoje" : `próx. ${est.quando}`}
+              {est.nome} · {est.passo}{est.passo.startsWith("sem resposta") ? ` em ${est.quando}` : ` (${est.idx + 1}/${est.total || 1}) · ${est.hoje ? "envio hoje" : `próx. ${est.quando}`}`}
             </span>
           </button>
         );

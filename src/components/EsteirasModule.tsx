@@ -16,6 +16,7 @@ import {
   EsteiraAnexo,
   ANEXO_MAX_MB,
   escolherArquivosDoComputador,
+  finalizarEsteirasVencidas,
   esquecerArquivoLocal,
   liberarArquivosLocais,
   prepararAnexosParaEnvio,
@@ -115,6 +116,8 @@ export function EsteirasModule() {
   useEffect(() => {
     carregar();
     checarExtensao().then(setExtensaoOk);
+    finalizarEsteirasVencidas().then((n) => n > 0 && refreshLeads());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregar]);
 
 
@@ -138,6 +141,7 @@ export function EsteirasModule() {
       const esteira = esteiras.find((e) => e.id === lead.esteira_id)!;
       const ps = passosDe(esteira.id);
       if (!ps.length) return;
+      if ((lead.esteira_passo || 0) >= ps.length) return; // já recebeu tudo: aguardando resposta
       const passo = ps[Math.min(Math.max(lead.esteira_passo || 0, 0), ps.length - 1)];
       itens.push({
         lead,
@@ -362,8 +366,9 @@ export function EsteirasModule() {
         nome: "Prospecção P1–P7",
         ordem: esteiras.length,
         user_id: user.id,
-        ao_concluir_tag: null,
-        ao_concluir_etapa: "Lista fria",
+        ao_concluir_tag: "disparo",
+        ao_concluir_etapa: "Perdido",
+        ...(esteiras.some((x) => "ao_concluir_dias" in x) ? { ao_concluir_dias: 1 } : {}),
         etapa: "Primeiro impacto",
       })
       .select("*")
@@ -405,6 +410,7 @@ export function EsteirasModule() {
           ao_concluir_tag: esteira.ao_concluir_tag || null,
           etapa: esteira.etapa || null,
           ...(esteiras.some((x) => "ao_concluir_etapa" in x) ? { ao_concluir_etapa: esteira.ao_concluir_etapa || null } : {}),
+          ...(esteiras.some((x) => "ao_concluir_dias" in x) ? { ao_concluir_dias: Math.max(0, Number(esteira.ao_concluir_dias) || 0) } : {}),
           // projeto não é mais usado nas esteiras: limpa se alguma tinha
           ...((esteira as any).empreendimento_id ? { empreendimento_id: null } : {}),
         })
@@ -669,7 +675,11 @@ export function EsteirasModule() {
                       <span className="font-medium truncate flex-1 min-w-0">{a.lead.nome}</span>
                       <span className="text-[11px] rounded border px-1.5 py-0.5 bg-slate-50 truncate">
                         {a.esteira.nome}
-                        {a.passo ? ` · ${a.passo.titulo || `Passo ${a.passo.ordem + 1}`} (${(a.lead.esteira_passo || 0) + 1}/${a.total})` : ""}
+                        {(a.lead.esteira_passo || 0) >= a.total
+                          ? ` · sem resposta → ${a.esteira.ao_concluir_etapa || "sai do funil"}${a.esteira.ao_concluir_tag ? ` + etiqueta ${a.esteira.ao_concluir_tag}` : ""}`
+                          : a.passo
+                          ? ` · ${a.passo.titulo || `Passo ${a.passo.ordem + 1}`} (${(a.lead.esteira_passo || 0) + 1}/${a.total})`
+                          : ""}
                       </span>
                       <div className="flex gap-1 shrink-0">
                         <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={rodando} onClick={() => trazerParaHoje(a.lead.id)}>
@@ -893,7 +903,7 @@ export function EsteirasModule() {
                     <Input value={rascunho.esteira.nome} onChange={(ev) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, nome: ev.target.value } })} />
                   </div>
                   <div className="grid gap-1">
-                    <Label className="text-xs">Etiqueta ao concluir (no Inmovya)</Label>
+                    <Label className="text-xs">Etiqueta ao terminar sem resposta (ex.: disparo)</Label>
                     <Input
                       value={rascunho.esteira.ao_concluir_tag || ""}
                       placeholder="disparo"
@@ -901,7 +911,7 @@ export function EsteirasModule() {
                     />
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
-                    <Label className="text-xs">Ao terminar a esteira, mover o card no Negócios para</Label>
+                    <Label className="text-xs">Ao terminar sem resposta, mover o card no Negócios para</Label>
                     <Select
                       value={rascunho.esteira.ao_concluir_etapa || "nenhuma"}
                       onValueChange={(v) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, ao_concluir_etapa: v === "nenhuma" ? null : v } })}
@@ -910,7 +920,7 @@ export function EsteirasModule() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="max-h-[50vh]">
-                        <SelectItem value="nenhuma">Regra padrão (tira da etapa e põe a etiqueta acima)</SelectItem>
+                        <SelectItem value="nenhuma">Tirar da etapa (só a etiqueta acima)</SelectItem>
                         {NEGOCIO_STAGES.map((st) => (
                           <SelectItem key={st.id} value={st.value}>
                             {st.name}
@@ -918,6 +928,21 @@ export function EsteirasModule() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="grid gap-1 sm:col-span-2">
+                    <Label className="text-xs">Depois do último passo, esperar quantos dias sem resposta?</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        className="h-9 w-20"
+                        value={rascunho.esteira.ao_concluir_dias ?? 0}
+                        onChange={(ev) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, ao_concluir_dias: Math.max(0, parseInt(ev.target.value) || 0) } })}
+                      />
+                      <span className="text-[11px] text-muted-foreground">
+                        dia(s). Passado o prazo, o lead vai sozinho para a coluna e recebe a etiqueta acima. Se ele responder antes, mova o card (ex.: Respondeu) e ele sai da esteira.
+                      </span>
+                    </div>
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
                     <Label className="text-xs">Coluna de entrada no Negócios (quem cai nela entra no 1º passo)</Label>
@@ -942,7 +967,7 @@ export function EsteirasModule() {
                       </SelectContent>
                     </Select>
                     <p className="text-[11px] text-muted-foreground">
-                      Quem for movido para essa etapa em Negócios (ou em Leads) entra nesta esteira no primeiro passo — se a esteira tiver projeto, só os leads daquele projeto. Ao sair da etapa, sai da esteira.
+                      Quem for movido para essa etapa em Negócios (ou em Leads) entra nesta esteira no primeiro passo. Ao sair da etapa, sai da esteira.
                     </p>
                     {foraDaEsteira.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-2 py-1.5 text-xs">
