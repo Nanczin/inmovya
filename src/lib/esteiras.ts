@@ -37,38 +37,79 @@ export interface EsteiraPasso {
 }
 
 // ---------- Anexos (PDF, vídeo, imagem, áudio, documentos...) ----------
-// Ficam no Storage do Inmovya (bucket "esteira-anexos"), então funcionam em qualquer computador.
+// Os arquivos ficam NO COMPUTADOR (não ocupam o banco do Inmovya).
+// No banco fica só o nome; o "atalho" para o arquivo fica guardado neste navegador (Chrome/Edge).
 export interface EsteiraAnexo {
-  path: string; // caminho no bucket
+  local_id?: string; // atalho do arquivo guardado neste computador
+  path?: string; // (antigo) arquivo no Storage
   name: string;
   type: string;
   size: number;
 }
 
 export const ANEXOS_BUCKET = "esteira-anexos";
-export const ANEXO_MAX_MB = 16; // limite para passar pela extensão com segurança
+export const ANEXO_MAX_MB = 40;
 
-export async function enviarAnexoParaStorage(file: File): Promise<EsteiraAnexo> {
-  if (file.size > ANEXO_MAX_MB * 1024 * 1024) {
-    throw new Error(`${file.name} tem mais de ${ANEXO_MAX_MB} MB. Use um arquivo menor (ex.: vídeo comprimido).`);
-  }
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Faça login novamente.");
-  const limpo = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "_");
-  const path = `${user.id}/${crypto.randomUUID()}-${limpo}`;
-  const { error } = await supabase.storage.from(ANEXOS_BUCKET).upload(path, file, {
-    contentType: file.type || "application/octet-stream",
-    upsert: false,
+const DB_NOME = "inmovya-anexos";
+const abrirDb = () =>
+  new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(DB_NOME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("arquivos");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
-  if (error) {
-    if (/bucket/i.test(error.message)) throw new Error("Falta ativar os anexos no banco (rode o SQL de anexos no Supabase).");
-    throw error;
+const idb = async <T,>(modo: IDBTransactionMode, fn: (st: IDBObjectStore) => IDBRequest<T>) => {
+  const db = await abrirDb();
+  return new Promise<T>((resolve, reject) => {
+    const tx = db.transaction("arquivos", modo);
+    const req = fn(tx.objectStore("arquivos"));
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+};
+
+export const anexosLocaisSuportados = () => typeof (window as any).showOpenFilePicker === "function";
+
+/** Abre a janela do computador para escolher arquivos (qualquer tipo). */
+export async function escolherArquivosDoComputador(): Promise<EsteiraAnexo[]> {
+  if (!anexosLocaisSuportados()) throw new Error("Use o Google Chrome (ou Edge) no computador para anexar arquivos.");
+  let handles: any[] = [];
+  try {
+    handles = await (window as any).showOpenFilePicker({ multiple: true });
+  } catch (err: any) {
+    if (err?.name === "AbortError") return [];
+    throw err;
   }
-  return { path, name: file.name, type: file.type || "application/octet-stream", size: file.size };
+  const out: EsteiraAnexo[] = [];
+  for (const h of handles) {
+    const f: File = await h.getFile();
+    if (f.size > ANEXO_MAX_MB * 1024 * 1024) throw new Error(`${f.name} tem mais de ${ANEXO_MAX_MB} MB.`);
+    const local_id = crypto.randomUUID();
+    await idb("readwrite", (st) => st.put(h, local_id));
+    out.push({ local_id, name: f.name, type: f.type || "application/octet-stream", size: f.size });
+  }
+  return out;
 }
 
-export async function removerAnexoDoStorage(path: string) {
-  await supabase.storage.from(ANEXOS_BUCKET).remove([path]);
+export async function esquecerArquivoLocal(local_id: string) {
+  await idb("readwrite", (st) => st.delete(local_id)).catch(() => {});
+}
+
+/** Pede ao Chrome a permissão de leitura (precisa ser chamado logo após um clique). */
+export async function liberarArquivosLocais(anexos: EsteiraAnexo[]) {
+  const faltando: string[] = [];
+  for (const a of anexos) {
+    if (!a.local_id) continue;
+    const h: any = await idb("readonly", (st) => st.get(a.local_id!)).catch(() => null);
+    if (!h) {
+      faltando.push(a.name);
+      continue;
+    }
+    let p = await h.queryPermission?.({ mode: "read" });
+    if (p !== "granted") p = await h.requestPermission?.({ mode: "read" });
+    if (p !== "granted") faltando.push(a.name);
+  }
+  return faltando;
 }
 
 const blobParaDataUrl = (blob: Blob) =>
@@ -79,22 +120,34 @@ const blobParaDataUrl = (blob: Blob) =>
     r.readAsDataURL(blob);
   });
 
-const cacheAnexos = new Map<string, string>();
-/** Baixa os anexos e devolve no formato que a extensão envia no WhatsApp. */
+/** Lê os anexos do computador e devolve no formato que a extensão envia no WhatsApp. */
 export async function prepararAnexosParaEnvio(anexos?: EsteiraAnexo[] | null) {
   const lista = Array.isArray(anexos) ? anexos : [];
   const out: { id: string; name: string; type: string; size: number; data: string; useCaption: boolean }[] = [];
   for (const a of lista) {
-    let data = cacheAnexos.get(a.path);
-    if (!data) {
-      const { data: blob, error } = await supabase.storage.from(ANEXOS_BUCKET).download(a.path);
-      if (error || !blob) throw new Error(`Não foi possível baixar o anexo ${a.name}.`);
-      data = await blobParaDataUrl(blob.type ? blob : new Blob([blob], { type: a.type }));
-      cacheAnexos.set(a.path, data);
+    let blob: Blob | null = null;
+    if (a.local_id) {
+      const h: any = await idb("readonly", (st) => st.get(a.local_id!)).catch(() => null);
+      if (!h) throw new Error(`O arquivo ${a.name} não está neste computador. Anexe de novo na esteira.`);
+      try {
+        blob = await h.getFile();
+      } catch {
+        throw new Error(`Não consegui abrir ${a.name} (foi movido, apagado ou sem permissão).`);
+      }
+    } else if (a.path) {
+      const { data, error } = await supabase.storage.from(ANEXOS_BUCKET).download(a.path);
+      if (error || !data) throw new Error(`Não foi possível baixar o anexo ${a.name}.`);
+      blob = data;
     }
-    out.push({ id: a.path, name: a.name, type: a.type, size: a.size, data, useCaption: false });
+    if (!blob) continue;
+    const data = await blobParaDataUrl(blob.type ? blob : new Blob([blob], { type: a.type }));
+    out.push({ id: a.local_id || a.path || a.name, name: a.name, type: a.type, size: a.size, data, useCaption: false });
   }
   return out;
+}
+
+export async function removerAnexoDoStorage(path: string) {
+  await supabase.storage.from(ANEXOS_BUCKET).remove([path]);
 }
 
 export const tamanhoLegivel = (bytes: number) =>

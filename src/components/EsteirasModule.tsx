@@ -15,7 +15,9 @@ import {
   EsteiraPasso,
   EsteiraAnexo,
   ANEXO_MAX_MB,
-  enviarAnexoParaStorage,
+  escolherArquivosDoComputador,
+  esquecerArquivoLocal,
+  liberarArquivosLocais,
   prepararAnexosParaEnvio,
   removerAnexoDoStorage,
   tamanhoLegivel,
@@ -222,6 +224,20 @@ export function EsteirasModule() {
     });
 
   const rodar = async () => {
+    // libera a leitura dos arquivos do computador (o Chrome pede logo após o clique)
+    const comAnexo = selecionados.flatMap((i) => i.passo.anexos || []);
+    const unicos = Array.from(new Map(comAnexo.map((a) => [a.local_id || a.path || a.name, a])).values());
+    if (unicos.length) {
+      const faltando = await liberarArquivosLocais(unicos);
+      if (faltando.length) {
+        toast({
+          title: "Arquivo não encontrado neste computador",
+          description: `${faltando.join(", ")}. Anexe de novo na aba Esteiras ou desmarque esses leads.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     const ok = await checarExtensao();
     setExtensaoOk(ok);
     if (!ok) {
@@ -379,9 +395,13 @@ export function EsteirasModule() {
         if (eUp) throw eUp;
       }
       // apaga do Storage os anexos que saíram da esteira
-      const novosPaths = new Set(ps.flatMap((p) => (p.anexos || []).map((a) => a.path)));
-      const sairam = atuais.flatMap((p) => (p.anexos || []).map((a) => a.path)).filter((path) => !novosPaths.has(path));
-      for (const path of sairam) await removerAnexoDoStorage(path).catch(() => {});
+      const chave = (a: EsteiraAnexo) => a.local_id || a.path || "";
+      const ficam = new Set(ps.flatMap((p) => (p.anexos || []).map(chave)));
+      const sairam = atuais.flatMap((p) => p.anexos || []).filter((a) => !ficam.has(chave(a)));
+      for (const a of sairam) {
+        if (a.path) await removerAnexoDoStorage(a.path).catch(() => {});
+        if (a.local_id) await esquecerArquivoLocal(a.local_id);
+      }
       toast({ title: "Esteira salva" });
       await carregar();
     } catch (err: any) {
@@ -406,16 +426,13 @@ export function EsteirasModule() {
     setRascunho((r) => (r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, [campo]: valor } : p)) } : r));
 
   const [enviandoAnexo, setEnviandoAnexo] = useState<number | null>(null);
-  const anexarArquivos = async (idx: number, files: FileList | null) => {
-    if (!files || !files.length) return;
+  const anexarArquivos = async (idx: number) => {
     setEnviandoAnexo(idx);
-    const novos: EsteiraAnexo[] = [];
-    for (const f of Array.from(files)) {
-      try {
-        novos.push(await enviarAnexoParaStorage(f));
-      } catch (err: any) {
-        toast({ title: "Anexo não adicionado", description: err?.message, variant: "destructive" });
-      }
+    let novos: EsteiraAnexo[] = [];
+    try {
+      novos = await escolherArquivosDoComputador();
+    } catch (err: any) {
+      toast({ title: "Anexo não adicionado", description: err?.message, variant: "destructive" });
     }
     setRascunho((r) =>
       r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: [...(p.anexos || []), ...novos] } : p)) } : r
@@ -425,7 +442,7 @@ export function EsteirasModule() {
   };
   const tirarAnexo = (idx: number, path: string) =>
     setRascunho((r) =>
-      r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: (p.anexos || []).filter((a) => a.path !== path) } : p)) } : r
+      r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: (p.anexos || []).filter((a) => (a.local_id || a.path) !== path) } : p)) } : r
     );
 
   const moverPasso = (idx: number, dir: -1 | 1) =>
@@ -910,29 +927,27 @@ export function EsteirasModule() {
                       <Textarea rows={4} value={p.mensagem} onChange={(ev) => mudarPasso(idx, "mensagem", ev.target.value)} placeholder="Oi {{nome}}, {{saudacao}}! ..." />
                       <div className="flex flex-wrap items-center gap-2">
                         {(p.anexos || []).map((a) => (
-                          <span key={a.path} className="inline-flex items-center gap-1 rounded-full border bg-slate-50 px-2 py-0.5 text-xs max-w-full">
+                          <span key={a.local_id || a.path} className="inline-flex items-center gap-1 rounded-full border bg-slate-50 px-2 py-0.5 text-xs max-w-full">
                             <Paperclip className="w-3 h-3 shrink-0" />
                             <span className="truncate max-w-[180px]" title={a.name}>{a.name}</span>
                             <span className="text-muted-foreground">({tamanhoLegivel(a.size)})</span>
-                            <button type="button" className="text-red-600 hover:text-red-800" onClick={() => tirarAnexo(idx, a.path)} title="Tirar anexo">
+                            <button type="button" className="text-red-600 hover:text-red-800" onClick={() => tirarAnexo(idx, (a.local_id || a.path)!)} title="Tirar anexo">
                               <XIcon className="w-3 h-3" />
                             </button>
                           </span>
                         ))}
-                        <label className={`inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 cursor-pointer hover:bg-slate-50 ${enviandoAnexo === idx ? "opacity-60 pointer-events-none" : ""}`}>
+                        <button
+                          type="button"
+                          disabled={enviandoAnexo === idx}
+                          onClick={() => anexarArquivos(idx)}
+                          className="inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 hover:bg-slate-50 disabled:opacity-60"
+                        >
                           {enviandoAnexo === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
-                          {enviandoAnexo === idx ? "Enviando..." : "Anexar arquivo"}
-                          <input
-                            type="file"
-                            multiple
-                            className="hidden"
-                            onChange={(ev) => {
-                              anexarArquivos(idx, ev.target.files);
-                              ev.target.value = "";
-                            }}
-                          />
-                        </label>
-                        <span className="text-[11px] text-muted-foreground">PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB cada · vão depois do texto</span>
+                          Anexar arquivo do computador
+                        </button>
+                        <span className="text-[11px] text-muted-foreground">
+                          PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB · vão depois do texto · o arquivo fica no seu computador (não mova nem apague)
+                        </span>
                       </div>
                     </div>
                   ))}
