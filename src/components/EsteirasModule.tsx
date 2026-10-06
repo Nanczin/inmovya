@@ -107,15 +107,6 @@ export function EsteirasModule() {
     checarExtensao().then(setExtensaoOk);
   }, [carregar]);
 
-  const [projetos, setProjetos] = useState<{ id: string; nome: string }[]>([]);
-  useEffect(() => {
-    supabase
-      .from("empreendimentos")
-      .select("id, nome")
-      .order("nome")
-      .then(({ data, error }) => !error && setProjetos((data as any) || []));
-  }, []);
-  const nomeProjeto = (id?: string | null) => (id ? projetos.find((p) => p.id === id)?.nome : null);
 
   const passosDe = useCallback(
     (esteiraId: string) => passos.filter((p) => p.esteira_id === esteiraId).sort((a, b) => a.ordem - b.ordem),
@@ -349,7 +340,8 @@ export function EsteirasModule() {
           nome: esteira.nome,
           ao_concluir_tag: esteira.ao_concluir_tag || null,
           etapa: esteira.etapa || null,
-          empreendimento_id: (esteira as any).empreendimento_id || null,
+          // projeto não é mais usado nas esteiras: limpa se alguma tinha
+          ...((esteira as any).empreendimento_id ? { empreendimento_id: null } : {}),
         })
         .eq("id", esteira.id);
       if (error) throw error;
@@ -473,13 +465,11 @@ export function EsteirasModule() {
     const etapa = rascunho?.esteira.etapa;
     if (!etapa || esteiras.find((e) => e.id === rascunho?.esteira.id)?.etapa !== etapa) return [];
     const alvo = getStageForStatus(etapa)?.id;
-    const proj = (rascunho!.esteira as any).empreendimento_id || null;
     return ((leads || []) as LeadEsteira[]).filter(
       (l) =>
         l.esteira_id !== rascunho!.esteira.id &&
         alvo &&
-        getStageForStatus(l.status)?.id === alvo &&
-        (!proj || l.empreendimento_id === proj)
+        getStageForStatus(l.status)?.id === alvo
     );
   }, [rascunho, esteiras, leads]);
 
@@ -776,7 +766,6 @@ export function EsteirasModule() {
                   >
                     <div className="font-medium truncate">{e.nome}</div>
                     <div className="text-xs text-muted-foreground">
-                      {nomeProjeto((e as any).empreendimento_id) ? `${nomeProjeto((e as any).empreendimento_id)} · ` : ""}
                       {e.etapa ? `Etapa ${e.etapa} · ` : ""}
                       {passosDe(e.id).length} passo(s) · {qtd} lead(s)
                     </div>
@@ -804,30 +793,6 @@ export function EsteirasModule() {
                     />
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
-                    <Label className="text-xs">Projeto (empreendimento)</Label>
-                    <Select
-                      value={(rascunho.esteira as any).empreendimento_id || "geral"}
-                      onValueChange={(v) =>
-                        setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, empreendimento_id: v === "geral" ? null : v } as any })
-                      }
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[50vh]">
-                        <SelectItem value="geral">Geral (qualquer projeto)</SelectItem>
-                        {projetos.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-[11px] text-muted-foreground">
-                      Com projeto definido, só os leads desse projeto entram nesta esteira. Ex.: “50% Hípica” para quem tem interesse no Jardim da Hípica, “50% TOM” para o T.O.M. Paraíso.
-                    </p>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
                     <Label className="text-xs">Etapa de Negócios ligada</Label>
                     <Select
                       value={rascunho.esteira.etapa || "nenhuma"}
@@ -839,10 +804,7 @@ export function EsteirasModule() {
                       <SelectContent className="max-h-[50vh]">
                         <SelectItem value="nenhuma">Nenhuma (só manual)</SelectItem>
                         {NEGOCIO_STAGES.map((st) => {
-                          const proj = (rascunho.esteira as any).empreendimento_id || null;
-                          const usadaPor = esteiras.find(
-                            (x) => x.id !== rascunho.esteira.id && x.etapa === st.value && ((x as any).empreendimento_id || null) === proj
-                          );
+                          const usadaPor = esteiras.find((x) => x.id !== rascunho.esteira.id && x.etapa === st.value);
                           return (
                             <SelectItem key={st.id} value={st.value}>
                               {st.name}
