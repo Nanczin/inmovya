@@ -26,6 +26,8 @@ import {
   avancarLead,
   checarExtensao,
   extensaoAtualizada,
+  getIntervaloMensagens,
+  setIntervaloMensagens,
   colocarNaEsteira,
   enviarPeloWhatsApp,
   executarImportacao,
@@ -38,6 +40,7 @@ import {
   setMeuNome,
   telefoneWhatsApp,
   tirarDaEsteira,
+  moverParaPasso,
 } from "@/lib/esteiras";
 import {
   Paperclip,
@@ -187,6 +190,16 @@ export function EsteirasModule() {
     });
   }, []);
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
+  const [gap, setGap] = useState(getIntervaloMensagens());
+  const mudarGap = (campo: "min" | "max", v: number) => {
+    const n = { ...gap, [campo]: Math.max(0, v || 0) };
+    if (n.max < n.min) {
+      if (campo === "min") n.max = n.min;
+      else n.min = n.max;
+    }
+    setGap(n);
+    setIntervaloMensagens(n.min, n.max);
+  };
 
   // Bloco do dia: rodar uma esteira por vez (ex.: 70% de manhã, 50% à tarde)
   const [filtroEsteira, setFiltroEsteira] = useState<string>("todas");
@@ -254,10 +267,10 @@ export function EsteirasModule() {
       });
       return;
     }
-    if (unicos.length && !extensaoAtualizada("1.2.1")) {
+    if (!extensaoAtualizada("1.2.2")) {
       toast({
-        title: "Atualize o Inmovya Scale para enviar anexos",
-        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.1). Depois recarregue esta página.",
+        title: "Atualize o Inmovya Scale",
+        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.2 — anexos e intervalo entre mensagens). Depois recarregue esta página e o WhatsApp Web.",
         variant: "destructive",
       });
       return;
@@ -665,7 +678,28 @@ export function EsteirasModule() {
               <div className="flex flex-col lg:flex-row lg:items-end gap-3 rounded-lg border bg-white p-3">
                 <div className="text-xs text-muted-foreground flex-1 min-w-0">
                   <div>
-                    Intervalo entre envios: <b>2 a 3 minutos</b> (aleatório)
+                    Entre um lead e outro: <b>2 a 3 minutos</b> (aleatório)
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 my-1">
+                    <span>Entre as mensagens do mesmo lead:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={rodando}
+                      value={gap.min}
+                      onChange={(e) => mudarGap("min", parseInt(e.target.value))}
+                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
+                    />
+                    <span>a</span>
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={rodando}
+                      value={gap.max}
+                      onChange={(e) => mudarGap("max", parseInt(e.target.value))}
+                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
+                    />
+                    <span>segundos (aleatório)</span>
                   </div>
                   <button type="button" className="underline text-blue-700 hover:text-blue-900" onClick={() => setVerAgendados((v) => !v)}>
                     {proximosDias} lead(s) agendado(s) para os próximos dias {verAgendados ? "▲" : "▼"}
@@ -1211,9 +1245,31 @@ export function EsteirasModule() {
                         return (
                           <div key={l.id} className="flex items-center gap-2 py-1.5 text-sm">
                             <span className="flex-1 min-w-0 truncate">{l.nome}</span>
-                            <span className="text-xs text-muted-foreground shrink-0">
-                              {passo?.titulo || "-"} · {fmtData(l.esteira_proximo)}
-                            </span>
+                            <Select
+                              value={String(Math.min(l.esteira_passo || 0, ps.length))}
+                              onValueChange={async (v) => {
+                                try {
+                                  await moverParaPasso([l.id], rascunho.esteira.id, parseInt(v), ps);
+                                  await refreshLeads();
+                                  toast({ title: "Lead movido", description: `${l.nome} → ${ps[parseInt(v)]?.titulo || `Passo ${parseInt(v) + 1}`} (envio hoje)` });
+                                } catch (err: any) {
+                                  toast({ title: "Erro", description: err?.message, variant: "destructive" });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-7 w-[120px] text-xs shrink-0" title="Mudar o dia (passo) da esteira deste lead">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[50vh]">
+                                {ps.map((p, i) => (
+                                  <SelectItem key={p.id} value={String(i)}>
+                                    {p.titulo || `Passo ${i + 1}`}
+                                  </SelectItem>
+                                ))}
+                                {(l.esteira_passo || 0) >= ps.length && <SelectItem value={String(ps.length)}>sem resposta</SelectItem>}
+                              </SelectContent>
+                            </Select>
+                            <span className="text-xs text-muted-foreground shrink-0 w-12 text-right">{fmtData(l.esteira_proximo)}</span>
                             <Button
                               size="sm"
                               variant="ghost"

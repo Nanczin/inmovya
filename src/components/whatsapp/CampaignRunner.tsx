@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { getIntervaloMensagens } from "@/lib/esteiras";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -35,7 +36,7 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
       const timeout = window.setTimeout(() => {
         window.removeEventListener('INMOVYA_WHATSAPP_RESULT', handleResult as EventListener);
         reject(new Error('Tempo esgotado aguardando a confirmação da extensão.'));
-      }, 90000);
+      }, 90000 + (String(payload.text || '').split('===').length + 1) * getIntervaloMensagens().max * 1000);
       const handleResult = (event: CustomEvent) => {
         if (event.detail?.token !== token) return;
         window.clearTimeout(timeout);
@@ -43,7 +44,15 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         event.detail?.ok ? resolve() : reject(new Error(event.detail?.error || 'O envio não foi confirmado.'));
       };
       window.addEventListener('INMOVYA_WHATSAPP_RESULT', handleResult as EventListener);
-      window.dispatchEvent(new CustomEvent('INMOVYA_OPEN_WHATSAPP', { detail: { ...payload, token } }));
+      window.dispatchEvent(new CustomEvent('INMOVYA_OPEN_WHATSAPP', {
+        detail: {
+          ...payload,
+          token,
+          // intervalo entre as mensagens do mesmo contato (anti-bloqueio)
+          gapMinMs: getIntervaloMensagens().min * 1000,
+          gapMaxMs: getIntervaloMensagens().max * 1000,
+        },
+      }));
     });
   };
 

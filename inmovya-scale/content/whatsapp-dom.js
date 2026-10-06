@@ -724,12 +724,24 @@ window.IS.WhatsAppDOM = {
       useCaption: !!attachment.useCaption
     }));
 
+    // Intervalo entre as mensagens do mesmo envio (anti-bloqueio do WhatsApp), quando o Inmovya informar
+    const gapMin = Math.max(0, Number(options.gapMinMs) || 0);
+    const gapMax = Math.max(gapMin, Number(options.gapMaxMs) || gapMin);
+    let itensEnviados = 0;
+    const esperarEntreMensagens = async () => {
+      if (!gapMax || itensEnviados === 0) return;
+      const ms = gapMin + Math.floor(Math.random() * (gapMax - gapMin + 1));
+      this.updateSendMaskText?.(`Aguardando ${Math.round(ms / 1000)}s antes da próxima mensagem…`);
+      await this.delay(ms);
+    };
+
     for (let messageIndex = 0; messageIndex < parts.length; messageIndex++) {
       const message = parts[messageIndex];
       const linked = normalizedAttachments.filter(attachment => attachment.messageIndex === messageIndex);
       const hasCaptionedAttachment = linked.some(attachment => attachment.useCaption);
 
       if (message.trim() && !hasCaptionedAttachment) {
+        await esperarEntreMensagens();
         if (!await this.insertMessage(message)) return false;
         const mustSendText = !!options.sendSingleText || parts.length > 1 || normalizedAttachments.length > 0;
         if (mustSendText) {
@@ -737,9 +749,11 @@ window.IS.WhatsAppDOM = {
           if (!await this.triggerSend()) return false;
           await this.delay(700);
         }
+        itensEnviados += 1;
       }
 
       for (const attachment of linked) {
+        await esperarEntreMensagens();
         currentAttachment += 1;
         this.updateSendMask(currentAttachment, normalizedAttachments.length);
         if (this.isMediaAttachment(attachment)) {
@@ -751,6 +765,7 @@ window.IS.WhatsAppDOM = {
         // A prévia pode desaparecer antes de o WhatsApp reconstruir totalmente
         // o compositor; aguarde antes de iniciar o próximo seletor oculto.
         await this.delay(700);
+        itensEnviados += 1;
       }
     }
 

@@ -248,13 +248,32 @@ export const checarExtensao = (timeoutMs = 1500) =>
     }, timeoutMs);
   });
 
+// Intervalo entre as mensagens do MESMO envio (partes separadas por === e anexos)
+const GAP_KEY = "inmovya_intervalo_mensagens";
+export const getIntervaloMensagens = (): { min: number; max: number } => {
+  try {
+    const v = JSON.parse(localStorage.getItem(GAP_KEY) || "null");
+    if (v && Number.isFinite(v.min) && Number.isFinite(v.max)) return { min: Math.max(0, v.min), max: Math.max(v.min, v.max) };
+  } catch {
+    /* ignore */
+  }
+  return { min: 10, max: 20 };
+};
+export const setIntervaloMensagens = (min: number, max: number) => {
+  try {
+    localStorage.setItem(GAP_KEY, JSON.stringify({ min: Math.max(0, min), max: Math.max(min, max) }));
+  } catch {
+    /* ignore */
+  }
+};
+
 export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any[] = []) =>
   new Promise<void>((resolve, reject) => {
     const token = crypto.randomUUID();
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
       reject(new Error("Tempo esgotado aguardando a confirmação da extensão."));
-    }, attachments.length ? 300000 : 120000);
+    }, 120000 + attachments.length * 60000 + (text.split("===").length + attachments.length) * getIntervaloMensagens().max * 1000);
     const onResult = (event: CustomEvent) => {
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);
@@ -262,7 +281,16 @@ export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any
       event.detail?.ok ? resolve() : reject(new Error(event.detail?.error || "O envio não foi confirmado."));
     };
     window.addEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
-    window.dispatchEvent(new CustomEvent("INMOVYA_OPEN_WHATSAPP", { detail: { phone, text, token, attachments } }));
+    window.dispatchEvent(new CustomEvent("INMOVYA_OPEN_WHATSAPP", {
+        detail: {
+          phone,
+          text,
+          token,
+          attachments,
+          gapMinMs: getIntervaloMensagens().min * 1000,
+          gapMaxMs: getIntervaloMensagens().max * 1000,
+        },
+      }));
   });
 
 // Lê os dados guardados no Scale (precisa da extensão atualizada)
@@ -375,6 +403,26 @@ export async function colocarNaEsteira(leadIds: string[], esteiraId: string) {
     const { error } = await supabase
       .from("leads")
       .update({ esteira_id: esteiraId, esteira_passo: 0, esteira_proximo: new Date().toISOString() })
+      .in("id", chunk);
+    if (error) throw error;
+  }
+}
+
+/** Coloca o lead num passo escolhido da esteira (ex.: D3), com envio para hoje. */
+export async function moverParaPasso(leadIds: string[], esteiraId: string, indice: number, passos?: EsteiraPasso[]) {
+  // Se o passo anterior tem coluna no Negócios (ex.: P2), o card vai para ela (já "recebeu" até ali)
+  const anterior = passos && indice > 0 ? passos[indice - 1] : null;
+  const etapa = (anterior?.etapa || "").trim();
+  for (let i = 0; i < leadIds.length; i += 200) {
+    const chunk = leadIds.slice(i, i + 200);
+    const { error } = await supabase
+      .from("leads")
+      .update({
+        esteira_id: esteiraId,
+        esteira_passo: Math.max(0, indice),
+        esteira_proximo: new Date().toISOString(),
+        ...(etapa ? { status: etapa } : {}),
+      })
       .in("id", chunk);
     if (error) throw error;
   }

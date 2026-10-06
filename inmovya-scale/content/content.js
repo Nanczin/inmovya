@@ -69,7 +69,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
           request.text || '',
           attachments,
-          { sendSingleText: true }
+          {
+            sendSingleText: true,
+            gapMinMs: Number(request.gapMinMs) || 0,
+            gapMaxMs: Number(request.gapMaxMs) || 0
+          }
         );
         if (!sent) throw new Error('O WhatsApp não confirmou o envio da campanha.');
 

@@ -67,7 +67,9 @@ async function sendCampaignMessage(request, returnTabId = null) {
           text: request.text || '',
           attachment: storedMedia || null,
           // anexos das esteiras do Inmovya (qualquer tipo de arquivo, já em base64)
-          attachments: Array.isArray(request.attachments) ? request.attachments : []
+          attachments: Array.isArray(request.attachments) ? request.attachments : [],
+          gapMinMs: Number(request.gapMinMs) || 0,
+          gapMaxMs: Number(request.gapMaxMs) || 0
         });
         if (response?.ok) return response;
         lastError = new Error(response?.error || 'Envio não confirmado.');

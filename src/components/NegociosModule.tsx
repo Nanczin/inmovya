@@ -10,7 +10,7 @@ import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
 import { LeadTimeline } from "@/components/LeadTimeline";
-import { colocarNaEsteira, tirarDaEsteira } from "@/lib/esteiras";
+import { colocarNaEsteira, tirarDaEsteira, moverParaPasso } from "@/lib/esteiras";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -102,7 +102,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [bulkTarget, setBulkTarget] = useState<string>("");
   const [bulkMoving, setBulkMoving] = useState(false);
   const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; empreendimento_id?: string | null; ao_concluir_etapa?: string | null }[]>([]);
-  const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string }[]>([]);
+  const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string; etapa?: string | null }[]>([]);
   const [bulkEsteira, setBulkEsteira] = useState<string>("");
 
   // Esteiras ligadas às etapas (para mostrar no quadro)
@@ -118,6 +118,18 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       .order("ordem")
       .then(({ data, error }) => !error && setPassosLista((data as any) || []));
   }, [selectMode]);
+
+  const setLeadPasso = async (lead: Lead, esteiraId: string, indice: number) => {
+    try {
+      const ps = (passosLista as any[]).filter((p) => p.esteira_id === esteiraId).sort((a, b) => a.ordem - b.ordem);
+      await moverParaPasso([lead.id], esteiraId, indice, ps);
+      const est = esteirasLista.find((e) => e.id === esteiraId);
+      toast({ title: "Lead na esteira", description: `${lead.nome} → ${est?.nome || ""} · ${ps[indice]?.titulo || `Passo ${indice + 1}`} (envio hoje)` });
+      await refreshLeads();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err?.message, variant: "destructive" });
+    }
+  };
 
   const setLeadEsteira = async (lead: Lead, esteiraId: string | null) => {
     try {
@@ -496,17 +508,30 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
               <DropdownMenuSeparator />
               {esteirasLista.map((est) => {
                 const atual = (lead as any).esteira_id === est.id;
+                const ps = passosLista.filter((p) => p.esteira_id === est.id).sort((a, b) => a.ordem - b.ordem);
+                const passoAtual = atual ? (lead as any).esteira_passo || 0 : -1;
                 return (
-                  <DropdownMenuItem
-                    key={est.id}
-                    disabled={atual}
-                    onSelect={() => setLeadEsteira(lead, est.id)}
-                    className="text-sm"
-                  >
-                    {atual ? "✓ " : ""}
-                    {est.nome}
-                    {est.etapa ? <span className="ml-auto text-[10px] text-muted-foreground">{est.etapa}</span> : null}
-                  </DropdownMenuItem>
+                  <DropdownMenuSub key={est.id}>
+                    <DropdownMenuSubTrigger className="text-sm">
+                      {atual ? "✓ " : ""}
+                      {est.nome}
+                      {est.etapa ? <span className="ml-auto pl-2 text-[10px] text-muted-foreground">{est.etapa}</span> : null}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="max-h-[60vh] overflow-y-auto">
+                      <DropdownMenuLabel className="text-[11px] text-muted-foreground">Em qual dia da esteira?</DropdownMenuLabel>
+                      {ps.length === 0 && (
+                        <DropdownMenuItem disabled className="text-sm">
+                          Esteira sem passos
+                        </DropdownMenuItem>
+                      )}
+                      {ps.map((p, i) => (
+                        <DropdownMenuItem key={p.id} disabled={i === passoAtual} onSelect={() => setLeadPasso(lead, est.id, i)} className="text-sm">
+                          {i === passoAtual ? "✓ " : ""}
+                          {p.titulo || `Passo ${i + 1}`}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 );
               })}
               {(lead as any).esteira_id && (
