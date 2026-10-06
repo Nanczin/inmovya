@@ -150,10 +150,20 @@ export function EsteirasModule() {
     return itens.sort((a, b) => a.esteira.ordem - b.esteira.ordem || (a.passo.ordem - b.passo.ordem));
   }, [leadsEmEsteira, esteiras, passosDe]);
 
-  const proximosDias = useMemo(() => {
+  const agendados = useMemo(() => {
     const limite = fimDeHoje();
-    return leadsEmEsteira.filter((l) => l.esteira_proximo && new Date(l.esteira_proximo).getTime() > limite).length;
-  }, [leadsEmEsteira]);
+    return leadsEmEsteira
+      .filter((l) => l.esteira_proximo && new Date(l.esteira_proximo).getTime() > limite)
+      .map((lead) => {
+        const esteira = esteiras.find((e) => e.id === lead.esteira_id)!;
+        const ps = passosDe(esteira.id);
+        const passo = ps.length ? ps[Math.min(Math.max(lead.esteira_passo || 0, 0), ps.length - 1)] : null;
+        return { lead, esteira, passo, total: ps.length, quando: new Date(lead.esteira_proximo as string) };
+      })
+      .sort((a, b) => a.quando.getTime() - b.quando.getTime());
+  }, [leadsEmEsteira, esteiras, passosDe]);
+  const proximosDias = agendados.length;
+  const [verAgendados, setVerAgendados] = useState(false);
 
   const [desmarcados, setDesmarcados] = useState<Set<string>>(new Set());
   const [estado, setEstado] = useState<Record<string, { s: EstadoItem; erro?: string }>>({});
@@ -182,8 +192,11 @@ export function EsteirasModule() {
     return c;
   }, [fila, estado]);
   const filaVisivel = filtroEsteira === "todas" ? fila : fila.filter((i) => i.esteira.id === filtroEsteira);
-  const filaAuto = filaVisivel.filter((i) => !i.passo.so_colar);
-  const filaManual = filaVisivel.filter((i) => i.passo.so_colar);
+  // "Só colar" do Scale agora também entra no envio: a mensagem pode ser personalizada aqui antes de rodar
+  const filaAuto = filaVisivel;
+  const filaManual: ItemFila[] = [];
+  const [editados, setEditados] = useState<Record<string, string>>({});
+  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome);
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
 
   const esperar = (segundos: number) =>
@@ -223,11 +236,12 @@ export function EsteirasModule() {
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
-        const texto = montarMensagem(item.passo.mensagem, item.lead.nome);
+        const texto = textoDo(item);
         await enviarPeloWhatsApp(item.telefone, texto);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto);
         enviados++;
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado" } }));
+        setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; });
       } catch (err: any) {
         console.error("Falha no envio da esteira:", err);
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha" } }));
@@ -255,6 +269,12 @@ export function EsteirasModule() {
     const { error } = await supabase.from("leads").update({ esteira_proximo: amanha }).eq("id", item.lead.id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado" } }));
+    await refreshLeads();
+  };
+
+  const trazerParaHoje = async (leadId: string) => {
+    const { error } = await supabase.from("leads").update({ esteira_proximo: new Date().toISOString() }).eq("id", leadId);
+    if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     await refreshLeads();
   };
 
@@ -496,7 +516,9 @@ export function EsteirasModule() {
                   <div>
                     Intervalo entre envios: <b>2 a 3 minutos</b> (aleatório)
                   </div>
-                  <div>{proximosDias} lead(s) agendado(s) para os próximos dias</div>
+                  <button type="button" className="underline text-blue-700 hover:text-blue-900" onClick={() => setVerAgendados((v) => !v)}>
+                    {proximosDias} lead(s) agendado(s) para os próximos dias {verAgendados ? "▲" : "▼"}
+                  </button>
                 </div>
                 {rodando ? (
                   <Button variant="destructive" className="h-10" onClick={() => (pararRef.current = true)}>
@@ -508,6 +530,28 @@ export function EsteirasModule() {
                   </Button>
                 )}
               </div>
+
+              {verAgendados && (
+                <div className="rounded-lg border bg-white p-3 space-y-1 max-h-96 overflow-y-auto">
+                  <h3 className="text-sm font-semibold mb-1">Agendados</h3>
+                  {agendados.length === 0 && <p className="text-xs text-muted-foreground">Nenhum lead agendado.</p>}
+                  {agendados.map((a) => (
+                    <div key={a.lead.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 border-b last:border-0 py-1.5 text-sm">
+                      <span className="w-24 shrink-0 text-xs font-medium text-blue-800">
+                        {a.quando.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                      </span>
+                      <span className="font-medium truncate flex-1 min-w-0">{a.lead.nome}</span>
+                      <span className="text-[11px] rounded border px-1.5 py-0.5 bg-slate-50 truncate">
+                        {a.esteira.nome}
+                        {a.passo ? ` · ${a.passo.titulo || `Passo ${a.passo.ordem + 1}`} (${(a.lead.esteira_passo || 0) + 1}/${a.total})` : ""}
+                      </span>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs shrink-0" disabled={rodando} onClick={() => trazerParaHoje(a.lead.id)}>
+                        Enviar hoje
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {fila.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -548,7 +592,7 @@ export function EsteirasModule() {
               {filaAuto.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground">
-                    Confira as mensagens antes de rodar. Desmarque quem não deve receber hoje.
+                    Confira as mensagens antes de rodar (clique no texto para personalizar). Desmarque quem não deve receber hoje.
                   </p>
                   {filaAuto.map((item) => {
                     const st = estado[item.lead.id]?.s || "pendente";
@@ -584,20 +628,39 @@ export function EsteirasModule() {
                                 </span>
                               )}
                               {st === "pulado" && <span className="text-xs text-muted-foreground">adiado para amanhã</span>}
+                              {item.passo.so_colar && (
+                                <span className="text-[11px] rounded bg-amber-100 text-amber-800 px-1.5 py-0.5">personalizar</span>
+                              )}
                             </div>
-                            <button
-                              type="button"
-                              className="mt-1 text-left text-xs text-slate-600 whitespace-pre-wrap break-words w-full"
-                              onClick={() =>
-                                setAbertos((s) => {
-                                  const n = new Set(s);
-                                  n.has(item.lead.id) ? n.delete(item.lead.id) : n.add(item.lead.id);
-                                  return n;
-                                })
-                              }
-                            >
-                              {aberto ? item.mensagem.replace(/\n*===\n*/g, "\n— — —\n") : `${item.mensagem.replace(/\s+/g, " ").slice(0, 140)}${item.mensagem.length > 140 ? "… (ver tudo)" : ""}`}
-                            </button>
+                            {aberto ? (
+                              <div className="mt-1 space-y-1">
+                                <Textarea
+                                  value={textoDo(item)}
+                                  disabled={rodando || st === "enviado"}
+                                  onChange={(ev) => setEditados((m) => ({ ...m, [item.lead.id]: ev.target.value }))}
+                                  className="text-xs min-h-[120px]"
+                                />
+                                <div className="flex gap-2 text-[11px]">
+                                  <button type="button" className="text-blue-700 underline" onClick={() => setAbertos((x) => { const n = new Set(x); n.delete(item.lead.id); return n; })}>
+                                    Fechar
+                                  </button>
+                                  {editados[item.lead.id] !== undefined && (
+                                    <button type="button" className="text-slate-500 underline" onClick={() => setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; })}>
+                                      Voltar ao texto da esteira
+                                    </button>
+                                  )}
+                                  <span className="text-muted-foreground">Partes separadas por === viram mensagens separadas.</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="mt-1 text-left text-xs text-slate-600 whitespace-pre-wrap break-words w-full"
+                                onClick={() => setAbertos((x) => new Set(x).add(item.lead.id))}
+                              >
+                                {`${textoDo(item).replace(/\s+/g, " ").slice(0, 140)}${textoDo(item).length > 140 ? "… (ver / editar)" : " (editar)"}`}
+                              </button>
+                            )}
                           </div>
                           {!rodando && st !== "enviado" && (
                             <Button size="sm" variant="ghost" className="shrink-0 h-8 text-xs" onClick={() => pularHoje(item)} title="Adiar para amanhã">
