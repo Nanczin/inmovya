@@ -278,6 +278,17 @@ export function EsteirasModule() {
     await refreshLeads();
   };
 
+  const tirarLead = async (leadId: string, nome: string) => {
+    if (!window.confirm(`Tirar ${nome} da esteira? Os envios agendados dele param.`)) return;
+    try {
+      await tirarDaEsteira([leadId]);
+      toast({ title: "Lead tirado da esteira", description: nome });
+      await refreshLeads();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err?.message, variant: "destructive" });
+    }
+  };
+
   // ---------------- EDITOR ----------------
   const [esteiraSel, setEsteiraSel] = useState<string | null>(null);
   const [rascunho, setRascunho] = useState<{ esteira: Esteira; passos: EsteiraPasso[] } | null>(null);
@@ -545,9 +556,14 @@ export function EsteirasModule() {
                         {a.esteira.nome}
                         {a.passo ? ` · ${a.passo.titulo || `Passo ${a.passo.ordem + 1}`} (${(a.lead.esteira_passo || 0) + 1}/${a.total})` : ""}
                       </span>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs shrink-0" disabled={rodando} onClick={() => trazerParaHoje(a.lead.id)}>
-                        Enviar hoje
-                      </Button>
+                      <div className="flex gap-1 shrink-0">
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={rodando} onClick={() => trazerParaHoje(a.lead.id)}>
+                          Enviar hoje
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600 hover:text-red-700" disabled={rodando} onClick={() => tirarLead(a.lead.id, a.lead.nome)}>
+                          Tirar da esteira
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -665,6 +681,11 @@ export function EsteirasModule() {
                           {!rodando && st !== "enviado" && (
                             <Button size="sm" variant="ghost" className="shrink-0 h-8 text-xs" onClick={() => pularHoje(item)} title="Adiar para amanhã">
                               <Clock className="w-3.5 h-3.5 mr-1" /> Amanhã
+                            </Button>
+                          )}
+                          {!rodando && st !== "enviado" && (
+                            <Button size="sm" variant="ghost" className="shrink-0 h-8 text-xs text-red-600 hover:text-red-700" onClick={() => tirarLead(item.lead.id, item.lead.nome)} title="Tirar da esteira">
+                              <Trash2 className="w-3.5 h-3.5 mr-1" /> Tirar
                             </Button>
                           )}
                         </div>
