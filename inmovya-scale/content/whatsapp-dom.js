@@ -538,6 +538,47 @@ window.IS.WhatsAppDOM = {
     return false;
   },
 
+  // Clica na opção do menu de anexo com a captura armada e espera o input criado pelo WhatsApp.
+  async captureFileInputFromOption(kind, timeoutMs = 2500) {
+    const root = document.documentElement;
+    document.querySelectorAll('input[type="file"][data-is-captured]').forEach(input => input.removeAttribute('data-is-captured'));
+    root.setAttribute('data-is-capture-file-input', String(Date.now()));
+    try {
+      if (!this.openAttachmentOption(kind) && !this.clickAttachmentOptionLoose(kind)) {
+        window.IS.error(`Opção "${kind === 'media' ? 'Fotos e vídeos' : 'Documento'}" não apareceu no menu de anexo.`);
+        return null;
+      }
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const captured = document.querySelector('input[type="file"][data-is-captured]');
+        if (captured) return captured;
+        // Caso o WhatsApp tenha colocado o input no DOM após o clique
+        const inDom = kind === 'media' ? this.findMediaFileInput() : this.findDocumentFileInput();
+        if (inDom) return inDom;
+        await this.delay(100);
+      }
+      return null;
+    } finally {
+      root.removeAttribute('data-is-capture-file-input');
+    }
+  },
+
+  // Fallback com correspondência parcial, restrito a itens dentro de um menu aberto.
+  clickAttachmentOptionLoose(kind) {
+    const pattern = kind === 'media'
+      ? /fotos?\s*(?:e|&)\s*v[ií]deos?|photos?\s*(?:and|&)\s*videos?/
+      : /^\s*(documento|document)\b/;
+    const items = document.querySelectorAll('[role="menu"] *, [data-animate-dropdown-menu] *, [data-animate-modal-popup] *');
+    for (const item of items) {
+      if (item.offsetParent === null || item.closest('#inmovya-scale-root')) continue;
+      const text = `${item.getAttribute('aria-label') || ''} ${item.innerText || ''}`.replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+      if (!text || text.length > 40 || !pattern.test(text)) continue;
+      (item.closest('[role="menuitem"], li, button, [role="button"]') || item).click();
+      return true;
+    }
+    return false;
+  },
+
   // Coloca os arquivos pelo próprio botão de anexo do WhatsApp (📎 → Fotos e vídeos / Documento).
   // É o caminho mais confiável: o WhatsApp aceita o "change" do campo de arquivo.
   async attachFilesViaMenuInput(files) {
@@ -546,8 +587,11 @@ window.IS.WhatsAppDOM = {
     if (this.hasMediaPreview() && !await this.waitForMediaPreviewClosed()) return this.falha('Havia uma prévia de anexo aberta no WhatsApp.');
     if (!this.openAttachmentMenu()) return this.falha('Botão de anexo (📎/+) do WhatsApp não encontrado.');
     await this.delay(500);
-    let input = isMedia ? await this.waitForMediaFileInput(3000) : await this.waitForDocumentFileInput(3000);
-    if (!input && isMedia) input = await this.waitForDocumentFileInput(1500);
+    let input = isMedia ? await this.waitForMediaFileInput(1000) : await this.waitForDocumentFileInput(1000);
+    // Versões novas do WhatsApp só criam o <input type="file"> ao clicar na opção.
+    // O file-input-hook.js (MAIN world) captura esse input sem abrir o seletor do Windows.
+    if (!input) input = await this.captureFileInputFromOption(isMedia ? 'media' : 'document');
+    if (!input && isMedia) input = await this.waitForDocumentFileInput(1000);
     if (!input) {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       return this.falha(`Opção "${isMedia ? 'Fotos e vídeos' : 'Documento'}" do menu de anexo não encontrada.`);

@@ -405,13 +405,15 @@ export async function avancarLead(
   }
   if (error) throw error;
 
-  await supabase.from("lead_timeline").insert({
+  // a tabela só aceita call/email/meeting/note/status_change ("whatsapp" era recusado em silêncio)
+  const { error: erroHistorico } = await supabase.from("lead_timeline").insert({
     lead_id: lead.id,
-    type: "whatsapp",
+    type: "note",
     title: `Esteira ${esteira.nome} — ${passoEnviado.titulo || `Passo ${indice + 1}`}`,
     description: concluiu ? `${detalhe}\n\nEsteira concluída.` : detalhe,
     author: "Esteira",
   });
+  if (erroHistorico) console.error("Histórico da esteira não gravado:", erroHistorico);
 
   return { concluiu };
 }
@@ -600,15 +602,19 @@ export async function executarImportacao(plano: PlanoImportacao) {
     passosPorEsteira.set(e.scaleId, e.passos.length);
   }
 
-  // Leads: posiciona no passo em que estavam no Scale, prontos para envio
-  const agora = new Date().toISOString();
+  // Leads: posiciona no passo em que estavam no Scale. O Scale já avança o lead ao enviar,
+  // então o passo importado é o de amanhã (com "agora" o lead recebia 2 passos no mesmo dia).
+  const amanha = new Date();
+  amanha.setDate(amanha.getDate() + 1);
+  amanha.setHours(0, 0, 0, 0);
+  const proximoEnvio = amanha.toISOString();
   for (const l of plano.leads) {
     const esteiraId = idPorScale.get(l.scaleEsteiraId);
     if (!esteiraId) continue;
     const total = passosPorEsteira.get(l.scaleEsteiraId) || 0;
     const { error } = await supabase
       .from("leads")
-      .update({ esteira_id: esteiraId, esteira_passo: Math.min(l.passoIndex, Math.max(0, total - 1)), esteira_proximo: agora })
+      .update({ esteira_id: esteiraId, esteira_passo: Math.min(l.passoIndex, Math.max(0, total - 1)), esteira_proximo: proximoEnvio })
       .eq("id", l.leadId);
     if (error) throw error;
   }
