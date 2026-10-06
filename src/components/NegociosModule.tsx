@@ -66,12 +66,14 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [activePhase, setActivePhase] = useState<"all" | NegocioPhaseId>("all");
   const [search, setSearch] = useState("");
   // Projeto (empreendimento): cada projeto tem seu próprio quadro e suas esteiras
+  // Seletor de projeto removido: o quadro mostra sempre todos os leads
   const [projeto, setProjeto] = useState<string>(() => {
     try {
-      return localStorage.getItem("negocios_projeto") || "todos";
+      localStorage.removeItem("negocios_projeto");
     } catch {
-      return "todos";
+      /* ignore */
     }
+    return "todos";
   });
   const [projetos, setProjetos] = useState<{ id: string; nome: string }[]>([]);
   useEffect(() => {
@@ -703,25 +705,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <Plus className="w-4 h-4 mr-1" /> Novo negócio
           </Button>
         </div>
-      </div>
-
-      {/* Projeto */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">Projeto:</span>
-        <Select value={projeto} onValueChange={escolherProjeto}>
-          <SelectTrigger className="h-9 w-full sm:w-72">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-h-[60vh]">
-            <SelectItem value="todos">Todos os projetos</SelectItem>
-            <SelectItem value="sem">Sem projeto definido</SelectItem>
-            {projetos.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.nome}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
       {/* Fases + indicadores */}
