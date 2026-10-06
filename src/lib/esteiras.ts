@@ -8,9 +8,20 @@ export interface Esteira {
   nome: string;
   ordem: number;
   ao_concluir_tag: string | null;
+  etapa?: string | null; // etapa de Negócios ligada (ex.: "20%")
   scale_id?: string | null;
   created_at?: string;
 }
+
+/** Sugere a etapa de Negócios pelo nome da esteira do Scale (ex.: "Esteira 50%" -> "50%"). */
+export const etapaPeloNome = (nome: string): string | null => {
+  const n = String(nome || "").toLowerCase();
+  if (/\b20\s*%?/.test(n)) return "20%";
+  if (/\b50\s*%?/.test(n)) return "50%";
+  if (/\b(70|75)\s*%?/.test(n)) return "70%";
+  if (/\b90\s*%?/.test(n)) return "90%";
+  return null;
+};
 
 export interface EsteiraPasso {
   id: string;
@@ -336,11 +347,14 @@ export async function executarImportacao(plano: PlanoImportacao) {
     let esteiraId = idPorScale.get(e.scaleId);
     if (esteiraId) {
       await supabase.from("esteiras").update({ nome: e.nome, ordem: i }).eq("id", esteiraId);
+      // liga à etapa de Negócios se o nome indicar (só se ainda não estiver ligada)
+      const etapa = etapaPeloNome(e.nome);
+      if (etapa) await supabase.from("esteiras").update({ etapa }).eq("id", esteiraId).is("etapa", null);
       await supabase.from("esteira_passos").delete().eq("esteira_id", esteiraId);
     } else {
       const { data, error } = await supabase
         .from("esteiras")
-        .insert({ nome: e.nome, ordem: i, scale_id: e.scaleId, user_id: user.id, ao_concluir_tag: "disparo" })
+        .insert({ nome: e.nome, ordem: i, scale_id: e.scaleId, user_id: user.id, ao_concluir_tag: "disparo", etapa: etapaPeloNome(e.nome) })
         .select("id")
         .single();
       if (error) throw error;

@@ -8,11 +8,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { NEGOCIO_STAGES, getStageForStatus } from "@/lib/negociosStages";
 import {
   Esteira,
   EsteiraPasso,
   avancarLead,
   checarExtensao,
+  colocarNaEsteira,
   enviarPeloWhatsApp,
   executarImportacao,
   getMeuNome,
@@ -261,7 +264,7 @@ export function EsteirasModule() {
       const { esteira, passos: ps } = rascunho;
       const { error } = await supabase
         .from("esteiras")
-        .update({ nome: esteira.nome, ao_concluir_tag: esteira.ao_concluir_tag || null })
+        .update({ nome: esteira.nome, ao_concluir_tag: esteira.ao_concluir_tag || null, etapa: esteira.etapa || null })
         .eq("id", esteira.id);
       if (error) throw error;
 
@@ -365,6 +368,27 @@ export function EsteirasModule() {
       toast({ title: "Erro na importação", description: err?.message, variant: "destructive" });
     } finally {
       setImportando(false);
+    }
+  };
+
+  // Leads que já estão na etapa ligada mas fora da esteira (ex.: antes da ligação existir)
+  const foraDaEsteira = useMemo(() => {
+    const etapa = rascunho?.esteira.etapa;
+    if (!etapa || esteiras.find((e) => e.id === rascunho?.esteira.id)?.etapa !== etapa) return [];
+    const alvo = getStageForStatus(etapa)?.id;
+    return ((leads || []) as LeadEsteira[]).filter(
+      (l) => l.esteira_id !== rascunho!.esteira.id && alvo && getStageForStatus(l.status)?.id === alvo
+    );
+  }, [rascunho, esteiras, leads]);
+
+  const colocarEtapaNaEsteira = async () => {
+    if (!rascunho || !foraDaEsteira.length) return;
+    try {
+      await colocarNaEsteira(foraDaEsteira.map((l) => l.id), rascunho.esteira.id);
+      toast({ title: "Leads colocados na esteira", description: `${foraDaEsteira.length} lead(s) no primeiro passo.` });
+      await refreshLeads();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err?.message, variant: "destructive" });
     }
   };
 
@@ -573,6 +597,7 @@ export function EsteirasModule() {
                   >
                     <div className="font-medium truncate">{e.nome}</div>
                     <div className="text-xs text-muted-foreground">
+                      {e.etapa ? `Etapa ${e.etapa} · ` : ""}
                       {passosDe(e.id).length} passo(s) · {qtd} lead(s)
                     </div>
                   </button>
@@ -597,6 +622,42 @@ export function EsteirasModule() {
                       placeholder="disparo"
                       onChange={(ev) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, ao_concluir_tag: ev.target.value } })}
                     />
+                  </div>
+                  <div className="grid gap-1 sm:col-span-2">
+                    <Label className="text-xs">Etapa de Negócios ligada</Label>
+                    <Select
+                      value={rascunho.esteira.etapa || "nenhuma"}
+                      onValueChange={(v) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, etapa: v === "nenhuma" ? null : v } })}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[50vh]">
+                        <SelectItem value="nenhuma">Nenhuma (só manual)</SelectItem>
+                        {NEGOCIO_STAGES.map((st) => {
+                          const usadaPor = esteiras.find((x) => x.id !== rascunho.esteira.id && x.etapa === st.value);
+                          return (
+                            <SelectItem key={st.id} value={st.value}>
+                              {st.name}
+                              {usadaPor ? ` (já ligada a ${usadaPor.nome})` : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      Quem for movido para essa etapa em Negócios (ou em Leads) entra nesta esteira no primeiro passo. Ao sair da etapa, sai da esteira.
+                    </p>
+                    {foraDaEsteira.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-2 py-1.5 text-xs">
+                        <span>
+                          {foraDaEsteira.length} lead(s) já estão na etapa <b>{rascunho.esteira.etapa}</b> e fora desta esteira.
+                        </span>
+                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={colocarEtapaNaEsteira}>
+                          Colocar no D1
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <p className="sm:col-span-2 text-[11px] text-muted-foreground">
                     Variáveis: {"{{nome}}"} (primeiro nome), {"{{saudacao}}"}, {"{{meu_nome}}"}, {"{{data}}"}, {"{{hora}}"}. Separe mensagens com uma linha <code>===</code>.

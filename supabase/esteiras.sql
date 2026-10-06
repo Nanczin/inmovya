@@ -47,3 +47,53 @@ do $$ begin
 end $$;
 
 notify pgrst, 'reload schema';
+
+-- ===== Ligação Negócios <-> Esteiras =====
+alter table public.esteiras add column if not exists etapa text;
+
+-- Quando a etapa do lead muda para uma etapa ligada a uma esteira, ele entra nela no D1.
+-- Se sai de uma etapa ligada para outra sem esteira, sai da esteira.
+create or replace function public.lead_esteira_por_etapa()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_esteira uuid;
+begin
+  if tg_op = 'UPDATE' and new.status is not distinct from old.status then
+    return new;
+  end if;
+
+  select e.id into v_esteira
+  from public.esteiras e
+  where e.user_id = new.user_id
+    and e.etapa is not null
+    and lower(trim(e.etapa)) = lower(trim(coalesce(new.status, '')))
+  order by e.ordem, e.created_at
+  limit 1;
+
+  if v_esteira is not null then
+    if new.esteira_id is distinct from v_esteira then
+      new.esteira_id := v_esteira;
+      new.esteira_passo := 0;
+      new.esteira_proximo := now();
+    end if;
+  elsif new.esteira_id is not null
+        and exists (select 1 from public.esteiras e where e.id = new.esteira_id and e.etapa is not null) then
+    new.esteira_id := null;
+    new.esteira_passo := 0;
+    new.esteira_proximo := null;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_lead_esteira_por_etapa on public.leads;
+create trigger trg_lead_esteira_por_etapa
+before insert or update of status on public.leads
+for each row execute function public.lead_esteira_por_etapa();
+
+notify pgrst, 'reload schema';

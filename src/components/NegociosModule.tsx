@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { colocarNaEsteira } from "@/lib/esteiras";
 import {
@@ -64,17 +64,45 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState<string>("");
   const [bulkMoving, setBulkMoving] = useState(false);
-  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string }[]>([]);
+  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null }[]>([]);
+  const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string }[]>([]);
   const [bulkEsteira, setBulkEsteira] = useState<string>("");
 
+  // Esteiras ligadas às etapas (para mostrar no quadro)
   useEffect(() => {
-    if (!selectMode) return;
     supabase
       .from("esteiras")
-      .select("id, nome")
+      .select("id, nome, etapa")
       .order("ordem")
-      .then(({ data }) => setEsteirasLista((data as any) || []));
+      .then(({ data, error }) => !error && setEsteirasLista((data as any) || []));
+    supabase
+      .from("esteira_passos")
+      .select("id, esteira_id, ordem, titulo")
+      .order("ordem")
+      .then(({ data, error }) => !error && setPassosLista((data as any) || []));
   }, [selectMode]);
+
+  const esteiraDaEtapa = (stage: NegocioStage) =>
+    esteirasLista.find((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
+
+  const infoEsteira = (lead: Lead) => {
+    const l = lead as Lead & { esteira_id?: string | null; esteira_passo?: number | null; esteira_proximo?: string | null };
+    if (!l.esteira_id) return null;
+    const est = esteirasLista.find((e) => e.id === l.esteira_id);
+    if (!est) return null;
+    const ps = passosLista.filter((p) => p.esteira_id === est.id).sort((a, b) => a.ordem - b.ordem);
+    const idx = Math.min(l.esteira_passo || 0, Math.max(ps.length - 1, 0));
+    const prox = l.esteira_proximo ? new Date(l.esteira_proximo) : null;
+    const hoje = !prox || prox.getTime() <= new Date().setHours(23, 59, 59, 999);
+    return {
+      nome: est.nome,
+      passo: ps[idx]?.titulo || `Passo ${idx + 1}`,
+      total: ps.length,
+      idx,
+      quando: hoje ? "hoje" : prox!.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      hoje,
+    };
+  };
 
   const putSelectedInEsteira = async () => {
     if (!bulkEsteira || selectedIds.size === 0) return;
@@ -404,6 +432,28 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           {lead.observacoes}
         </div>
       )}
+      {(() => {
+        const est = infoEsteira(lead);
+        if (!est) return null;
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!selectMode) onNavigate?.("esteiras");
+            }}
+            className={`mt-2 w-full flex items-center gap-1 rounded border px-1.5 py-1 text-[10.5px] text-left ${
+              est.hoje ? "bg-green-50 border-green-200 text-green-800" : "bg-slate-50 border-slate-200 text-slate-600"
+            }`}
+            title="Abrir Esteiras"
+          >
+            <Workflow className="w-3 h-3 shrink-0" />
+            <span className="truncate">
+              {est.nome} · {est.passo} ({est.idx + 1}/{est.total || 1}) · {est.hoje ? "envio hoje" : `próx. ${est.quando}`}
+            </span>
+          </button>
+        );
+      })()}
       <div className="text-[11px] text-slate-500 mt-2">Chegou {formatChegou(lead.created_at)}</div>
 
       {selectMode ? null : isValidacao ? (
@@ -481,6 +531,20 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           {isValidacao && (
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
           )}
+          {(() => {
+            const est = esteiraDaEtapa(stage);
+            if (!est) return null;
+            return (
+              <button
+                type="button"
+                onClick={() => onNavigate?.("esteiras")}
+                className="mt-1 flex items-center gap-1 text-[10.5px] text-green-700 hover:underline"
+                title="Quem entra nesta etapa vai para esta esteira (D1)"
+              >
+                <Workflow className="w-3 h-3" /> Esteira: {est.nome}
+              </button>
+            );
+          })()}
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden pl-2 pr-1.5 pb-2 flex flex-col gap-2 [scrollbar-gutter:stable] [scrollbar-width:thin]">
           {stageLeads.map((lead) => renderCard(lead, isValidacao))}
