@@ -160,7 +160,15 @@ export function EsteirasModule() {
   const [rodando, setRodando] = useState(false);
   const [contagem, setContagem] = useState(0);
   const pararRef = useRef(false);
-  const [meuNome, setMeuNomeState] = useState(getMeuNome());
+  // {{meu_nome}} vem do login (sem precisar digitar)
+  useEffect(() => {
+    if (getMeuNome()) return;
+    supabase.auth.getUser().then(({ data }) => {
+      const m = (data.user?.user_metadata || {}) as Record<string, string>;
+      const nome = (m.full_name || m.name || m.nome || "").trim().split(/\s+/)[0] || "";
+      if (nome) setMeuNome(nome);
+    });
+  }, []);
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
 
   // Bloco do dia: rodar uma esteira por vez (ex.: 70% de manhã, 50% à tarde)
@@ -484,19 +492,7 @@ export function EsteirasModule() {
           ) : (
             <>
               <div className="flex flex-col lg:flex-row lg:items-end gap-3 rounded-lg border bg-white p-3">
-                <div className="grid gap-1 flex-1 min-w-0">
-                  <Label className="text-xs">Seu nome nas mensagens ({"{{meu_nome}}"})</Label>
-                  <Input
-                    value={meuNome}
-                    onChange={(e) => {
-                      setMeuNomeState(e.target.value);
-                      setMeuNome(e.target.value);
-                    }}
-                    placeholder="Ex.: Estevão"
-                    className="h-9"
-                  />
-                </div>
-                <div className="text-xs text-muted-foreground lg:text-right">
+                <div className="text-xs text-muted-foreground flex-1 min-w-0">
                   <div>
                     Intervalo entre envios: <b>2 a 3 minutos</b> (aleatório)
                   </div>
