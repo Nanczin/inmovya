@@ -153,8 +153,19 @@ export function EsteirasModule() {
   const [meuNome, setMeuNomeState] = useState(getMeuNome());
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
 
-  const filaAuto = fila.filter((i) => !i.passo.so_colar);
-  const filaManual = fila.filter((i) => i.passo.so_colar);
+  // Bloco do dia: rodar uma esteira por vez (ex.: 70% de manhã, 50% à tarde)
+  const [filtroEsteira, setFiltroEsteira] = useState<string>("todas");
+  const contagemPorEsteira = useMemo(() => {
+    const c: Record<string, number> = {};
+    fila.forEach((i) => {
+      if (estado[i.lead.id]?.s === "enviado") return;
+      c[i.esteira.id] = (c[i.esteira.id] || 0) + 1;
+    });
+    return c;
+  }, [fila, estado]);
+  const filaVisivel = filtroEsteira === "todas" ? fila : fila.filter((i) => i.esteira.id === filtroEsteira);
+  const filaAuto = filaVisivel.filter((i) => !i.passo.so_colar);
+  const filaManual = filaVisivel.filter((i) => i.passo.so_colar);
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
 
   const esperar = (segundos: number) =>
@@ -322,6 +333,17 @@ export function EsteirasModule() {
       return { ...r, passos: ps };
     });
 
+  const [buscaLead, setBuscaLead] = useState("");
+  const resultadosBusca = useMemo(() => {
+    const t = buscaLead.trim().toLowerCase();
+    if (t.length < 2 || !rascunho) return [] as LeadEsteira[];
+    const dig = t.replace(/\D/g, "");
+    return ((leads || []) as LeadEsteira[])
+      .filter((l) => l.esteira_id !== rascunho.esteira.id)
+      .filter((l) => (l.nome || "").toLowerCase().includes(t) || (dig.length >= 3 && (l.telefone || "").replace(/\D/g, "").includes(dig)))
+      .slice(0, 10);
+  }, [buscaLead, leads, rascunho]);
+
   // ---------------- IMPORTAR ----------------
   const [plano, setPlano] = useState<PlanoImportacao | null>(null);
   const [importando, setImportando] = useState(false);
@@ -470,6 +492,35 @@ export function EsteirasModule() {
                   </Button>
                 )}
               </div>
+
+              {fila.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    disabled={rodando}
+                    onClick={() => setFiltroEsteira("todas")}
+                    className={`text-xs rounded-full border px-3 py-1 ${filtroEsteira === "todas" ? "bg-blue-800 text-white border-blue-800" : "bg-white hover:bg-slate-50"}`}
+                  >
+                    Todas ({Object.values(contagemPorEsteira).reduce((a: number, b: number) => a + b, 0)})
+                  </button>
+                  {esteiras
+                    .filter((e) => fila.some((i) => i.esteira.id === e.id))
+                    .map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        disabled={rodando}
+                        onClick={() => setFiltroEsteira(e.id)}
+                        className={`text-xs rounded-full border px-3 py-1 ${filtroEsteira === e.id ? "bg-blue-800 text-white border-blue-800" : "bg-white hover:bg-slate-50"}`}
+                      >
+                        {e.nome} ({contagemPorEsteira[e.id] || 0})
+                      </button>
+                    ))}
+                  <span className="text-[11px] text-muted-foreground self-center ml-1">
+                    Escolha uma esteira para rodar só ela agora e as outras em outro horário.
+                  </span>
+                </div>
+              )}
 
               {fila.length === 0 && (
                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -733,8 +784,48 @@ export function EsteirasModule() {
 
                 <div className="rounded-lg border bg-white p-3">
                   <h3 className="text-sm font-semibold mb-2">Leads nesta esteira ({leadsDaEsteiraSel.length})</h3>
+                  <div className="mb-3">
+                    <Input
+                      value={buscaLead}
+                      onChange={(ev) => setBuscaLead(ev.target.value)}
+                      placeholder="Adicionar lead: buscar por nome ou telefone..."
+                      className="h-9"
+                    />
+                    {resultadosBusca.length > 0 && (
+                      <div className="mt-1 rounded-md border divide-y max-h-56 overflow-y-auto">
+                        {resultadosBusca.map((l) => {
+                          const atual = l.esteira_id ? esteiras.find((e) => e.id === l.esteira_id)?.nome : null;
+                          return (
+                            <div key={l.id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                              <span className="flex-1 min-w-0 truncate">
+                                {l.nome} <span className="text-xs text-muted-foreground">{l.telefone}</span>
+                                {atual && <span className="text-[11px] text-amber-700"> · hoje em {atual}</span>}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs shrink-0"
+                                onClick={async () => {
+                                  try {
+                                    await colocarNaEsteira([l.id], rascunho.esteira.id);
+                                    toast({ title: "Lead adicionado", description: `${l.nome} no primeiro passo.` });
+                                    setBuscaLead("");
+                                    await refreshLeads();
+                                  } catch (err: any) {
+                                    toast({ title: "Erro", description: err?.message, variant: "destructive" });
+                                  }
+                                }}
+                              >
+                                {atual ? "Mover para cá" : "Adicionar"}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   {leadsDaEsteiraSel.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Coloque leads aqui pela aba Negócios: “Selecionar vários” → “Pôr na esteira”.</p>
+                    <p className="text-xs text-muted-foreground">Busque acima, ou na aba Negócios use “Selecionar vários” → “Pôr na esteira”, ou o botão de esteira no card.</p>
                   ) : (
                     <div className="divide-y max-h-80 overflow-y-auto">
                       {leadsDaEsteiraSel.map((l) => {

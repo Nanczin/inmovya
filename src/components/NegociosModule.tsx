@@ -10,7 +10,8 @@ import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
 import { LeadTimeline } from "@/components/LeadTimeline";
-import { colocarNaEsteira } from "@/lib/esteiras";
+import { colocarNaEsteira, tirarDaEsteira } from "@/lib/esteiras";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   NEGOCIO_PHASES,
   NEGOCIO_STAGES,
@@ -81,6 +82,21 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       .order("ordem")
       .then(({ data, error }) => !error && setPassosLista((data as any) || []));
   }, [selectMode]);
+
+  const setLeadEsteira = async (lead: Lead, esteiraId: string | null) => {
+    try {
+      if (esteiraId) await colocarNaEsteira([lead.id], esteiraId);
+      else await tirarDaEsteira([lead.id]);
+      const nome = esteiraId ? esteirasLista.find((e) => e.id === esteiraId)?.nome : null;
+      toast({
+        title: esteiraId ? "Esteira definida" : "Saiu da esteira",
+        description: esteiraId ? `${lead.nome} em ${nome}, começando no D1.` : lead.nome,
+      });
+      await refreshLeads();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err?.message || "Tente novamente.", variant: "destructive" });
+    }
+  };
 
   const esteiraDaEtapa = (stage: NegocioStage) =>
     esteirasLista.find((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
@@ -407,6 +423,48 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         >
           <History className="w-3.5 h-3.5" />
         </button>
+        {!selectMode && esteirasLista.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                className="shrink-0 -mt-0.5 -mr-1 p-1 rounded text-slate-400 hover:text-green-700 hover:bg-green-50"
+                title="Escolher esteira"
+                aria-label="Escolher esteira do lead"
+              >
+                <Workflow className="w-3.5 h-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuLabel className="text-xs">Esteira deste lead</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {esteirasLista.map((est) => {
+                const atual = (lead as any).esteira_id === est.id;
+                return (
+                  <DropdownMenuItem
+                    key={est.id}
+                    disabled={atual}
+                    onSelect={() => setLeadEsteira(lead, est.id)}
+                    className="text-sm"
+                  >
+                    {atual ? "✓ " : ""}
+                    {est.nome}
+                    {est.etapa ? <span className="ml-auto text-[10px] text-muted-foreground">{est.etapa}</span> : null}
+                  </DropdownMenuItem>
+                );
+              })}
+              {(lead as any).esteira_id && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setLeadEsteira(lead, null)} className="text-sm text-red-600">
+                    Tirar da esteira
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-1 mt-2 min-w-0">
