@@ -267,10 +267,10 @@ export function EsteirasModule() {
       });
       return;
     }
-    if (!extensaoAtualizada("1.2.2")) {
+    if (!extensaoAtualizada("1.2.3")) {
       toast({
         title: "Atualize o Inmovya Scale",
-        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.2 — anexos e intervalo entre mensagens). Depois recarregue esta página e o WhatsApp Web.",
+        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.3 — anexos, legendas e intervalo entre mensagens). Depois recarregue esta página e o WhatsApp Web.",
         variant: "destructive",
       });
       return;
@@ -287,7 +287,7 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
-        const anexos = await prepararAnexosParaEnvio(item.passo.anexos);
+        const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome);
         await enviarPeloWhatsApp(item.telefone, texto, anexos);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto);
         enviados++;
@@ -527,6 +527,17 @@ export function EsteirasModule() {
     setEnviandoAnexo(null);
     if (novos.length) toast({ title: `${novos.length} anexo(s) adicionado(s)`, description: "Clique em Salvar esteira para guardar." });
   };
+  const mudarAnexo = (idx: number, chave: string, campos: Partial<EsteiraAnexo>) =>
+    setRascunho((r) =>
+      r
+        ? {
+            ...r,
+            passos: r.passos.map((p, i) =>
+              i === idx ? { ...p, anexos: (p.anexos || []).map((a) => ((a.local_id || a.path) === chave ? { ...a, ...campos } : a)) } : p
+            ),
+          }
+        : r
+    );
   const tirarAnexo = (idx: number, path: string) =>
     setRascunho((r) =>
       r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: (p.anexos || []).filter((a) => (a.local_id || a.path) !== path) } : p)) } : r
@@ -1135,16 +1146,48 @@ export function EsteirasModule() {
                       </div>
                       <Textarea rows={4} value={p.mensagem} onChange={(ev) => mudarPasso(idx, "mensagem", ev.target.value)} placeholder="Oi {{nome}}, {{saudacao}}! ..." />
                       <div className="flex flex-wrap items-center gap-2">
-                        {(p.anexos || []).map((a) => (
-                          <span key={a.local_id || a.path} className="inline-flex items-center gap-1 rounded-full border bg-slate-50 px-2 py-0.5 text-xs max-w-full">
-                            <Paperclip className="w-3 h-3 shrink-0" />
-                            <span className="truncate max-w-[180px]" title={a.name}>{a.name}</span>
-                            <span className="text-muted-foreground">({tamanhoLegivel(a.size)})</span>
-                            <button type="button" className="text-red-600 hover:text-red-800" onClick={() => tirarAnexo(idx, (a.local_id || a.path)!)} title="Tirar anexo">
-                              <XIcon className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
+                        {(p.anexos || []).map((a) => {
+                          const chave = (a.local_id || a.path)!;
+                          const modo = (a.legenda ?? null) !== null ? "propria" : a.legenda_texto ? "texto" : "nenhuma";
+                          return (
+                            <div key={chave} className="w-full flex flex-col sm:flex-row sm:items-center gap-1.5 rounded-md border bg-slate-50 px-2 py-1.5 text-xs">
+                              <span className="inline-flex items-center gap-1 min-w-0 sm:w-56 shrink-0">
+                                <Paperclip className="w-3 h-3 shrink-0" />
+                                <span className="truncate" title={a.name}>{a.name}</span>
+                                <span className="text-muted-foreground shrink-0">({tamanhoLegivel(a.size)})</span>
+                              </span>
+                              <Select
+                                value={modo}
+                                onValueChange={(v) =>
+                                  mudarAnexo(idx, chave, {
+                                    legenda: v === "propria" ? a.legenda || "" : null,
+                                    legenda_texto: v === "texto",
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="h-7 w-full sm:w-[190px] text-xs bg-white">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="nenhuma">Sem legenda</SelectItem>
+                                  <SelectItem value="texto">Legenda = texto do passo</SelectItem>
+                                  <SelectItem value="propria">Escrever legenda</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {modo === "propria" && (
+                                <Input
+                                  value={a.legenda || ""}
+                                  placeholder="Ex.: {{nome}}, segue a planta do apartamento"
+                                  onChange={(ev) => mudarAnexo(idx, chave, { legenda: ev.target.value })}
+                                  className="h-7 text-xs flex-1 bg-white"
+                                />
+                              )}
+                              <button type="button" className="text-red-600 hover:text-red-800 self-end sm:self-auto" onClick={() => tirarAnexo(idx, chave)} title="Tirar anexo">
+                                <XIcon className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
                         <button
                           type="button"
                           disabled={enviandoAnexo === idx}
@@ -1155,7 +1198,7 @@ export function EsteirasModule() {
                           Anexar arquivo do computador
                         </button>
                         <span className="text-[11px] text-muted-foreground">
-                          PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB · vão depois do texto · o arquivo fica no seu computador (não mova nem apague)
+                          PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB · com “Legenda = texto do passo”, o texto vai junto do arquivo; senão o texto vai antes · o arquivo fica no seu computador (não mova nem apague)
                         </span>
                       </div>
                     </div>

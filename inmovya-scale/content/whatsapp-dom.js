@@ -227,9 +227,12 @@ window.IS.WhatsAppDOM = {
       const candidates = document.querySelectorAll(selector);
       for (let i = candidates.length - 1; i >= 0; i--) {
         const candidate = candidates[i];
-        if (candidate !== messageInput && candidate.offsetParent !== null && !candidate.closest('#inmovya-scale-root')) {
-          return candidate;
-        }
+        if (candidate === messageInput || candidate.offsetParent === null || candidate.closest('#inmovya-scale-root')) continue;
+        // nunca confundir com a caixa de pesquisa, a lista de conversas ou o campo de mensagem
+        if (candidate.closest('#side, #pane-side, #main footer, header')) continue;
+        const label = `${candidate.getAttribute('aria-label') || ''} ${candidate.getAttribute('aria-placeholder') || ''} ${candidate.getAttribute('title') || ''}`.toLowerCase();
+        if (/pesquis|search|buscar|procurar/.test(label)) continue;
+        return candidate;
       }
     }
     return null;
@@ -299,6 +302,8 @@ window.IS.WhatsAppDOM = {
   },
 
   findAttachmentSendButton() {
+    const direct = this.findPreviewSendButton();
+    if (direct) return direct;
     const captionInput = this.findMediaCaptionInput();
     let previewRoot = captionInput?.parentElement || null;
     for (let level = 0; previewRoot && level < 10; level++, previewRoot = previewRoot.parentElement) {
@@ -480,11 +485,33 @@ window.IS.WhatsAppDOM = {
 
   hasMediaPreview() {
     if (this.findMediaCaptionInput()) return true;
-    return Array.from(document.querySelectorAll('[role="dialog"] span[data-icon="send"], [data-animate-modal-popup] span[data-icon="send"]'))
-      .some(icon => {
-        const button = icon.closest('button, div[role="button"]');
-        return button && button.offsetParent !== null && !button.closest('#inmovya-scale-root');
-      });
+    return !!this.findPreviewSendButton();
+  },
+
+  // Botão "Enviar" da tela de prévia do anexo (fora do rodapé da conversa e da lista lateral)
+  findPreviewSendButton() {
+    const icons = document.querySelectorAll('[data-icon="send"], [data-icon*="send" i], [data-icon="wds-ic-send-filled"]');
+    for (let i = icons.length - 1; i >= 0; i--) {
+      const button = icons[i].closest('button, div[role="button"], span[role="button"]');
+      if (!button || button.offsetParent === null) continue;
+      if (button.closest('#inmovya-scale-root, #main footer, #side, #pane-side')) continue;
+      return button;
+    }
+    const labeled = document.querySelectorAll('button[aria-label], div[role="button"][aria-label]');
+    for (let i = labeled.length - 1; i >= 0; i--) {
+      const button = labeled[i];
+      if (button.offsetParent === null || button.closest('#inmovya-scale-root, #main footer, #side, #pane-side')) continue;
+      if (/^(enviar|send)$/i.test((button.getAttribute('aria-label') || '').trim())) return button;
+    }
+    return null;
+  },
+
+  // Guarda o motivo da última falha para o Inmovya mostrar
+  falha(motivo) {
+    // guarda o primeiro motivo (a causa); os seguintes são consequência
+    if (!this.ultimoErro) this.ultimoErro = motivo;
+    window.IS.error(motivo);
+    return false;
   },
 
   async waitForMediaPreview(timeoutMs) {
@@ -516,14 +543,14 @@ window.IS.WhatsAppDOM = {
   async attachFilesViaMenuInput(files) {
     if (!files.length) return false;
     const isMedia = files.every(file => /^(image|video)\//i.test(file.type || ''));
-    if (this.hasMediaPreview() && !await this.waitForMediaPreviewClosed()) return false;
-    if (!this.openAttachmentMenu()) return false;
+    if (this.hasMediaPreview() && !await this.waitForMediaPreviewClosed()) return this.falha('Havia uma prévia de anexo aberta no WhatsApp.');
+    if (!this.openAttachmentMenu()) return this.falha('Botão de anexo (📎/+) do WhatsApp não encontrado.');
     await this.delay(500);
     let input = isMedia ? await this.waitForMediaFileInput(3000) : await this.waitForDocumentFileInput(3000);
     if (!input && isMedia) input = await this.waitForDocumentFileInput(1500);
     if (!input) {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      return false;
+      return this.falha(`Opção "${isMedia ? 'Fotos e vídeos' : 'Documento'}" do menu de anexo não encontrada.`);
     }
     const transfer = new DataTransfer();
     files.forEach(file => transfer.items.add(file));
@@ -535,7 +562,8 @@ window.IS.WhatsAppDOM = {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     const hasVideo = files.some(file => /^video\//i.test(file.type || ''));
-    return this.waitForMediaPreview(hasVideo ? 45000 : 20000);
+    if (await this.waitForMediaPreview(hasVideo ? 45000 : 20000)) return true;
+    return this.falha('O WhatsApp não abriu a prévia do anexo (arquivo não aceito).');
   },
 
   async injectFilesIntoChat(files) {
@@ -610,8 +638,7 @@ window.IS.WhatsAppDOM = {
           })))
         : nativeResult;
       if (!accepted) {
-        window.IS.error('O WhatsApp não aceitou os arquivos na conversa.');
-        return false;
+        return this.falha('O WhatsApp não aceitou os arquivos na conversa.');
       }
 
       await this.delay(1800);
@@ -619,22 +646,19 @@ window.IS.WhatsAppDOM = {
       if (caption) {
         captionInput = await this.waitForMediaCaptionInput();
         if (!captionInput || !await this.insertTextIntoInput(captionInput, caption)) {
-          window.IS.error('Campo de legenda do WhatsApp não encontrado.');
-          return false;
+          return this.falha('Campo de legenda do WhatsApp não encontrado.');
         }
         await this.delay(250);
       }
 
-      if (!await this.triggerMediaSend(captionInput)) return false;
+      if (!await this.triggerMediaSend(captionInput)) return this.falha('Botão Enviar da prévia do anexo não encontrado.');
       const containsVideo = attachments.some(attachment => (attachment.type || '').toLowerCase().startsWith('video/'));
       if (!await this.waitForMediaPreviewClosed(containsVideo ? 45000 : 20000)) {
-        window.IS.error('O WhatsApp não confirmou o envio do anexo antes do próximo item.');
-        return false;
+        return this.falha('O WhatsApp não confirmou o envio do anexo antes do próximo item.');
       }
       return true;
     } catch (error) {
-      window.IS.error('Erro ao enviar anexos', error);
-      return false;
+      return this.falha(`Erro ao enviar anexo: ${error?.message || error}`);
     }
   },
 
@@ -648,8 +672,7 @@ window.IS.WhatsAppDOM = {
           })))
         : nativeResult;
       if (!accepted) {
-        window.IS.error('O WhatsApp não aceitou os documentos na conversa.');
-        return false;
+        return this.falha('O WhatsApp não aceitou os documentos na conversa.');
       }
 
       await this.delay(1800);
@@ -657,20 +680,17 @@ window.IS.WhatsAppDOM = {
       if (caption) {
         captionInput = await this.waitForMediaCaptionInput();
         if (!captionInput || !await this.insertTextIntoInput(captionInput, caption)) {
-          window.IS.error('Campo de legenda do documento não encontrado.');
-          return false;
+          return this.falha('Campo de legenda do documento não encontrado.');
         }
         await this.delay(250);
       }
-      if (!await this.triggerDocumentSend()) return false;
+      if (!await this.triggerDocumentSend()) return this.falha('Botão Enviar da prévia do documento não encontrado.');
       if (!await this.waitForMediaPreviewClosed(30000)) {
-        window.IS.error('O WhatsApp não confirmou o envio do documento antes do próximo item.');
-        return false;
+        return this.falha('O WhatsApp não confirmou o envio do documento antes do próximo item.');
       }
       return true;
     } catch (error) {
-      window.IS.error('Erro ao enviar documentos', error);
-      return false;
+      return this.falha(`Erro ao enviar documento: ${error?.message || error}`);
     }
   },
 
@@ -757,9 +777,9 @@ window.IS.WhatsAppDOM = {
         currentAttachment += 1;
         this.updateSendMask(currentAttachment, normalizedAttachments.length);
         if (this.isMediaAttachment(attachment)) {
-          const caption = attachment.useCaption ? message : '';
+          const caption = attachment.caption || (attachment.useCaption ? message : '');
           if (!await this.sendAttachmentBatch([attachment], caption)) return false;
-        } else if (!await this.sendDocumentBatch([attachment], attachment.useCaption ? message : '')) {
+        } else if (!await this.sendDocumentBatch([attachment], attachment.caption || (attachment.useCaption ? message : ''))) {
           return false;
         }
         // A prévia pode desaparecer antes de o WhatsApp reconstruir totalmente

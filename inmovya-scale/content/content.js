@@ -36,6 +36,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'campaign_auto_send') {
     (async () => {
       try {
+        window.IS.WhatsAppDOM.ultimoErro = '';
         let input = await window.IS.WhatsAppDOM.waitForMessageInput(30000);
         if (!input) throw new Error('A conversa do WhatsApp não ficou pronta.');
         input.focus();
@@ -63,6 +64,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             type: item.type || 'application/octet-stream',
             size: item.size || 0,
             data: item.data,
+            caption: String(item.caption || ''),
             useCaption: !!item.useCaption
           });
         });
@@ -75,7 +77,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             gapMaxMs: Number(request.gapMaxMs) || 0
           }
         );
-        if (!sent) throw new Error('O WhatsApp não confirmou o envio da campanha.');
+        if (!sent) throw new Error(window.IS.WhatsAppDOM.ultimoErro || 'O WhatsApp não confirmou o envio da campanha.');
 
         sendResponse({ ok: true });
       } catch (error) {

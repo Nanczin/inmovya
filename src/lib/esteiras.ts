@@ -48,6 +48,8 @@ export interface EsteiraAnexo {
   name: string;
   type: string;
   size: number;
+  legenda?: string | null; // legenda própria do anexo (aceita {{nome}}, {{saudacao}}...)
+  legenda_texto?: boolean; // usa o texto do passo como legenda deste anexo
 }
 
 export const ANEXOS_BUCKET = "esteira-anexos";
@@ -124,9 +126,10 @@ const blobParaDataUrl = (blob: Blob) =>
   });
 
 /** Lê os anexos do computador e devolve no formato que a extensão envia no WhatsApp. */
-export async function prepararAnexosParaEnvio(anexos?: EsteiraAnexo[] | null) {
+export async function prepararAnexosParaEnvio(anexos?: EsteiraAnexo[] | null, leadNome = "") {
   const lista = Array.isArray(anexos) ? anexos : [];
-  const out: { id: string; name: string; type: string; size: number; data: string; useCaption: boolean }[] = [];
+  const out: { id: string; name: string; type: string; size: number; data: string; useCaption: boolean; caption: string }[] = [];
+  let textoJaUsado = false;
   for (const a of lista) {
     let blob: Blob | null = null;
     if (a.local_id) {
@@ -144,7 +147,10 @@ export async function prepararAnexosParaEnvio(anexos?: EsteiraAnexo[] | null) {
     }
     if (!blob) continue;
     const data = await blobParaDataUrl(blob.type ? blob : new Blob([blob], { type: a.type }));
-    out.push({ id: a.local_id || a.path || a.name, name: a.name, type: a.type, size: a.size, data, useCaption: false });
+    const caption = (a.legenda || "").trim() ? montarMensagem(String(a.legenda), leadNome) : "";
+    const useCaption = !caption && !!a.legenda_texto && !textoJaUsado;
+    if (useCaption) textoJaUsado = true;
+    out.push({ id: a.local_id || a.path || a.name, name: a.name, type: a.type, size: a.size, data, useCaption, caption });
   }
   return out;
 }
