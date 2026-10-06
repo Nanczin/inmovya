@@ -905,11 +905,6 @@ export function EsteirasModule() {
               <Button variant="outline" className="w-full" onClick={novaEsteira}>
                 <Plus className="w-4 h-4 mr-1" /> Nova esteira
               </Button>
-              {!esteiras.some((e) => passosDe(e.id).some((p) => /^P[1-7]$/i.test(p.etapa || ""))) && (
-                <Button variant="outline" className="w-full text-xs" onClick={criarProspeccao} title="Cria a esteira ligada às colunas P1 a P7 do Negócios">
-                  <Plus className="w-4 h-4 mr-1" /> Criar esteira Prospecção (P1–P7)
-                </Button>
-              )}
             </div>
 
             {rascunho ? (
@@ -1006,21 +1001,6 @@ export function EsteirasModule() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <Label className="text-xs">Depois do último passo, esperar quantos dias sem resposta?</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={0}
-                        className="h-9 w-20"
-                        value={rascunho.esteira.ao_concluir_dias ?? 0}
-                        onChange={(ev) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, ao_concluir_dias: Math.max(0, parseInt(ev.target.value) || 0) } })}
-                      />
-                      <span className="text-[11px] text-muted-foreground">
-                        dia(s). Passado o prazo, o lead vai sozinho para a coluna e recebe a etiqueta acima. Se ele responder antes, mova o card (ex.: Respondeu) e ele sai da esteira.
-                      </span>
-                    </div>
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
                     <Label className="text-xs">Coluna de entrada no Negócios (quem cai nela entra no 1º passo)</Label>
