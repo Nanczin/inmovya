@@ -183,6 +183,14 @@ export function EsteirasModule() {
 
   // Bloco do dia: rodar uma esteira por vez (ex.: 70% de manhã, 50% à tarde)
   const [filtroEsteira, setFiltroEsteira] = useState<string>("todas");
+  // 2ª rodada: leads que já receberam hoje e cujo próximo passo ficou para outro dia
+  const inicioDeHoje = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const segundaRodada = agendados.filter(
+    (a) =>
+      a.lead.esteira_ultimo_envio &&
+      new Date(a.lead.esteira_ultimo_envio).getTime() >= inicioDeHoje() &&
+      (filtroEsteira === "todas" || a.esteira.id === filtroEsteira)
+  );
   const contagemPorEsteira = useMemo(() => {
     const c: Record<string, number> = {};
     fila.forEach((i) => {
@@ -287,6 +295,19 @@ export function EsteirasModule() {
     } catch (err: any) {
       toast({ title: "Erro", description: err?.message, variant: "destructive" });
     }
+  };
+
+  const liberarSegundaRodada = async () => {
+    const ids = segundaRodada.map((a) => a.lead.id);
+    if (!ids.length) return;
+    if (!window.confirm(`Liberar o próximo passo hoje para ${ids.length} lead(s) que já receberam a esteira hoje?`)) return;
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from("leads").update({ esteira_proximo: new Date().toISOString() }).in("id", ids.slice(i, i + 200));
+      if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
+    }
+    setEstado({});
+    await refreshLeads();
+    toast({ title: "2ª rodada liberada", description: `${ids.length} lead(s) voltaram para a fila de hoje com o próximo passo.` });
   };
 
   // ---------------- EDITOR ----------------
@@ -536,9 +557,16 @@ export function EsteirasModule() {
                     <Square className="w-4 h-4 mr-1" /> Parar {contagem > 0 ? `(próximo em ${Math.floor(contagem / 60)}:${String(contagem % 60).padStart(2, "0")})` : ""}
                   </Button>
                 ) : (
+                  <>
+                  {segundaRodada.length > 0 && (
+                    <Button variant="outline" className="h-10" onClick={liberarSegundaRodada} title="Quem já recebeu hoje recebe o próximo passo ainda hoje">
+                      <Clock className="w-4 h-4 mr-1" /> 2ª rodada hoje ({segundaRodada.length})
+                    </Button>
+                  )}
                   <Button className="h-10 bg-green-600 hover:bg-green-700 text-white" disabled={!selecionados.length} onClick={rodar}>
                     <Play className="w-4 h-4 mr-1" /> Rodar envio ({selecionados.length})
                   </Button>
+                  </>
                 )}
               </div>
 
