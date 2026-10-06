@@ -26,6 +26,9 @@ import {
   avancarLead,
   checarExtensao,
   extensaoAtualizada,
+  getDoisHoje,
+  setDoisHoje,
+  enviadoHoje,
   getIntervaloMensagens,
   setIntervaloMensagens,
   colocarNaEsteira,
@@ -190,6 +193,15 @@ export function EsteirasModule() {
     });
   }, []);
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
+  // Leads que fazem 2 esteiras hoje: só vão para o próximo dia depois da 2ª
+  const [doisHoje, setDoisHojeState] = useState<Set<string>>(getDoisHoje());
+  const alternarDois = (id: string) =>
+    setDoisHojeState((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      setDoisHoje(n);
+      return n;
+    });
   const [gap, setGap] = useState(getIntervaloMensagens());
   const mudarGap = (campo: "min" | "max", v: number) => {
     const n = { ...gap, [campo]: Math.max(0, v || 0) };
@@ -280,6 +292,7 @@ export function EsteirasModule() {
     pararRef.current = false;
     setRodando(true);
     let enviados = 0;
+    const prontosParaSegunda: string[] = [];
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
@@ -289,7 +302,10 @@ export function EsteirasModule() {
         const texto = textoDo(item);
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome);
         await enviarPeloWhatsApp(item.telefone, texto, anexos);
-        await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto);
+        // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
+        const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
+        await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
+        if (proximoHoje) prontosParaSegunda.push(item.lead.id);
         enviados++;
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado" } }));
         setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; });
@@ -302,6 +318,14 @@ export function EsteirasModule() {
     setRodando(false);
     pararRef.current = false;
     await refreshLeads();
+    // quem faz 2 esteiras hoje volta para a fila com o próximo passo, pronto para a 2ª rodada
+    if (prontosParaSegunda.length) {
+      setEstado((s) => {
+        const n = { ...s };
+        prontosParaSegunda.forEach((id) => delete n[id]);
+        return n;
+      });
+    }
     toast({ title: "Esteira de hoje", description: `${enviados} mensagem(ns) enviada(s).` });
   };
 
@@ -804,7 +828,22 @@ export function EsteirasModule() {
               {filaAuto.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground">
-                    Confira as mensagens antes de rodar (clique no texto para personalizar). Desmarque quem não deve receber hoje.
+                    Confira as mensagens antes de rodar (clique no texto para personalizar). Desmarque quem não deve receber hoje.{" "}
+                    <button
+                      type="button"
+                      disabled={rodando}
+                      className="underline text-purple-700"
+                      onClick={() => {
+                        const todos = filaAuto.map((i) => i.lead.id);
+                        const marcarTodos = todos.some((id) => !doisHoje.has(id));
+                        const n = new Set(doisHoje);
+                        todos.forEach((id) => (marcarTodos ? n.add(id) : n.delete(id)));
+                        setDoisHoje(n);
+                        setDoisHojeState(n);
+                      }}
+                    >
+                      {filaAuto.some((i) => !doisHoje.has(i.lead.id)) ? "Todos fazem 2 esteiras hoje" : "Ninguém faz 2 esteiras hoje"}
+                    </button>
                   </p>
                   {filaAuto.map((item) => {
                     const st = estado[item.lead.id]?.s || "pendente";
@@ -840,6 +879,19 @@ export function EsteirasModule() {
                                 </span>
                               )}
                               {st === "pulado" && <span className="text-xs text-muted-foreground">adiado para amanhã</span>}
+                              <button
+                                type="button"
+                                disabled={rodando || st === "enviado"}
+                                onClick={() => alternarDois(item.lead.id)}
+                                title="Este lead faz 2 esteiras hoje? Se sim, depois do 1º envio ele recebe o próximo passo ainda hoje e só depois do 2º vai para o próximo dia."
+                                className={`text-[11px] rounded px-1.5 py-0.5 border ${doisHoje.has(item.lead.id) ? "bg-purple-600 text-white border-purple-600" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                              >
+                                {doisHoje.has(item.lead.id)
+                                  ? enviadoHoje(item.lead.esteira_ultimo_envio)
+                                    ? "2ª esteira de hoje"
+                                    : "2 esteiras hoje ✓"
+                                  : "2 esteiras hoje?"}
+                              </button>
                               {!!item.passo.anexos?.length && (
                                 <span className="text-[11px] rounded bg-slate-100 px-1.5 py-0.5 inline-flex items-center gap-1" title={item.passo.anexos.map((a) => a.name).join(", ")}>
                                   <Paperclip className="w-3 h-3" /> {item.passo.anexos.length}

@@ -331,7 +331,8 @@ export async function avancarLead(
   esteira: Esteira,
   passos: EsteiraPasso[],
   passoEnviado: EsteiraPasso,
-  detalhe: string
+  detalhe: string,
+  opcoes: { proximoHoje?: boolean } = {}
 ) {
   const indice = passos.findIndex((p) => p.id === passoEnviado.id);
   const proximo = passos[indice + 1];
@@ -345,7 +346,9 @@ export async function avancarLead(
     update = {
       ...(etapaDoPasso ? { status: etapaDoPasso } : {}),
       esteira_passo: indice + 1,
-      esteira_proximo: addDias(proximo.dias_espera ?? 1),
+      // 2 esteiras no dia: depois da 1ª, o próximo passo fica para hoje mesmo
+      // sem "2 esteiras hoje": vai sempre para o próximo dia (no mínimo 1 dia, mesmo se o passo estiver com 0)
+      esteira_proximo: opcoes.proximoHoje ? new Date().toISOString() : addDias(Math.max(1, proximo.dias_espera ?? 1)),
       esteira_ultimo_envio: agora,
       ultimo_contato: agora,
     };
@@ -610,3 +613,26 @@ export async function finalizarEsteirasVencidas() {
 /** Etiquetas que a esteira coloca ao terminar (várias, separadas por vírgula no banco). */
 export const etiquetasDaEsteira = (e: { ao_concluir_tag?: string | null }) =>
   Array.from(new Set(String(e.ao_concluir_tag || "").split(",").map((t) => t.trim()).filter(Boolean)));
+
+// Leads marcados para fazer 2 esteiras hoje (guardado neste navegador, vale só para o dia)
+const DOIS_KEY = () => `inmovya_dois_hoje_${new Date().toLocaleDateString("pt-BR")}`;
+export const getDoisHoje = (): Set<string> => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DOIS_KEY()) || "[]"));
+  } catch {
+    return new Set();
+  }
+};
+export const setDoisHoje = (ids: Set<string>) => {
+  try {
+    localStorage.setItem(DOIS_KEY(), JSON.stringify(Array.from(ids)));
+  } catch {
+    /* ignore */
+  }
+};
+export const enviadoHoje = (iso?: string | null) => {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const hoje = new Date();
+  return d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth() && d.getDate() === hoje.getDate();
+};
