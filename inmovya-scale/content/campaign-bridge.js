@@ -1,5 +1,5 @@
 (() => {
-  const announceReady = () => window.dispatchEvent(new CustomEvent('INMOVYA_EXTENSION_READY'));
+  const announceReady = () => window.dispatchEvent(new CustomEvent('INMOVYA_EXTENSION_READY', { detail: { version: chrome.runtime.getManifest().version } }));
 
   window.addEventListener('INMOVYA_CHECK_EXTENSION', announceReady);
   window.addEventListener('INMOVYA_OPEN_WHATSAPP', event => {

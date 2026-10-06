@@ -25,6 +25,7 @@ import {
   tamanhoLegivel,
   avancarLead,
   checarExtensao,
+  extensaoAtualizada,
   colocarNaEsteira,
   enviarPeloWhatsApp,
   executarImportacao,
@@ -249,6 +250,14 @@ export function EsteirasModule() {
       toast({
         title: "Inmovya Scale não encontrado",
         description: "Abra este Inmovya no Chrome onde a extensão está instalada e ativa.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (unicos.length && !extensaoAtualizada("1.2.1")) {
+      toast({
+        title: "Atualize o Inmovya Scale para enviar anexos",
+        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.1). Depois recarregue esta página.",
         variant: "destructive",
       });
       return;

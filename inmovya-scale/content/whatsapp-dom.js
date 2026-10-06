@@ -1,4 +1,4 @@
-﻿// content/whatsapp-dom.js
+// content/whatsapp-dom.js
 window.IS = window.IS || {};
 
 window.IS.WhatsAppDOM = {
@@ -511,7 +511,40 @@ window.IS.WhatsAppDOM = {
     return false;
   },
 
+  // Coloca os arquivos pelo próprio botão de anexo do WhatsApp (📎 → Fotos e vídeos / Documento).
+  // É o caminho mais confiável: o WhatsApp aceita o "change" do campo de arquivo.
+  async attachFilesViaMenuInput(files) {
+    if (!files.length) return false;
+    const isMedia = files.every(file => /^(image|video)\//i.test(file.type || ''));
+    if (this.hasMediaPreview() && !await this.waitForMediaPreviewClosed()) return false;
+    if (!this.openAttachmentMenu()) return false;
+    await this.delay(500);
+    let input = isMedia ? await this.waitForMediaFileInput(3000) : await this.waitForDocumentFileInput(3000);
+    if (!input && isMedia) input = await this.waitForDocumentFileInput(1500);
+    if (!input) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return false;
+    }
+    const transfer = new DataTransfer();
+    files.forEach(file => transfer.items.add(file));
+    try {
+      input.files = transfer.files;
+    } catch (_error) {
+      Object.defineProperty(input, 'files', { value: transfer.files, configurable: true });
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    const hasVideo = files.some(file => /^video\//i.test(file.type || ''));
+    return this.waitForMediaPreview(hasVideo ? 45000 : 20000);
+  },
+
   async injectFilesIntoChat(files) {
+    // 1º: pelo botão de anexo (funciona com PDF, vídeo, imagem, áudio, documentos)
+    try {
+      if (await this.attachFilesViaMenuInput(files)) return true;
+    } catch (error) {
+      window.IS.error('Anexo pelo menu falhou, tentando arrastar', error);
+    }
     const messageInput = await this.waitForMessageInput();
     if (!messageInput) return false;
     messageInput.focus();

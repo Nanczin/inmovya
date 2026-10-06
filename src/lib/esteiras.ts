@@ -219,12 +219,22 @@ export const telefoneWhatsApp = (telefone?: string | null) => {
 };
 
 // ---------- Ponte com a extensão ----------
+// versão do Inmovya Scale que respondeu por último (versões antigas não informam)
+export let versaoExtensao: string | null = null;
+const versaoNum = (v: string | null) => (v || "0").split(".").map((n) => parseInt(n) || 0);
+export const extensaoAtualizada = (minima = "1.2.1") => {
+  const a = versaoNum(versaoExtensao), b = versaoNum(minima);
+  for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  return true;
+};
+
 export const checarExtensao = (timeoutMs = 1500) =>
   new Promise<boolean>((resolve) => {
     let done = false;
-    const onReady = () => {
+    const onReady = (ev?: Event) => {
       if (done) return;
       done = true;
+      versaoExtensao = (ev as CustomEvent | undefined)?.detail?.version || null;
       window.removeEventListener("INMOVYA_EXTENSION_READY", onReady);
       resolve(true);
     };
