@@ -8,6 +8,7 @@ export interface Esteira {
   nome: string;
   ordem: number;
   ao_concluir_tag: string | null;
+  ao_concluir_etapa?: string | null; // coluna do Negócios para onde o lead vai ao terminar (ex.: "Lista fria")
   etapa?: string | null; // etapa de Negócios ligada (ex.: "20%")
   empreendimento_id?: string | null; // projeto da esteira (null = geral)
   scale_id?: string | null;
@@ -34,6 +35,7 @@ export interface EsteiraPasso {
   so_colar: boolean;
   scale_id?: string | null;
   anexos?: EsteiraAnexo[] | null;
+  etapa?: string | null; // coluna do Negócios para onde o card vai quando este passo é enviado (ex.: "P3")
 }
 
 // ---------- Anexos (PDF, vídeo, imagem, áudio, documentos...) ----------
@@ -292,8 +294,11 @@ export async function avancarLead(
 
   let update: Record<string, any>;
   let concluiu = false;
+  // O card anda no Negócios junto com a esteira (ex.: enviou o passo 3 -> coluna P3)
+  const etapaDoPasso = (passoEnviado.etapa || "").trim();
   if (proximo) {
     update = {
+      ...(etapaDoPasso ? { status: etapaDoPasso } : {}),
       esteira_passo: indice + 1,
       esteira_proximo: addDias(proximo.dias_espera ?? 1),
       esteira_ultimo_envio: agora,
@@ -310,8 +315,15 @@ export async function avancarLead(
       esteira_ultimo_envio: agora,
       ultimo_contato: agora,
       tags,
-      // Regra: quem termina a esteira sai do funil (etapa limpa) e fica com a etiqueta de disparo
-      ...(tag ? { status: null } : {}),
+      // Ao terminar: vai para a coluna escolhida (ex.: Lista fria); sem coluna escolhida,
+      // regra antiga: sai do funil (etapa limpa) e fica com a etiqueta de disparo
+      ...((esteira.ao_concluir_etapa || "").trim()
+        ? { status: (esteira.ao_concluir_etapa || "").trim() }
+        : etapaDoPasso
+        ? { status: etapaDoPasso }
+        : tag
+        ? { status: null }
+        : {}),
     };
   }
 

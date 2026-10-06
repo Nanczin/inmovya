@@ -353,6 +353,45 @@ export function EsteirasModule() {
     setEsteiraSel(data.id);
   };
 
+  const criarProspeccao = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("esteiras")
+      .insert({
+        nome: "Prospecção P1–P7",
+        ordem: esteiras.length,
+        user_id: user.id,
+        ao_concluir_tag: null,
+        ao_concluir_etapa: "Lista fria",
+        etapa: "Primeiro impacto",
+      })
+      .select("*")
+      .single();
+    if (error) {
+      return toast({
+        title: "Erro ao criar",
+        description: /ao_concluir_etapa|etapa/.test(error.message) ? "Rode antes o SQL “P1..P7 ligados” no Supabase." : error.message,
+        variant: "destructive",
+      });
+    }
+    const linhas = Array.from({ length: 7 }, (_, i) => ({
+      esteira_id: data.id,
+      user_id: user.id,
+      ordem: i,
+      titulo: `P${i + 1}`,
+      mensagem: "",
+      dias_espera: i === 0 ? 0 : 1,
+      so_colar: false,
+      etapa: `P${i + 1}`,
+    }));
+    const { error: e2 } = await supabase.from("esteira_passos").insert(linhas);
+    if (e2) return toast({ title: "Erro ao criar os passos", description: e2.message, variant: "destructive" });
+    await carregar();
+    setEsteiraSel(data.id);
+    toast({ title: "Esteira Prospecção criada", description: "Escreva as mensagens de P1 a P7 e clique em Salvar esteira." });
+  };
+
   const salvarEsteira = async () => {
     if (!rascunho) return;
     setSalvando(true);
@@ -365,6 +404,7 @@ export function EsteirasModule() {
           nome: esteira.nome,
           ao_concluir_tag: esteira.ao_concluir_tag || null,
           etapa: esteira.etapa || null,
+          ...(esteiras.some((x) => "ao_concluir_etapa" in x) ? { ao_concluir_etapa: esteira.ao_concluir_etapa || null } : {}),
           // projeto não é mais usado nas esteiras: limpa se alguma tinha
           ...((esteira as any).empreendimento_id ? { empreendimento_id: null } : {}),
         })
@@ -373,6 +413,7 @@ export function EsteirasModule() {
 
       const atuais = passosDe(esteira.id);
       const temColunaAnexos = passos.some((x) => "anexos" in x);
+      const temColunaEtapa = passos.some((x) => "etapa" in x);
       const manter = new Set(ps.filter((p) => !p.id.startsWith("novo-")).map((p) => p.id));
       const remover = atuais.filter((p) => !manter.has(p.id)).map((p) => p.id);
       if (remover.length) {
@@ -388,6 +429,7 @@ export function EsteirasModule() {
           dias_espera: Math.max(0, Number(p.dias_espera) || 0),
           so_colar: !!p.so_colar,
           ...(temColunaAnexos || (p.anexos && p.anexos.length) ? { anexos: p.anexos || [] } : {}),
+          ...(temColunaEtapa || p.etapa ? { etapa: p.etapa || null } : {}),
         };
         const { error: eUp } = p.id.startsWith("novo-")
           ? await supabase.from("esteira_passos").insert({ ...row, user_id: user?.id })
@@ -826,7 +868,8 @@ export function EsteirasModule() {
                   >
                     <div className="font-medium truncate">{e.nome}</div>
                     <div className="text-xs text-muted-foreground">
-                      {e.etapa ? `Etapa ${e.etapa} · ` : ""}
+                      {e.etapa ? `Entra em ${e.etapa} · ` : ""}
+                      {passosDe(e.id).some((p) => p.etapa) ? `Colunas ${passosDe(e.id).filter((p) => p.etapa).map((p) => p.etapa).join(", ")} · ` : ""}
                       {passosDe(e.id).length} passo(s) · {qtd} lead(s)
                     </div>
                   </button>
@@ -835,6 +878,11 @@ export function EsteirasModule() {
               <Button variant="outline" className="w-full" onClick={novaEsteira}>
                 <Plus className="w-4 h-4 mr-1" /> Nova esteira
               </Button>
+              {!esteiras.some((e) => passosDe(e.id).some((p) => /^P[1-7]$/i.test(p.etapa || ""))) && (
+                <Button variant="outline" className="w-full text-xs" onClick={criarProspeccao} title="Cria a esteira ligada às colunas P1 a P7 do Negócios">
+                  <Plus className="w-4 h-4 mr-1" /> Criar esteira Prospecção (P1–P7)
+                </Button>
+              )}
             </div>
 
             {rascunho ? (
@@ -853,7 +901,26 @@ export function EsteirasModule() {
                     />
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
-                    <Label className="text-xs">Etapa de Negócios ligada</Label>
+                    <Label className="text-xs">Ao terminar a esteira, mover o card no Negócios para</Label>
+                    <Select
+                      value={rascunho.esteira.ao_concluir_etapa || "nenhuma"}
+                      onValueChange={(v) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, ao_concluir_etapa: v === "nenhuma" ? null : v } })}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[50vh]">
+                        <SelectItem value="nenhuma">Regra padrão (tira da etapa e põe a etiqueta acima)</SelectItem>
+                        {NEGOCIO_STAGES.map((st) => (
+                          <SelectItem key={st.id} value={st.value}>
+                            {st.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1 sm:col-span-2">
+                    <Label className="text-xs">Coluna de entrada no Negócios (quem cai nela entra no 1º passo)</Label>
                     <Select
                       value={rascunho.esteira.etapa || "nenhuma"}
                       onValueChange={(v) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, etapa: v === "nenhuma" ? null : v } })}
@@ -907,6 +974,22 @@ export function EsteirasModule() {
                         <label className="flex items-center gap-1 text-xs">
                           <Switch checked={!!p.so_colar} onCheckedChange={(v) => mudarPasso(idx, "so_colar", v)} /> só colar
                         </label>
+                        <div className="flex items-center gap-1 text-xs" title="Quando este passo for enviado, o card vai para esta coluna no Negócios">
+                          <span className="text-muted-foreground">coluna</span>
+                          <Select value={p.etapa || "nenhuma"} onValueChange={(v) => mudarPasso(idx, "etapa", v === "nenhuma" ? null : v)}>
+                            <SelectTrigger className="h-8 w-[130px] text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-[50vh]">
+                              <SelectItem value="nenhuma">— nenhuma —</SelectItem>
+                              {NEGOCIO_STAGES.map((st) => (
+                                <SelectItem key={st.id} value={st.value}>
+                                  {st.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <div className="flex gap-1 ml-auto">
                           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => moverPasso(idx, -1)} disabled={idx === 0}>
                             <ArrowUp className="w-4 h-4" />

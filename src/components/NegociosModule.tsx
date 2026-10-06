@@ -112,7 +112,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       .then(({ data, error }) => !error && setEsteirasLista((data as any) || []));
     supabase
       .from("esteira_passos")
-      .select("id, esteira_id, ordem, titulo")
+      .select("*")
       .order("ordem")
       .then(({ data, error }) => !error && setPassosLista((data as any) || []));
   }, [selectMode]);
@@ -141,6 +141,12 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   };
 
   const esteiraDaEtapa = (stage: NegocioStage) => {
+    // coluna ligada a um passo (ex.: P3 = passo 3 da esteira de prospecção)
+    const passoDaColuna = (passosLista as any[]).find((p) => p.etapa && getStageForStatus(p.etapa)?.id === stage.id);
+    if (passoDaColuna) {
+      const est = esteirasLista.find((e) => e.id === passoDaColuna.esteira_id);
+      if (est) return { ...est, nome: `${est.nome} · ${passoDaColuna.titulo || stage.name}` };
+    }
     const daEtapa = esteirasLista.filter((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
     if (projeto !== "todos" && projeto !== "sem") {
       return daEtapa.find((e) => e.empreendimento_id === projeto) || daEtapa.find((e) => !e.empreendimento_id);
