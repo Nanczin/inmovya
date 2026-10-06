@@ -11,7 +11,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { colocarNaEsteira, tirarDaEsteira } from "@/lib/esteiras";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from "@/components/ui/dropdown-menu";
 import {
   NEGOCIO_PHASES,
   NEGOCIO_STAGES,
@@ -55,6 +65,30 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
   const [activePhase, setActivePhase] = useState<"all" | NegocioPhaseId>("all");
   const [search, setSearch] = useState("");
+  // Projeto (empreendimento): cada projeto tem seu próprio quadro e suas esteiras
+  const [projeto, setProjeto] = useState<string>(() => {
+    try {
+      return localStorage.getItem("negocios_projeto") || "todos";
+    } catch {
+      return "todos";
+    }
+  });
+  const [projetos, setProjetos] = useState<{ id: string; nome: string }[]>([]);
+  useEffect(() => {
+    supabase
+      .from("empreendimentos")
+      .select("id, nome")
+      .order("nome")
+      .then(({ data, error }) => !error && setProjetos((data as any) || []));
+  }, []);
+  const escolherProjeto = (v: string) => {
+    setProjeto(v);
+    try {
+      localStorage.setItem("negocios_projeto", v);
+    } catch {
+      /* ignore */
+    }
+  };
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [timelineLeadId, setTimelineLeadId] = useState<string | null>(null);
@@ -65,7 +99,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState<string>("");
   const [bulkMoving, setBulkMoving] = useState(false);
-  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null }[]>([]);
+  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; empreendimento_id?: string | null }[]>([]);
   const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string }[]>([]);
   const [bulkEsteira, setBulkEsteira] = useState<string>("");
 
@@ -73,7 +107,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   useEffect(() => {
     supabase
       .from("esteiras")
-      .select("id, nome, etapa")
+      .select("*")
       .order("ordem")
       .then(({ data, error }) => !error && setEsteirasLista((data as any) || []));
     supabase
@@ -98,8 +132,23 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     }
   };
 
-  const esteiraDaEtapa = (stage: NegocioStage) =>
-    esteirasLista.find((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
+  const setLeadProjeto = async (lead: Lead, empreendimentoId: string) => {
+    const { error } = await supabase.from("leads").update({ empreendimento_id: empreendimentoId }).eq("id", lead.id);
+    if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
+    const nome = projetos.find((p) => p.id === empreendimentoId)?.nome;
+    toast({ title: "Projeto definido", description: `${lead.nome} → ${nome}` });
+    await refreshLeads();
+  };
+
+  const esteiraDaEtapa = (stage: NegocioStage) => {
+    const daEtapa = esteirasLista.filter((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
+    if (projeto !== "todos" && projeto !== "sem") {
+      return daEtapa.find((e) => e.empreendimento_id === projeto) || daEtapa.find((e) => !e.empreendimento_id);
+    }
+    if (projeto === "sem") return daEtapa.find((e) => !e.empreendimento_id);
+    // Todos os projetos: mostra a geral (ou indica que há esteiras por projeto)
+    return daEtapa.find((e) => !e.empreendimento_id) || (daEtapa.length ? { ...daEtapa[0], nome: daEtapa.length > 1 ? `${daEtapa.length} esteiras (por projeto)` : daEtapa[0].nome } : undefined);
+  };
 
   const infoEsteira = (lead: Lead) => {
     const l = lead as Lead & { esteira_id?: string | null; esteira_passo?: number | null; esteira_proximo?: string | null };
@@ -154,6 +203,8 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     const digits = search.replace(/\D/g, "");
 
     (leads || []).forEach((lead) => {
+      if (projeto === "sem" && lead.empreendimento_id) return;
+      if (projeto !== "todos" && projeto !== "sem" && lead.empreendimento_id !== projeto) return;
       if (term) {
         const hay = normalizeStatus(`${lead.nome} ${lead.email} ${lead.observacoes || ""} ${lead.empreendimento?.nome || ""}`);
         const phoneMatch = digits.length >= 3 && (lead.telefone || "").replace(/\D/g, "").includes(digits);
@@ -173,7 +224,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     });
 
     return map;
-  }, [leads, search]);
+  }, [leads, search, projeto]);
 
   const phaseCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -308,6 +359,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           observacoes: newDeal.observacoes.trim() || null,
           status: stage.value,
           user_id: user.id,
+          ...(projeto !== "todos" && projeto !== "sem" ? { empreendimento_id: projeto } : {}),
         },
       ]);
       if (error) throw error;
@@ -423,7 +475,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         >
           <History className="w-3.5 h-3.5" />
         </button>
-        {!selectMode && esteirasLista.length > 0 && (
+        {!selectMode && (esteirasLista.length > 0 || projetos.length > 0) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -439,7 +491,9 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <DropdownMenuContent align="end" className="w-56" onClick={(e) => e.stopPropagation()}>
               <DropdownMenuLabel className="text-xs">Esteira deste lead</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {esteirasLista.map((est) => {
+              {esteirasLista
+                .filter((est) => !est.empreendimento_id || est.empreendimento_id === lead.empreendimento_id)
+                .map((est) => {
                 const atual = (lead as any).esteira_id === est.id;
                 return (
                   <DropdownMenuItem
@@ -460,6 +514,24 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                   <DropdownMenuItem onSelect={() => setLeadEsteira(lead, null)} className="text-sm text-red-600">
                     Tirar da esteira
                   </DropdownMenuItem>
+                </>
+              )}
+              {projetos.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="text-sm">
+                      Projeto: {projetos.find((p) => p.id === lead.empreendimento_id)?.nome || "não definido"}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="max-h-[50vh] overflow-y-auto">
+                      {projetos.map((p) => (
+                        <DropdownMenuItem key={p.id} disabled={p.id === lead.empreendimento_id} onSelect={() => setLeadProjeto(lead, p.id)} className="text-sm">
+                          {p.id === lead.empreendimento_id ? "✓ " : ""}
+                          {p.nome}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 </>
               )}
             </DropdownMenuContent>
@@ -650,6 +722,25 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <Plus className="w-4 h-4 mr-1" /> Novo negócio
           </Button>
         </div>
+      </div>
+
+      {/* Projeto */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Projeto:</span>
+        <Select value={projeto} onValueChange={escolherProjeto}>
+          <SelectTrigger className="h-9 w-full sm:w-72">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-[60vh]">
+            <SelectItem value="todos">Todos os projetos</SelectItem>
+            <SelectItem value="sem">Sem projeto definido</SelectItem>
+            {projetos.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.nome}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Fases + indicadores */}

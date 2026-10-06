@@ -107,6 +107,16 @@ export function EsteirasModule() {
     checarExtensao().then(setExtensaoOk);
   }, [carregar]);
 
+  const [projetos, setProjetos] = useState<{ id: string; nome: string }[]>([]);
+  useEffect(() => {
+    supabase
+      .from("empreendimentos")
+      .select("id, nome")
+      .order("nome")
+      .then(({ data, error }) => !error && setProjetos((data as any) || []));
+  }, []);
+  const nomeProjeto = (id?: string | null) => (id ? projetos.find((p) => p.id === id)?.nome : null);
+
   const passosDe = useCallback(
     (esteiraId: string) => passos.filter((p) => p.esteira_id === esteiraId).sort((a, b) => a.ordem - b.ordem),
     [passos]
@@ -275,7 +285,12 @@ export function EsteirasModule() {
       const { esteira, passos: ps } = rascunho;
       const { error } = await supabase
         .from("esteiras")
-        .update({ nome: esteira.nome, ao_concluir_tag: esteira.ao_concluir_tag || null, etapa: esteira.etapa || null })
+        .update({
+          nome: esteira.nome,
+          ao_concluir_tag: esteira.ao_concluir_tag || null,
+          etapa: esteira.etapa || null,
+          empreendimento_id: (esteira as any).empreendimento_id || null,
+        })
         .eq("id", esteira.id);
       if (error) throw error;
 
@@ -398,8 +413,13 @@ export function EsteirasModule() {
     const etapa = rascunho?.esteira.etapa;
     if (!etapa || esteiras.find((e) => e.id === rascunho?.esteira.id)?.etapa !== etapa) return [];
     const alvo = getStageForStatus(etapa)?.id;
+    const proj = (rascunho!.esteira as any).empreendimento_id || null;
     return ((leads || []) as LeadEsteira[]).filter(
-      (l) => l.esteira_id !== rascunho!.esteira.id && alvo && getStageForStatus(l.status)?.id === alvo
+      (l) =>
+        l.esteira_id !== rascunho!.esteira.id &&
+        alvo &&
+        getStageForStatus(l.status)?.id === alvo &&
+        (!proj || l.empreendimento_id === proj)
     );
   }, [rascunho, esteiras, leads]);
 
@@ -648,6 +668,7 @@ export function EsteirasModule() {
                   >
                     <div className="font-medium truncate">{e.nome}</div>
                     <div className="text-xs text-muted-foreground">
+                      {nomeProjeto((e as any).empreendimento_id) ? `${nomeProjeto((e as any).empreendimento_id)} · ` : ""}
                       {e.etapa ? `Etapa ${e.etapa} · ` : ""}
                       {passosDe(e.id).length} passo(s) · {qtd} lead(s)
                     </div>
@@ -675,6 +696,30 @@ export function EsteirasModule() {
                     />
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
+                    <Label className="text-xs">Projeto (empreendimento)</Label>
+                    <Select
+                      value={(rascunho.esteira as any).empreendimento_id || "geral"}
+                      onValueChange={(v) =>
+                        setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, empreendimento_id: v === "geral" ? null : v } as any })
+                      }
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[50vh]">
+                        <SelectItem value="geral">Geral (qualquer projeto)</SelectItem>
+                        {projetos.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      Com projeto definido, só os leads desse projeto entram nesta esteira. Ex.: “50% Hípica” para quem tem interesse no Jardim da Hípica, “50% TOM” para o T.O.M. Paraíso.
+                    </p>
+                  </div>
+                  <div className="grid gap-1 sm:col-span-2">
                     <Label className="text-xs">Etapa de Negócios ligada</Label>
                     <Select
                       value={rascunho.esteira.etapa || "nenhuma"}
@@ -686,7 +731,10 @@ export function EsteirasModule() {
                       <SelectContent className="max-h-[50vh]">
                         <SelectItem value="nenhuma">Nenhuma (só manual)</SelectItem>
                         {NEGOCIO_STAGES.map((st) => {
-                          const usadaPor = esteiras.find((x) => x.id !== rascunho.esteira.id && x.etapa === st.value);
+                          const proj = (rascunho.esteira as any).empreendimento_id || null;
+                          const usadaPor = esteiras.find(
+                            (x) => x.id !== rascunho.esteira.id && x.etapa === st.value && ((x as any).empreendimento_id || null) === proj
+                          );
                           return (
                             <SelectItem key={st.id} value={st.value}>
                               {st.name}
@@ -697,7 +745,7 @@ export function EsteirasModule() {
                       </SelectContent>
                     </Select>
                     <p className="text-[11px] text-muted-foreground">
-                      Quem for movido para essa etapa em Negócios (ou em Leads) entra nesta esteira no primeiro passo. Ao sair da etapa, sai da esteira.
+                      Quem for movido para essa etapa em Negócios (ou em Leads) entra nesta esteira no primeiro passo — se a esteira tiver projeto, só os leads daquele projeto. Ao sair da etapa, sai da esteira.
                     </p>
                     {foraDaEsteira.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-2 py-1.5 text-xs">

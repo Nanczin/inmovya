@@ -9,6 +9,7 @@ export interface Esteira {
   ordem: number;
   ao_concluir_tag: string | null;
   etapa?: string | null; // etapa de Negócios ligada (ex.: "20%")
+  empreendimento_id?: string | null; // projeto da esteira (null = geral)
   scale_id?: string | null;
   created_at?: string;
 }
