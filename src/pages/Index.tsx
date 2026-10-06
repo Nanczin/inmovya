@@ -19,6 +19,7 @@ import { SettingsModule } from "@/components/SettingsModule";
 import { AgendaModule } from "@/components/AgendaModule";
 import { FunilModule } from "@/components/FunilModule";
 import { NegociosModule } from "@/components/NegociosModule";
+import { EsteirasModule } from "@/components/EsteirasModule";
 import { WhatsappModule } from "@/components/WhatsappModule";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
 
@@ -101,6 +102,8 @@ const Index = () => {
         return <GmailSystemModule />;
       case "negocios":
         return <NegociosModule onNavigate={handleNavigation} />;
+      case "esteiras":
+        return <EsteirasModule />;
       case "empreendimentos":
         return <EmpreendimentosModule />;
       case "materiais":

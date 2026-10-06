@@ -1476,7 +1476,7 @@ window.IS.SettingsUI = {
     let sent = 0;
     let failed = 0;
     const waitForNextLead = async (nextIndex) => {
-      const waitSeconds = pasteOnly ? 3 : 60;
+      const waitSeconds = pasteOnly ? 3 : 120 + Math.floor(Math.random() * 61); // mínimo 2 min, com variação (anti-bloqueio)
       for (let remaining = waitSeconds; remaining > 0; remaining--) {
         const nextName = leads[nextIndex]?.contact?.name || 'próximo lead';
         if (triggerButton?.isConnected) {

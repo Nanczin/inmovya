@@ -31,5 +31,28 @@
     });
   });
 
+  // Inmovya lê as esteiras/etiquetas guardadas no Scale (para unificar no CRM)
+  window.addEventListener('INMOVYA_SCALE_EXPORT', async event => {
+    const detail = event.detail || {};
+    try {
+      const keys = ['replies', 'categories', 'settings', 'waLabels', 'leadCategoryAssignments', 'leadStageAssignments'];
+      const data = await chrome.storage.local.get(keys);
+      // anexos vão só com nome/tipo (sem o arquivo em si)
+      if (Array.isArray(data.replies)) {
+        data.replies = data.replies.map(reply => ({
+          ...reply,
+          attachments: (reply.attachments || []).map(att => ({ name: att.name, type: att.type }))
+        }));
+      }
+      window.dispatchEvent(new CustomEvent('INMOVYA_SCALE_DATA', {
+        detail: { token: detail.token, ok: true, json: JSON.stringify({ backupVersion: 2, data }) }
+      }));
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent('INMOVYA_SCALE_DATA', {
+        detail: { token: detail.token, ok: false, error: error?.message || String(error) }
+      }));
+    }
+  });
+
   announceReady();
 })();

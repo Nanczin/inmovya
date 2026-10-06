@@ -248,11 +248,11 @@ export function CampaignRunner({ campaign, onFinish, onUpdateStatus }: { campaig
         onFinish();
       } else {
         // Apply cadence cooldown
-        let min = campaign.configuracao_cadencia?.intervaloMinimo || 10;
-        let max = campaign.configuracao_cadencia?.intervaloMaximo || 30;
+        let min = campaign.configuracao_cadencia?.intervaloMinimo || 120;
+        let max = campaign.configuracao_cadencia?.intervaloMaximo || 180;
         
         // Intervalo mínimo conservador para reduzir rajadas de envio.
-        if (min < 30) min = 30;
+        if (min < 120) min = 120; // regra: no mínimo 2 minutos entre mensagens
         if (max < min) max = min;
         
         const randomSeconds = Math.floor(Math.random() * (max - min + 1) + min);

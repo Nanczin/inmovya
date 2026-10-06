@@ -10,6 +10,7 @@ import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight } from "lucide-react";
 import { LeadTimeline } from "@/components/LeadTimeline";
+import { colocarNaEsteira } from "@/lib/esteiras";
 import {
   NEGOCIO_PHASES,
   NEGOCIO_STAGES,
@@ -63,6 +64,34 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState<string>("");
   const [bulkMoving, setBulkMoving] = useState(false);
+  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string }[]>([]);
+  const [bulkEsteira, setBulkEsteira] = useState<string>("");
+
+  useEffect(() => {
+    if (!selectMode) return;
+    supabase
+      .from("esteiras")
+      .select("id, nome")
+      .order("ordem")
+      .then(({ data }) => setEsteirasLista((data as any) || []));
+  }, [selectMode]);
+
+  const putSelectedInEsteira = async () => {
+    if (!bulkEsteira || selectedIds.size === 0) return;
+    setBulkMoving(true);
+    try {
+      const ids = Array.from(selectedIds);
+      await colocarNaEsteira(ids, bulkEsteira);
+      const nome = esteirasLista.find((e) => e.id === bulkEsteira)?.nome || "esteira";
+      toast({ title: "Leads na esteira", description: `${ids.length} lead(s) em ${nome}, começando no D1. Envie pela aba Esteiras.` });
+      await refreshLeads();
+      exitSelectMode();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err?.message || "Tente novamente.", variant: "destructive" });
+    } finally {
+      setBulkMoving(false);
+    }
+  };
   const [newDeal, setNewDeal] = useState({
     nome: "",
     telefone: "",
@@ -555,7 +584,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       {/* Barra de ação da seleção múltipla */}
       {selectMode && (
         <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
-          <div className="pointer-events-auto mx-auto max-w-3xl rounded-xl border bg-white shadow-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="pointer-events-auto mx-auto max-w-5xl rounded-xl border bg-white shadow-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2">
             <div className="flex items-center justify-between sm:justify-start gap-3 sm:min-w-[150px]">
               <span className="text-sm font-semibold">
                 {selectedIds.size} selecionado{selectedIds.size === 1 ? "" : "s"}
@@ -593,6 +622,30 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                 {bulkMoving ? "Movendo..." : "Mover"}
               </Button>
             </div>
+            {esteirasLista.length > 0 && (
+              <div className="flex flex-1 gap-2 min-w-0">
+                <Select value={bulkEsteira} onValueChange={setBulkEsteira}>
+                  <SelectTrigger className="h-10 flex-1 min-w-0">
+                    <SelectValue placeholder="Pôr na esteira..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {esteirasLista.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  className="h-10 shrink-0"
+                  disabled={!bulkEsteira || selectedIds.size === 0 || bulkMoving}
+                  onClick={putSelectedInEsteira}
+                >
+                  Pôr
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

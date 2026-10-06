@@ -25,8 +25,8 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
   const [imagemNome, setImagemNome] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cadencia, setCadencia] = useState({
-    intervaloMinimo: 30,
-    intervaloMaximo: 60,
+    intervaloMinimo: 120,
+    intervaloMaximo: 180,
     limiteDiario: 100,
     pausaAposMensagens: 50,
     tempoDescanso: 60
@@ -48,8 +48,8 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
       setImagemNome(campaign.variaveis?.imagemNome || "");
 
       setCadencia({
-        intervaloMinimo: Math.max(30, campaign.configuracao_cadencia?.intervaloMinimo || 30),
-        intervaloMaximo: Math.max(30, campaign.configuracao_cadencia?.intervaloMaximo || 60),
+        intervaloMinimo: Math.max(120, campaign.configuracao_cadencia?.intervaloMinimo || 120),
+        intervaloMaximo: Math.max(120, campaign.configuracao_cadencia?.intervaloMaximo || 180),
         limiteDiario: campaign.configuracao_cadencia?.limiteDiario || 100,
         pausaAposMensagens: campaign.configuracao_cadencia?.pausaAposMensagens || 50,
         tempoDescanso: campaign.configuracao_cadencia?.tempoDescanso || 60
@@ -131,8 +131,8 @@ export function EditarCampanhaWhatsappDialog({ children, campaign, onUpdated }: 
   };
 
   const handleImagePick = async () => {
-    if (cadencia.limiteDiario < 1 || cadencia.intervaloMinimo < 30 || cadencia.intervaloMaximo < cadencia.intervaloMinimo) {
-      toast({ title: 'Cadência inválida', description: 'Confira o limite diário e use intervalos a partir de 30 segundos.', variant: 'destructive' });
+    if (cadencia.limiteDiario < 1 || cadencia.intervaloMinimo < 120 || cadencia.intervaloMaximo < cadencia.intervaloMinimo) {
+      toast({ title: 'Cadência inválida', description: 'Confira o limite diário e use intervalos a partir de 120 segundos (2 minutos).', variant: 'destructive' });
       return;
     }
     setUploadingImage(true);

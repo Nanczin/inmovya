@@ -21,6 +21,7 @@ const moduleNames: Record<string, string> = {
   dashboard: "Dashboard Principal",
   leads: "Gerenciamento de Leads",
   negocios: "Negócios",
+  esteiras: "Esteiras",
   funil: "Funil de Vendas",
   campanhas: "Campanhas Ativas",
   empreendimentos: "Empreendimentos",

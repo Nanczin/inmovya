@@ -32,8 +32,8 @@ export function WhatsappModule() {
     imagemLocalId: "",
     imagemNome: "",
     cadencia: {
-      intervaloMinimo: 30,
-      intervaloMaximo: 60,
+      intervaloMinimo: 120,
+      intervaloMaximo: 180,
       limiteDiario: 100,
       pausaAposMensagens: 50,
       tempoDescanso: 60, // em minutos
@@ -132,8 +132,8 @@ export function WhatsappModule() {
       toast({ title: 'Confirme o consentimento', description: 'Dispare apenas para contatos que autorizaram mensagens.', variant: 'destructive' });
       return;
     }
-    if (newCampaign.cadencia.limiteDiario < 1 || newCampaign.cadencia.intervaloMinimo < 30 || newCampaign.cadencia.intervaloMaximo < newCampaign.cadencia.intervaloMinimo) {
-      toast({ title: 'Cadência inválida', description: 'Use limite diário maior que zero e intervalos válidos a partir de 30 segundos.', variant: 'destructive' });
+    if (newCampaign.cadencia.limiteDiario < 1 || newCampaign.cadencia.intervaloMinimo < 120 || newCampaign.cadencia.intervaloMaximo < newCampaign.cadencia.intervaloMinimo) {
+      toast({ title: 'Cadência inválida', description: 'Use limite diário maior que zero e intervalos a partir de 120 segundos (2 minutos).', variant: 'destructive' });
       return;
     }
 
@@ -196,7 +196,7 @@ export function WhatsappModule() {
       toast({ title: "Sucesso", description: "Campanha criada com sucesso!" });
       setNewCampaign({
         nome: "", listaId: "", mensagem: "", imagemLocalId: "", imagemNome: "",
-        cadencia: { intervaloMinimo: 30, intervaloMaximo: 60, limiteDiario: 100, pausaAposMensagens: 50, tempoDescanso: 60 }
+        cadencia: { intervaloMinimo: 120, intervaloMaximo: 180, limiteDiario: 100, pausaAposMensagens: 50, tempoDescanso: 60 }
       });
       setConsentConfirmed(false);
       setActiveTab("historico");
