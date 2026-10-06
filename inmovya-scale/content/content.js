@@ -65,6 +65,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             size: item.size || 0,
             data: item.data,
             caption: String(item.caption || ''),
+            // depois de qual mensagem (parte separada por ===) o anexo vai
+            ...(Number.isInteger(item.messageIndex) ? { messageIndex: item.messageIndex } : {}),
             useCaption: !!item.useCaption
           });
         });

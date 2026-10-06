@@ -16,6 +16,7 @@ import {
   EsteiraAnexo,
   ANEXO_MAX_MB,
   escolherArquivosDoComputador,
+  partesDaMensagem,
   etiquetasDaEsteira,
   finalizarEsteirasVencidas,
   esquecerArquivoLocal,
@@ -279,10 +280,10 @@ export function EsteirasModule() {
       });
       return;
     }
-    if (!extensaoAtualizada("1.2.3")) {
+    if (!extensaoAtualizada("1.2.4")) {
       toast({
         title: "Atualize o Inmovya Scale",
-        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.3 — anexos, legendas e intervalo entre mensagens). Depois recarregue esta página e o WhatsApp Web.",
+        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.4 — anexos, legendas, ordem dos anexos e intervalo entre mensagens). Depois recarregue esta página e o WhatsApp Web.",
         variant: "destructive",
       });
       return;
@@ -300,7 +301,7 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
-        const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome);
+        const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length);
         await enviarPeloWhatsApp(item.telefone, texto, anexos);
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
@@ -1208,6 +1209,27 @@ export function EsteirasModule() {
                                 <span className="truncate" title={a.name}>{a.name}</span>
                                 <span className="text-muted-foreground shrink-0">({tamanhoLegivel(a.size)})</span>
                               </span>
+                              {partesDaMensagem(p.mensagem).length > 1 && (
+                                <Select
+                                  value={String(
+                                    Number.isInteger(a.depois_de)
+                                      ? Math.min(a.depois_de as number, partesDaMensagem(p.mensagem).length - 1)
+                                      : partesDaMensagem(p.mensagem).length - 1
+                                  )}
+                                  onValueChange={(v) => mudarAnexo(idx, chave, { depois_de: parseInt(v) })}
+                                >
+                                  <SelectTrigger className="h-7 w-full sm:w-[170px] text-xs bg-white" title="Em que ponto da sequência este arquivo é enviado">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {partesDaMensagem(p.mensagem).map((_, k) => (
+                                      <SelectItem key={k} value={String(k)}>
+                                        Depois da mensagem {k + 1}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
                               <Select
                                 value={modo}
                                 onValueChange={(v) =>
@@ -1222,7 +1244,7 @@ export function EsteirasModule() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="nenhuma">Sem legenda</SelectItem>
-                                  <SelectItem value="texto">Legenda = texto do passo</SelectItem>
+                                  <SelectItem value="texto">Legenda = texto da mensagem</SelectItem>
                                   <SelectItem value="propria">Escrever legenda</SelectItem>
                                 </SelectContent>
                               </Select>
@@ -1250,9 +1272,43 @@ export function EsteirasModule() {
                           Anexar arquivo do computador
                         </button>
                         <span className="text-[11px] text-muted-foreground">
-                          PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB · com “Legenda = texto do passo”, o texto vai junto do arquivo; senão o texto vai antes · o arquivo fica no seu computador (não mova nem apague)
+                          PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB · separe as mensagens com === e escolha depois de qual mensagem cada arquivo vai · o arquivo fica no seu computador (não mova nem apague)
                         </span>
                       </div>
+                      {(p.anexos || []).length > 0 && (
+                        <div className="rounded-md bg-blue-50/60 border border-blue-100 px-2 py-1.5">
+                          <div className="text-[11px] font-semibold text-blue-900 mb-0.5">Ordem do envio deste passo</div>
+                          <ol className="list-decimal pl-5 text-[11px] text-slate-700 space-y-0.5">
+                            {(() => {
+                              const partes = partesDaMensagem(p.mensagem);
+                              const ultima = partes.length - 1;
+                              const pos = (a: EsteiraAnexo) => (Number.isInteger(a.depois_de) ? Math.min(Math.max(0, a.depois_de as number), ultima) : ultima);
+                              const itens: JSX.Element[] = [];
+                              partes.forEach((parte, k) => {
+                                const ligados = (p.anexos || []).filter((a) => pos(a) === k);
+                                const comoLegenda = ligados.find((a) => a.legenda_texto && !(a.legenda || "").trim() && (a.legenda ?? null) === null);
+                                const resumo = parte.replace(/\s+/g, " ").trim();
+                                if (resumo && !comoLegenda) {
+                                  itens.push(<li key={`m${k}`}>Mensagem {k + 1}: “{resumo.slice(0, 60)}{resumo.length > 60 ? "…" : ""}”</li>);
+                                }
+                                ligados.forEach((a) =>
+                                  itens.push(
+                                    <li key={`a${a.local_id || a.path}`}>
+                                      📎 {a.name}
+                                      {a === comoLegenda
+                                        ? ` — legenda: mensagem ${k + 1}`
+                                        : (a.legenda || "").trim()
+                                        ? ` — legenda: “${String(a.legenda).slice(0, 40)}”`
+                                        : ""}
+                                    </li>
+                                  )
+                                );
+                              });
+                              return itens;
+                            })()}
+                          </ol>
+                        </div>
+                      )}
                     </div>
                   ))}
                   <Button
