@@ -33,7 +33,72 @@ export interface EsteiraPasso {
   dias_espera: number;
   so_colar: boolean;
   scale_id?: string | null;
+  anexos?: EsteiraAnexo[] | null;
 }
+
+// ---------- Anexos (PDF, vídeo, imagem, áudio, documentos...) ----------
+// Ficam no Storage do Inmovya (bucket "esteira-anexos"), então funcionam em qualquer computador.
+export interface EsteiraAnexo {
+  path: string; // caminho no bucket
+  name: string;
+  type: string;
+  size: number;
+}
+
+export const ANEXOS_BUCKET = "esteira-anexos";
+export const ANEXO_MAX_MB = 16; // limite para passar pela extensão com segurança
+
+export async function enviarAnexoParaStorage(file: File): Promise<EsteiraAnexo> {
+  if (file.size > ANEXO_MAX_MB * 1024 * 1024) {
+    throw new Error(`${file.name} tem mais de ${ANEXO_MAX_MB} MB. Use um arquivo menor (ex.: vídeo comprimido).`);
+  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Faça login novamente.");
+  const limpo = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const path = `${user.id}/${crypto.randomUUID()}-${limpo}`;
+  const { error } = await supabase.storage.from(ANEXOS_BUCKET).upload(path, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+  if (error) {
+    if (/bucket/i.test(error.message)) throw new Error("Falta ativar os anexos no banco (rode o SQL de anexos no Supabase).");
+    throw error;
+  }
+  return { path, name: file.name, type: file.type || "application/octet-stream", size: file.size };
+}
+
+export async function removerAnexoDoStorage(path: string) {
+  await supabase.storage.from(ANEXOS_BUCKET).remove([path]);
+}
+
+const blobParaDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+
+const cacheAnexos = new Map<string, string>();
+/** Baixa os anexos e devolve no formato que a extensão envia no WhatsApp. */
+export async function prepararAnexosParaEnvio(anexos?: EsteiraAnexo[] | null) {
+  const lista = Array.isArray(anexos) ? anexos : [];
+  const out: { id: string; name: string; type: string; size: number; data: string; useCaption: boolean }[] = [];
+  for (const a of lista) {
+    let data = cacheAnexos.get(a.path);
+    if (!data) {
+      const { data: blob, error } = await supabase.storage.from(ANEXOS_BUCKET).download(a.path);
+      if (error || !blob) throw new Error(`Não foi possível baixar o anexo ${a.name}.`);
+      data = await blobParaDataUrl(blob.type ? blob : new Blob([blob], { type: a.type }));
+      cacheAnexos.set(a.path, data);
+    }
+    out.push({ id: a.path, name: a.name, type: a.type, size: a.size, data, useCaption: false });
+  }
+  return out;
+}
+
+export const tamanhoLegivel = (bytes: number) =>
+  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 // Intervalo entre envios (regra: no mínimo 2 minutos, com variação)
 export const INTERVALO_MIN_SEG = 120;
@@ -117,13 +182,13 @@ export const checarExtensao = (timeoutMs = 1500) =>
     }, timeoutMs);
   });
 
-export const enviarPeloWhatsApp = (phone: string, text: string) =>
+export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any[] = []) =>
   new Promise<void>((resolve, reject) => {
     const token = crypto.randomUUID();
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
       reject(new Error("Tempo esgotado aguardando a confirmação da extensão."));
-    }, 120000);
+    }, attachments.length ? 300000 : 120000);
     const onResult = (event: CustomEvent) => {
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);
@@ -131,7 +196,7 @@ export const enviarPeloWhatsApp = (phone: string, text: string) =>
       event.detail?.ok ? resolve() : reject(new Error(event.detail?.error || "O envio não foi confirmado."));
     };
     window.addEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
-    window.dispatchEvent(new CustomEvent("INMOVYA_OPEN_WHATSAPP", { detail: { phone, text, token } }));
+    window.dispatchEvent(new CustomEvent("INMOVYA_OPEN_WHATSAPP", { detail: { phone, text, token, attachments } }));
   });
 
 // Lê os dados guardados no Scale (precisa da extensão atualizada)

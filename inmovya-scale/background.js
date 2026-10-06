@@ -1,4 +1,4 @@
-﻿// background.js
+// background.js
 chrome.runtime.onInstalled.addListener(() => {
   chrome.action.disable();
   chrome.declarativeContent.onPageChanged.removeRules(undefined, () => {
@@ -65,7 +65,9 @@ async function sendCampaignMessage(request, returnTabId = null) {
         const response = await chrome.tabs.sendMessage(tab.id, {
           action: 'campaign_auto_send',
           text: request.text || '',
-          attachment: storedMedia || null
+          attachment: storedMedia || null,
+          // anexos das esteiras do Inmovya (qualquer tipo de arquivo, já em base64)
+          attachments: Array.isArray(request.attachments) ? request.attachments : []
         });
         if (response?.ok) return response;
         lastError = new Error(response?.error || 'Envio não confirmado.');

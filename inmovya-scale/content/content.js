@@ -1,4 +1,4 @@
-﻿// content/content.js
+// content/content.js
 window.IS = window.IS || {};
 
 window.IS.init = async function() {
@@ -54,6 +54,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             useCaption: !!String(request.text || '').trim()
           }]
           : [];
+        // anexos das esteiras do Inmovya: PDF, vídeo, imagem, áudio, documentos (vão depois do texto)
+        (Array.isArray(request.attachments) ? request.attachments : []).forEach(item => {
+          if (!item || !item.data) return;
+          attachments.push({
+            id: item.id || window.IS.generateUUID(),
+            name: item.name || 'anexo',
+            type: item.type || 'application/octet-stream',
+            size: item.size || 0,
+            data: item.data,
+            useCaption: !!item.useCaption
+          });
+        });
         const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
           request.text || '',
           attachments,

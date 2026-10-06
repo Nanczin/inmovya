@@ -2,7 +2,7 @@
     "manifest_version":  3,
     "name":  "Inmovya Scale",
     "short_name":  "Inmovya Scale",
-    "version":  "1.1.0",
+    "version": "1.2.0",
     "description":  "Ferramentas de produtividade e respostas rápidas para WhatsApp Web.",
     "icons":  {
                   "16":  "icons/icon16.png",

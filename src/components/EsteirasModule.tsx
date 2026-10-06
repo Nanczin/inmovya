@@ -13,6 +13,12 @@ import { NEGOCIO_STAGES, getStageForStatus } from "@/lib/negociosStages";
 import {
   Esteira,
   EsteiraPasso,
+  EsteiraAnexo,
+  ANEXO_MAX_MB,
+  enviarAnexoParaStorage,
+  prepararAnexosParaEnvio,
+  removerAnexoDoStorage,
+  tamanhoLegivel,
   avancarLead,
   checarExtensao,
   colocarNaEsteira,
@@ -29,6 +35,8 @@ import {
   tirarDaEsteira,
 } from "@/lib/esteiras";
 import {
+  Paperclip,
+  X as XIcon,
   Play,
   Square,
   Send,
@@ -236,7 +244,8 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
-        await enviarPeloWhatsApp(item.telefone, texto);
+        const anexos = await prepararAnexosParaEnvio(item.passo.anexos);
+        await enviarPeloWhatsApp(item.telefone, texto, anexos);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto);
         enviados++;
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado" } }));
@@ -347,6 +356,7 @@ export function EsteirasModule() {
       if (error) throw error;
 
       const atuais = passosDe(esteira.id);
+      const temColunaAnexos = passos.some((x) => "anexos" in x);
       const manter = new Set(ps.filter((p) => !p.id.startsWith("novo-")).map((p) => p.id));
       const remover = atuais.filter((p) => !manter.has(p.id)).map((p) => p.id);
       if (remover.length) {
@@ -361,12 +371,17 @@ export function EsteirasModule() {
           mensagem: p.mensagem,
           dias_espera: Math.max(0, Number(p.dias_espera) || 0),
           so_colar: !!p.so_colar,
+          ...(temColunaAnexos || (p.anexos && p.anexos.length) ? { anexos: p.anexos || [] } : {}),
         };
         const { error: eUp } = p.id.startsWith("novo-")
           ? await supabase.from("esteira_passos").insert({ ...row, user_id: user?.id })
           : await supabase.from("esteira_passos").update(row).eq("id", p.id);
         if (eUp) throw eUp;
       }
+      // apaga do Storage os anexos que saíram da esteira
+      const novosPaths = new Set(ps.flatMap((p) => (p.anexos || []).map((a) => a.path)));
+      const sairam = atuais.flatMap((p) => (p.anexos || []).map((a) => a.path)).filter((path) => !novosPaths.has(path));
+      for (const path of sairam) await removerAnexoDoStorage(path).catch(() => {});
       toast({ title: "Esteira salva" });
       await carregar();
     } catch (err: any) {
@@ -389,6 +404,29 @@ export function EsteirasModule() {
 
   const mudarPasso = (idx: number, campo: keyof EsteiraPasso, valor: any) =>
     setRascunho((r) => (r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, [campo]: valor } : p)) } : r));
+
+  const [enviandoAnexo, setEnviandoAnexo] = useState<number | null>(null);
+  const anexarArquivos = async (idx: number, files: FileList | null) => {
+    if (!files || !files.length) return;
+    setEnviandoAnexo(idx);
+    const novos: EsteiraAnexo[] = [];
+    for (const f of Array.from(files)) {
+      try {
+        novos.push(await enviarAnexoParaStorage(f));
+      } catch (err: any) {
+        toast({ title: "Anexo não adicionado", description: err?.message, variant: "destructive" });
+      }
+    }
+    setRascunho((r) =>
+      r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: [...(p.anexos || []), ...novos] } : p)) } : r
+    );
+    setEnviandoAnexo(null);
+    if (novos.length) toast({ title: `${novos.length} anexo(s) adicionado(s)`, description: "Clique em Salvar esteira para guardar." });
+  };
+  const tirarAnexo = (idx: number, path: string) =>
+    setRascunho((r) =>
+      r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: (p.anexos || []).filter((a) => a.path !== path) } : p)) } : r
+    );
 
   const moverPasso = (idx: number, dir: -1 | 1) =>
     setRascunho((r) => {
@@ -662,6 +700,11 @@ export function EsteirasModule() {
                                 </span>
                               )}
                               {st === "pulado" && <span className="text-xs text-muted-foreground">adiado para amanhã</span>}
+                              {!!item.passo.anexos?.length && (
+                                <span className="text-[11px] rounded bg-slate-100 px-1.5 py-0.5 inline-flex items-center gap-1" title={item.passo.anexos.map((a) => a.name).join(", ")}>
+                                  <Paperclip className="w-3 h-3" /> {item.passo.anexos.length}
+                                </span>
+                              )}
                               {item.passo.so_colar && (
                                 <span className="text-[11px] rounded bg-amber-100 text-amber-800 px-1.5 py-0.5">personalizar</span>
                               )}
@@ -865,6 +908,32 @@ export function EsteirasModule() {
                         </div>
                       </div>
                       <Textarea rows={4} value={p.mensagem} onChange={(ev) => mudarPasso(idx, "mensagem", ev.target.value)} placeholder="Oi {{nome}}, {{saudacao}}! ..." />
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(p.anexos || []).map((a) => (
+                          <span key={a.path} className="inline-flex items-center gap-1 rounded-full border bg-slate-50 px-2 py-0.5 text-xs max-w-full">
+                            <Paperclip className="w-3 h-3 shrink-0" />
+                            <span className="truncate max-w-[180px]" title={a.name}>{a.name}</span>
+                            <span className="text-muted-foreground">({tamanhoLegivel(a.size)})</span>
+                            <button type="button" className="text-red-600 hover:text-red-800" onClick={() => tirarAnexo(idx, a.path)} title="Tirar anexo">
+                              <XIcon className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                        <label className={`inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 cursor-pointer hover:bg-slate-50 ${enviandoAnexo === idx ? "opacity-60 pointer-events-none" : ""}`}>
+                          {enviandoAnexo === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
+                          {enviandoAnexo === idx ? "Enviando..." : "Anexar arquivo"}
+                          <input
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={(ev) => {
+                              anexarArquivos(idx, ev.target.files);
+                              ev.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <span className="text-[11px] text-muted-foreground">PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB cada · vão depois do texto</span>
+                      </div>
                     </div>
                   ))}
                   <Button
