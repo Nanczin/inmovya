@@ -16,6 +16,7 @@ import {
   EsteiraAnexo,
   ANEXO_MAX_MB,
   escolherArquivosDoComputador,
+  etiquetasDaEsteira,
   finalizarEsteirasVencidas,
   esquecerArquivoLocal,
   liberarArquivosLocais,
@@ -473,6 +474,22 @@ export function EsteirasModule() {
   const mudarPasso = (idx: number, campo: keyof EsteiraPasso, valor: any) =>
     setRascunho((r) => (r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, [campo]: valor } : p)) } : r));
 
+  // Etiquetas já usadas nos leads (para escolher na esteira)
+  const etiquetasExistentes = useMemo(() => {
+    const cont = new Map<string, number>();
+    ((leads || []) as any[]).forEach((l) =>
+      (Array.isArray(l.tags) ? l.tags : []).forEach((t: string) => {
+        const k = String(t || "").trim();
+        if (k) cont.set(k, (cont.get(k) || 0) + 1);
+      })
+    );
+    ["disparo", "nutrição"].forEach((t) => !cont.has(t) && cont.set(t, 0));
+    return Array.from(cont.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+  }, [leads]);
+  const [novaEtiqueta, setNovaEtiqueta] = useState("");
+  const mudarEtiquetas = (lista: string[]) =>
+    setRascunho((r) => (r ? { ...r, esteira: { ...r.esteira, ao_concluir_tag: Array.from(new Set(lista.map((t) => t.trim()).filter(Boolean))).join(",") || null } } : r));
+
   const [enviandoAnexo, setEnviandoAnexo] = useState<number | null>(null);
   const anexarArquivos = async (idx: number) => {
     setEnviandoAnexo(idx);
@@ -676,7 +693,7 @@ export function EsteirasModule() {
                       <span className="text-[11px] rounded border px-1.5 py-0.5 bg-slate-50 truncate">
                         {a.esteira.nome}
                         {(a.lead.esteira_passo || 0) >= a.total
-                          ? ` · sem resposta → ${a.esteira.ao_concluir_etapa || "sai do funil"}${a.esteira.ao_concluir_tag ? ` + etiqueta ${a.esteira.ao_concluir_tag}` : ""}`
+                          ? ` · sem resposta → ${a.esteira.ao_concluir_etapa || "sai do funil"}${etiquetasDaEsteira(a.esteira).length ? ` + ${etiquetasDaEsteira(a.esteira).join(", ")}` : ""}`
                           : a.passo
                           ? ` · ${a.passo.titulo || `Passo ${a.passo.ordem + 1}`} (${(a.lead.esteira_passo || 0) + 1}/${a.total})`
                           : ""}
@@ -903,12 +920,73 @@ export function EsteirasModule() {
                     <Input value={rascunho.esteira.nome} onChange={(ev) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, nome: ev.target.value } })} />
                   </div>
                   <div className="grid gap-1">
-                    <Label className="text-xs">Etiqueta ao terminar sem resposta (ex.: disparo)</Label>
-                    <Input
-                      value={rascunho.esteira.ao_concluir_tag || ""}
-                      placeholder="disparo"
-                      onChange={(ev) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, ao_concluir_tag: ev.target.value } })}
-                    />
+                    <Label className="text-xs">Etiquetas ao terminar sem resposta</Label>
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-md border px-2 py-1.5 min-h-9">
+                      {etiquetasDaEsteira(rascunho.esteira).map((t) => (
+                        <span key={t} className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 text-xs">
+                          {t}
+                          <button
+                            type="button"
+                            title="Tirar etiqueta"
+                            className="hover:text-red-600"
+                            onClick={() => mudarEtiquetas(etiquetasDaEsteira(rascunho.esteira).filter((x) => x !== t))}
+                          >
+                            <XIcon className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        value={novaEtiqueta}
+                        list="etiquetas-existentes"
+                        placeholder={etiquetasDaEsteira(rascunho.esteira).length ? "+ etiqueta" : "Escolha ou digite (Enter)"}
+                        className="flex-1 min-w-[120px] text-sm outline-none bg-transparent"
+                        onChange={(ev) => {
+                          const v = ev.target.value;
+                          // escolheu da lista
+                          if (etiquetasExistentes.includes(v)) {
+                            mudarEtiquetas([...etiquetasDaEsteira(rascunho.esteira), v]);
+                            setNovaEtiqueta("");
+                          } else setNovaEtiqueta(v.replace(/,/g, ""));
+                        }}
+                        onKeyDown={(ev) => {
+                          if ((ev.key === "Enter" || ev.key === ",") && novaEtiqueta.trim()) {
+                            ev.preventDefault();
+                            mudarEtiquetas([...etiquetasDaEsteira(rascunho.esteira), novaEtiqueta]);
+                            setNovaEtiqueta("");
+                          }
+                        }}
+                        onBlur={() => {
+                          if (novaEtiqueta.trim()) {
+                            mudarEtiquetas([...etiquetasDaEsteira(rascunho.esteira), novaEtiqueta]);
+                            setNovaEtiqueta("");
+                          }
+                        }}
+                      />
+                      <datalist id="etiquetas-existentes">
+                        {etiquetasExistentes
+                          .filter((t) => !etiquetasDaEsteira(rascunho.esteira).includes(t))
+                          .map((t) => (
+                            <option key={t} value={t} />
+                          ))}
+                      </datalist>
+                    </div>
+                    {etiquetasExistentes.filter((t) => !etiquetasDaEsteira(rascunho.esteira).includes(t)).length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {etiquetasExistentes
+                          .filter((t) => !etiquetasDaEsteira(rascunho.esteira).includes(t))
+                          .slice(0, 12)
+                          .map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => mudarEtiquetas([...etiquetasDaEsteira(rascunho.esteira), t])}
+                              className="text-[11px] rounded-full border px-2 py-0.5 text-slate-600 hover:bg-slate-50"
+                            >
+                              + {t}
+                            </button>
+                          ))}
+                      </div>
+                    )}
                   </div>
                   <div className="grid gap-1 sm:col-span-2">
                     <Label className="text-xs">Ao terminar sem resposta, mover o card no Negócios para</Label>

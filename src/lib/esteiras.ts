@@ -317,8 +317,9 @@ export async function avancarLead(
     };
   } else {
     concluiu = true;
-    const tag = (esteira.ao_concluir_tag || "").trim();
-    const tags = Array.from(new Set([...(lead.tags || []), ...(tag ? [tag] : [])]));
+    const novas = etiquetasDaEsteira(esteira);
+    const tag = novas.join(",");
+    const tags = Array.from(new Set([...(lead.tags || []), ...novas]));
     update = {
       esteira_id: null,
       esteira_passo: 0,
@@ -541,3 +542,7 @@ export async function finalizarEsteirasVencidas() {
   if (error) return 0;
   return Number(data) || 0;
 }
+
+/** Etiquetas que a esteira coloca ao terminar (várias, separadas por vírgula no banco). */
+export const etiquetasDaEsteira = (e: { ao_concluir_tag?: string | null }) =>
+  Array.from(new Set(String(e.ao_concluir_tag || "").split(",").map((t) => t.trim()).filter(Boolean)));
