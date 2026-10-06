@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight } from "lucide-react";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import {
   NEGOCIO_PHASES,
@@ -57,6 +57,12 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [timelineLeadId, setTimelineLeadId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Seleção múltipla para mover vários negócios de uma vez
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTarget, setBulkTarget] = useState<string>("");
+  const [bulkMoving, setBulkMoving] = useState(false);
   const [newDeal, setNewDeal] = useState({
     nome: "",
     telefone: "",
@@ -130,6 +136,73 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   };
 
   const stageById = (id: string) => NEGOCIO_STAGES.find((s) => s.id === id)!;
+
+  const toggleSelected = (leadId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(leadId)) next.delete(leadId);
+      else next.add(leadId);
+      return next;
+    });
+  };
+
+  const toggleColumn = (stageLeads: Lead[]) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = stageLeads.length > 0 && stageLeads.every((l) => next.has(l.id));
+      stageLeads.forEach((l) => (allSelected ? next.delete(l.id) : next.add(l.id)));
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setBulkTarget("");
+  };
+
+  // Esc sai do modo de seleção
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") exitSelectMode();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectMode]);
+
+  const moveSelected = async () => {
+    if (!bulkTarget || selectedIds.size === 0) return;
+    const stage = stageById(bulkTarget);
+    const ids = Array.from(selectedIds).filter((id) => {
+      const lead = leads.find((l) => l.id === id);
+      return lead && getStageForStatus(lead.status)?.id !== stage.id;
+    });
+    if (ids.length === 0) {
+      toast({ title: "Nada para mover", description: `Os selecionados já estão em ${stage.name}.` });
+      return;
+    }
+
+    setBulkMoving(true);
+    const previous = new Map(ids.map((id) => [id, leads.find((l) => l.id === id)?.status]));
+    ids.forEach((id) => updateLead(id, { status: stage.value }));
+    try {
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200);
+        const { error } = await supabase.from("leads").update({ status: stage.value }).in("id", chunk);
+        if (error) throw error;
+      }
+      toast({ title: "Negócios movidos", description: `${ids.length} lead(s) → ${stage.name}` });
+      exitSelectMode();
+    } catch (err: any) {
+      console.error("Erro ao mover negócios:", err);
+      previous.forEach((status, id) => updateLead(id, { status: status || "" }));
+      toast({ title: "Erro ao mover", description: err?.message || "Tente novamente.", variant: "destructive" });
+      await refreshLeads();
+    } finally {
+      setBulkMoving(false);
+    }
+  };
 
   const handleValidar = (lead: Lead) => moveLead(lead.id, stageById(PRIMEIRO_IMPACTO_STAGE_ID));
   const handleDescartar = (lead: Lead) => moveLead(lead.id, stageById(PERDIDO_STAGE_ID));
@@ -232,20 +305,34 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
   const visiblePhases = NEGOCIO_PHASES.filter((p) => activePhase === "all" || p.id === activePhase);
 
-  const renderCard = (lead: Lead, isValidacao: boolean) => (
+  const renderCard = (lead: Lead, isValidacao: boolean) => {
+    const isSelected = selectedIds.has(lead.id);
+    return (
     <div
       key={lead.id}
-      draggable
+      draggable={!selectMode}
       onDragStart={(e) => {
         e.dataTransfer.setData("leadId", lead.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      className="shrink-0 min-w-0 bg-white rounded-lg border border-slate-200 shadow-sm p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+      onClick={selectMode ? () => toggleSelected(lead.id) : undefined}
+      className={`shrink-0 min-w-0 bg-white rounded-lg border shadow-sm p-3 hover:shadow-md transition-shadow ${
+        selectMode ? "cursor-pointer select-none" : "cursor-grab active:cursor-grabbing"
+      } ${isSelected ? "border-blue-500 ring-2 ring-blue-400/60 bg-blue-50/40" : "border-slate-200"}`}
     >
       <div className="flex items-start gap-1 min-w-0">
+        {selectMode && (
+          <span className="shrink-0 -ml-0.5 mr-0.5 text-blue-700" aria-hidden>
+            {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-slate-400" />}
+          </span>
+        )}
         <button
           type="button"
-          onClick={() => openLead(lead)}
+          onClick={(e) => {
+            if (selectMode) return; // no modo seleção o clique marca o card
+            e.stopPropagation();
+            openLead(lead);
+          }}
           className="flex-1 min-w-0 font-semibold text-[13px] text-slate-900 leading-tight text-left hover:underline truncate block"
           title={lead.nome}
         >
@@ -253,7 +340,10 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         </button>
         <button
           type="button"
-          onClick={() => setTimelineLeadId(lead.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setTimelineLeadId(lead.id);
+          }}
           className="shrink-0 -mt-0.5 -mr-1 p-1 rounded text-slate-400 hover:text-blue-800 hover:bg-blue-50"
           title="Ver histórico (timeline)"
           aria-label="Ver histórico do lead"
@@ -287,7 +377,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       )}
       <div className="text-[11px] text-slate-500 mt-2">Chegou {formatChegou(lead.created_at)}</div>
 
-      {isValidacao ? (
+      {selectMode ? null : isValidacao ? (
         <div className="grid grid-cols-2 gap-1.5 mt-3">
           <Button size="sm" className="h-8 min-w-0 px-1 gap-1 whitespace-nowrap bg-blue-800 hover:bg-blue-900 text-white text-[11px]" onClick={() => handleValidar(lead)}>
             <Check className="w-3 h-3 shrink-0" />
@@ -309,7 +399,8 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   const renderColumn = (stage: NegocioStage, accent: string) => {
     const stageLeads = leadsByStage[stage.id] || [];
@@ -342,7 +433,17 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                 {stageLeads.length}
               </span>
             </div>
-            {!isValidacao && (
+            {selectMode ? (
+              stageLeads.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggleColumn(stageLeads)}
+                  className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
+                >
+                  {stageLeads.every((l) => selectedIds.has(l.id)) ? "Desmarcar" : "Todos"}
+                </button>
+              )
+            ) : !isValidacao && (
               <button type="button" onClick={() => openNewInStage(stage.id)} className="text-slate-400 hover:text-slate-700" title={`Novo negócio em ${stage.name}`}>
                 <Plus className="w-4 h-4" />
               </button>
@@ -370,7 +471,11 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Negócios</h1>
-          <p className="text-sm text-muted-foreground">Arraste os cards entre as etapas para atualizar o funil.</p>
+          <p className="text-sm text-muted-foreground">
+            {selectMode
+              ? "Toque nos cards para selecionar e escolha a etapa na barra de baixo."
+              : "Arraste os cards entre as etapas ou use “Selecionar vários” para mover em lote."}
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <div className="relative">
@@ -382,6 +487,14 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
               <Wand2 className="w-4 h-4 mr-1" /> Padronizar etapas ({normalizationTotal})
             </Button>
           )}
+          <Button
+            variant={selectMode ? "secondary" : "outline"}
+            className="h-9"
+            onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+          >
+            {selectMode ? <X className="w-4 h-4 mr-1" /> : <CheckSquare className="w-4 h-4 mr-1" />}
+            {selectMode ? "Cancelar seleção" : "Selecionar vários"}
+          </Button>
           <Button className="h-9 bg-blue-800 hover:bg-blue-900 text-white" onClick={() => openNewInStage(VALIDACAO_STAGE_ID)}>
             <Plus className="w-4 h-4 mr-1" /> Novo negócio
           </Button>
@@ -423,7 +536,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       </div>
 
       {/* Quadro */}
-      <div className="flex gap-4 overflow-x-auto pb-4 min-w-0 snap-x snap-mandatory sm:snap-none overscroll-x-contain">
+      <div className={`flex gap-4 overflow-x-auto min-w-0 snap-x snap-mandatory sm:snap-none overscroll-x-contain ${selectMode ? "pb-28" : "pb-4"}`}>
         {visiblePhases.map((phase) => {
           const stages = NEGOCIO_STAGES.filter((s) => s.phase === phase.id);
           return (
@@ -438,6 +551,51 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           );
         })}
       </div>
+
+      {/* Barra de ação da seleção múltipla */}
+      {selectMode && (
+        <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
+          <div className="pointer-events-auto mx-auto max-w-3xl rounded-xl border bg-white shadow-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex items-center justify-between sm:justify-start gap-3 sm:min-w-[150px]">
+              <span className="text-sm font-semibold">
+                {selectedIds.size} selecionado{selectedIds.size === 1 ? "" : "s"}
+              </span>
+              {selectedIds.size > 0 && (
+                <button type="button" className="text-xs text-muted-foreground hover:text-foreground underline" onClick={() => setSelectedIds(new Set())}>
+                  Limpar
+                </button>
+              )}
+            </div>
+            <div className="flex flex-1 gap-2 min-w-0">
+              <Select value={bulkTarget} onValueChange={setBulkTarget}>
+                <SelectTrigger className="h-10 flex-1 min-w-0">
+                  <SelectValue placeholder="Mover para a etapa..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-[50vh]">
+                  {NEGOCIO_PHASES.map((p) => (
+                    <div key={p.id}>
+                      <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{p.label}</div>
+                      {NEGOCIO_STAGES.filter((s) => s.phase === p.id).map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                className="h-10 shrink-0 bg-blue-800 hover:bg-blue-900 text-white"
+                disabled={!bulkTarget || selectedIds.size === 0 || bulkMoving}
+                onClick={moveSelected}
+              >
+                <MoveRight className="w-4 h-4 mr-1" />
+                {bulkMoving ? "Movendo..." : "Mover"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Novo negócio */}
       <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
