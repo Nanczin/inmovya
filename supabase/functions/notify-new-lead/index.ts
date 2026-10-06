@@ -13,6 +13,15 @@ const isAutoLead = (lead: any) => {
   return origem === "roleta" || tags.includes("roleta") || tags.includes("meta ads");
 };
 
+// Telefone no formato do discador: +55DDDNUMERO
+const telParaDiscar = (telefone?: string | null) => {
+  let d = String(telefone || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (d.startsWith("00")) d = d.slice(2);
+  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = "55" + d;
+  return "+" + d;
+};
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ ok: true });
 
@@ -57,6 +66,9 @@ Deno.serve(async (req) => {
       icon: "/icons/icon-192x192.png",
       url: `/?leadId=${lead.id}`,
       tag: `lead-${lead.id}`,
+      tel: telParaDiscar(lead.telefone),
+      nome: lead.nome || "",
+      leadId: lead.id,
     });
 
     const results: unknown[] = [];

@@ -34,8 +34,21 @@ registerRoute(
 
 // --- PUSH NOTIFICATION LISTENERS ---
 
+type PushData = { title: string; body: string; icon: string; url: string; tag?: string; tel?: string; nome?: string; leadId?: string };
+
+const isMobileDevice = () => /Android|iPhone|iPad|iPod|Mobile/i.test(self.navigator.userAgent || '');
+
+// Página do Inmovya que abre o discador do celular para o telefone do lead
+const callUrl = (data: Partial<PushData>) => {
+    const params = new URLSearchParams();
+    if (data.tel) params.set('ligar', data.tel);
+    if (data.leadId) params.set('leadId', data.leadId);
+    if (data.nome) params.set('nome', data.nome);
+    return '/?' + params.toString();
+};
+
 self.addEventListener('push', (event) => {
-    let data: { title: string; body: string; icon: string; url: string; tag?: string } = { title: 'Inmovya', body: 'Nova notificação', icon: '/icons/icon-192x192.png', url: '/' };
+    let data: PushData = { title: 'Inmovya', body: 'Nova notificação', icon: '/icons/icon-192x192.png', url: '/' };
 
     if (event.data) {
         try {
@@ -46,36 +59,45 @@ self.addEventListener('push', (event) => {
         }
     }
 
-    event.waitUntil(
-        self.registration.showNotification(data.title, {
-            body: data.body,
-            icon: data.icon,
-            badge: data.icon, // Android small icon usually needs to be white/transparent, but using main icon as fallback
-            vibrate: [100, 50, 100],
-            tag: data.tag,
-            requireInteraction: !!data.tag,
-            data: { url: data.url }
-        } as NotificationOptions)
-    );
+    const options: any = {
+        body: data.body,
+        icon: data.icon,
+        badge: data.icon, // Android small icon usually needs to be white/transparent, but using main icon as fallback
+        vibrate: data.tel ? [300, 100, 300, 100, 300] : [100, 50, 100],
+        tag: data.tag,
+        requireInteraction: !!data.tag,
+        data: { url: data.url, tel: data.tel, nome: data.nome, leadId: data.leadId }
+    };
+    if (data.tel) {
+        options.actions = [
+            { action: 'ligar', title: '📞 Ligar agora' },
+            { action: 'abrir', title: 'Abrir lead' }
+        ];
+    }
+
+    event.waitUntil(self.registration.showNotification(data.title, options as NotificationOptions));
 });
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const targetUrl = event.notification.data?.url || '/';
+    const data = (event.notification.data || {}) as Partial<PushData>;
 
-    event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            // If there is a window open, navigate and focus it
-            for (const client of clientList) {
-                if (client.url && 'focus' in client) {
-                    return client.navigate(targetUrl).then(c => c ? c.focus() : null);
-                }
+    // Lead novo com telefone: no celular, tocar na notificação (ou em "Ligar agora") já liga
+    const wantsCall = !!data.tel && (event.action === 'ligar' || (event.action !== 'abrir' && isMobileDevice()));
+    const targetUrl = wantsCall ? callUrl(data) : (data.url || '/');
+
+    event.waitUntil((async () => {
+        if (wantsCall && self.clients.openWindow) {
+            // Janela nova ganha o "toque" do usuário, o que permite abrir o discador na hora
+            return self.clients.openWindow(targetUrl);
+        }
+        const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (const client of clientList) {
+            if ('focus' in client) {
+                await (client as WindowClient).focus();
+                return (client as WindowClient).navigate(targetUrl);
             }
-            // If no window open, open a new one
-            if (self.clients.openWindow) {
-                return self.clients.openWindow(targetUrl);
-            }
-        })
-    );
+        }
+        if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+    })());
 });
-

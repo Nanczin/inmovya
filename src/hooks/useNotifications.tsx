@@ -13,6 +13,7 @@ interface Notification {
   taskId?: string;
   actioned?: boolean;
   tag?: string;
+  tel?: string;
 }
 
 interface NotificationsContextType {
@@ -148,8 +149,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
               icon: '/icons/icon-192x192.png',
               badge: '/icons/icon-192x192.png',
               tag: notificationData.tag || newNotification.id, // Prevent duplicates (push + app use the same tag)
-              data: { url: notificationData.taskId ? '/?taskId=' + notificationData.taskId : (notificationData.leadId ? '/?leadId=' + notificationData.leadId : '/') } // Route to journey if available
-            });
+              ...(notificationData.tel ? { actions: [{ action: 'ligar', title: '📞 Ligar agora' }, { action: 'abrir', title: 'Abrir lead' }], requireInteraction: true } : {}),
+              data: { url: notificationData.taskId ? '/?taskId=' + notificationData.taskId : (notificationData.leadId ? '/?leadId=' + notificationData.leadId : '/'), tel: notificationData.tel, leadId: notificationData.leadId, nome: notificationData.title.replace(/^.*Lead novo:\s*/, '') } // Route to journey if available
+            } as NotificationOptions);
           });
         } else {
           // Fallback to standard API

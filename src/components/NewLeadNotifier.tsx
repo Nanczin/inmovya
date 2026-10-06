@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -35,6 +35,21 @@ const playChime = () => {
   } catch {
     // sem som não é problema
   }
+};
+
+// Telefone no formato do discador: +55DDDNUMERO
+export const telParaDiscar = (telefone?: string | null) => {
+  let d = String(telefone || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (d.startsWith("00")) d = d.slice(2);
+  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = "55" + d;
+  return "+" + d;
+};
+
+const isMobile = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+const discar = (tel: string) => {
+  window.location.href = `tel:${tel}`;
 };
 
 const resumo = (lead: any) => {
@@ -103,16 +118,21 @@ export function NewLeadNotifier() {
             const titulo = `🔥 Lead novo: ${lead.nome || "sem nome"}`;
             const texto = resumo(lead);
 
+            const tel = telParaDiscar(lead.telefone);
+
             playChime();
             toast(titulo, {
               description: texto,
               duration: 60000,
-              action: {
-                label: "Abrir",
-                onClick: () => {
-                  window.location.href = `/?leadId=${lead.id}`;
-                },
-              },
+              action:
+                tel && isMobile()
+                  ? { label: "📞 Ligar", onClick: () => discar(tel) }
+                  : {
+                      label: "Abrir",
+                      onClick: () => {
+                        window.location.href = `/?leadId=${lead.id}`;
+                      },
+                    },
             });
             addNotification({
               type: "info",
@@ -120,6 +140,7 @@ export function NewLeadNotifier() {
               message: texto,
               leadId: lead.id,
               tag: `lead-${lead.id}`,
+              tel: tel || undefined,
             });
           }
         )
@@ -142,5 +163,50 @@ export function NewLeadNotifier() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return null;
+  return <CallLauncher />;
+}
+
+// Aberta pela notificação de lead novo no celular: /?ligar=+55...&nome=...
+// Tenta abrir o discador na hora e mostra um botão grande caso o celular peça um toque.
+function CallLauncher() {
+  const [chamada, setChamada] = useState<{ tel: string; nome: string } | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tel = params.get("ligar");
+    if (!tel) return;
+    const nome = params.get("nome") || "lead";
+    setChamada({ tel, nome });
+
+    // Tira o "ligar" da URL para não discar de novo ao recarregar
+    params.delete("ligar");
+    params.delete("nome");
+    const resto = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (resto ? `?${resto}` : ""));
+
+    discar(tel);
+  }, []);
+
+  if (!chamada) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 p-4" onClick={() => setChamada(null)}>
+      <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-xl text-center space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Lead novo</p>
+          <p className="text-lg font-semibold break-words">{chamada.nome}</p>
+          <p className="text-sm text-muted-foreground">{chamada.tel}</p>
+        </div>
+        <a
+          href={`tel:${chamada.tel}`}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-4 text-lg font-semibold text-white active:bg-green-700"
+        >
+          📞 Ligar agora
+        </a>
+        <button type="button" className="w-full py-2 text-sm text-muted-foreground" onClick={() => setChamada(null)}>
+          Fechar
+        </button>
+      </div>
+    </div>
+  );
 }
