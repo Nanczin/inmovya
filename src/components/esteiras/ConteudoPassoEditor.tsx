@@ -1,6 +1,5 @@
 // Mensagem + anexos de um passo da esteira (usado na mensagem padrão e em cada versão por projeto).
-import { useState } from "react";
-import { Input } from "@/components/ui/input";
+import { useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +11,58 @@ import {
   tamanhoLegivel,
 } from "@/lib/esteiras";
 import { Loader2, Paperclip, X as XIcon } from "lucide-react";
+
+// Formatação do WhatsApp: *negrito*, _itálico_, ~tachado~, ```mono```
+const FORMATOS = [
+  { marca: "*", titulo: "Negrito", rotulo: <b>N</b> },
+  { marca: "_", titulo: "Itálico", rotulo: <i>I</i> },
+  { marca: "~", titulo: "Tachado", rotulo: <s>S</s> },
+  { marca: "```", titulo: "Monoespaçado", rotulo: <span className="font-mono">{"</>"}</span> },
+];
+
+/** Legenda própria do anexo: várias linhas e botões de formatação do WhatsApp. */
+function LegendaEditor({ valor, onChange }: { valor: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const formatar = (marca: string) => {
+    const el = ref.current;
+    if (!el) return;
+    const { selectionStart: ini, selectionEnd: fim } = el;
+    const selecionado = valor.slice(ini, fim) || "texto";
+    onChange(valor.slice(0, ini) + marca + selecionado + marca + valor.slice(fim));
+    // mantém o texto formatado selecionado
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(ini + marca.length, ini + marca.length + selecionado.length);
+    });
+  };
+  return (
+    <div className="basis-full w-full space-y-1">
+      <div className="flex items-center gap-1">
+        {FORMATOS.map((f) => (
+          <button
+            key={f.marca}
+            type="button"
+            title={`${f.titulo} (selecione o texto)`}
+            onMouseDown={(ev) => ev.preventDefault()}
+            onClick={() => formatar(f.marca)}
+            className="h-6 min-w-6 px-1.5 rounded border bg-white text-xs hover:bg-slate-100"
+          >
+            {f.rotulo}
+          </button>
+        ))}
+        <span className="text-[11px] text-muted-foreground ml-1">Enter quebra a linha · aceita {"{{nome}}"}, {"{{saudacao}}"}…</span>
+      </div>
+      <Textarea
+        ref={ref}
+        rows={Math.min(8, Math.max(2, valor.split("\n").length + 1))}
+        value={valor}
+        placeholder={"Ex.: {{nome}}, segue a planta do apartamento\n\n*3 dormitórios* com suíte"}
+        onChange={(ev) => onChange(ev.target.value)}
+        className="text-xs bg-white"
+      />
+    </div>
+  );
+}
 
 interface Props {
   mensagem: string;
@@ -52,7 +103,7 @@ export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, pl
           const chave = (a.local_id || a.path)!;
           const modo = (a.legenda ?? null) !== null ? "propria" : a.legenda_texto ? "texto" : "nenhuma";
           return (
-            <div key={chave} className="w-full flex flex-col sm:flex-row sm:items-center gap-1.5 rounded-md border bg-slate-50 px-2 py-1.5 text-xs">
+            <div key={chave} className="w-full flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-1.5 rounded-md border bg-slate-50 px-2 py-1.5 text-xs">
               <span className="inline-flex items-center gap-1 min-w-0 sm:w-56 shrink-0">
                 <Paperclip className="w-3 h-3 shrink-0" />
                 <span className="truncate" title={a.name}>{a.name}</span>
@@ -93,17 +144,12 @@ export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, pl
                   <SelectItem value="propria">Escrever legenda</SelectItem>
                 </SelectContent>
               </Select>
-              {modo === "propria" && (
-                <Input
-                  value={a.legenda || ""}
-                  placeholder="Ex.: {{nome}}, segue a planta do apartamento"
-                  onChange={(ev) => mudarAnexo(chave, { legenda: ev.target.value })}
-                  className="h-7 text-xs flex-1 bg-white"
-                />
-              )}
-              <button type="button" className="text-red-600 hover:text-red-800 self-end sm:self-auto" onClick={() => tirarAnexo(chave)} title="Tirar anexo">
+              <button type="button" className="text-red-600 hover:text-red-800 self-end sm:self-auto sm:ml-auto" onClick={() => tirarAnexo(chave)} title="Tirar anexo">
                 <XIcon className="w-3.5 h-3.5" />
               </button>
+              {modo === "propria" && (
+                <LegendaEditor valor={a.legenda || ""} onChange={(v) => mudarAnexo(chave, { legenda: v })} />
+              )}
             </div>
           );
         })}
