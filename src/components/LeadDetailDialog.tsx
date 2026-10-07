@@ -224,23 +224,6 @@ export function LeadDetailDialog({ lead, isOpen, onClose, onSave, onDelete }: Le
             </div>
           </div>
 
-          {/* Interesse */}
-          <div>
-            <Label htmlFor="interesse">Empreendimento de Interesse</Label>
-            <select
-              id="interesse"
-              value={editedLead.interesse}
-              onChange={(e) => setEditedLead({...editedLead, interesse: e.target.value})}
-              className="w-full mt-1 p-2 border border-input rounded-md bg-background"
-            >
-              <option value="Residencial Aurora">Residencial Aurora</option>
-              <option value="Casas Condomínio Verde">Casas Condomínio Verde</option>
-              <option value="Apartamentos Centro">Apartamentos Centro</option>
-              <option value="Vila dos Pássaros">Vila dos Pássaros</option>
-              <option value="Edifício Sunset">Edifício Sunset</option>
-            </select>
-          </div>
-
           {/* Observações */}
           <div>
             <Label htmlFor="observacoes">Observações</Label>

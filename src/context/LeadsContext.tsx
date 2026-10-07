@@ -7,7 +7,6 @@ export interface Lead {
     email: string;
     telefone: string;
     status: string;
-    empreendimento_id?: string; // Foreign key
     tags?: string[];
     dataCadastro?: string; // Mapped from created_at
     origem?: string;
@@ -15,10 +14,6 @@ export interface Lead {
     observacoes?: string;
     temperatura?: 'quente' | 'morno' | 'frio';
     ultimo_contato?: string;
-    // Helper fields that might be joined
-    empreendimento?: {
-        nome: string;
-    };
     tasks?: any[];
     journey_map_data?: {
         nodes: any[];
@@ -48,7 +43,7 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
 
             const { data: leadsData, error: leadsError } = await supabase
                 .from('leads')
-                .select('*, empreendimento:empreendimentos(nome)')
+                .select('*')
                 .eq('user_id', user.id)
                 .order('created_at', { ascending: false });
 

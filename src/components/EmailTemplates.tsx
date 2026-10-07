@@ -259,7 +259,7 @@ export function EmailTemplates({ onSelectTemplate }: EmailTemplatesProps) {
                   value={formData.body}
                   onChange={(e) => setFormData({...formData, body: e.target.value})}
                   className="min-h-[200px]"
-                  placeholder="Olá {{nome_cliente}},&#10;&#10;Obrigado pelo seu interesse em {{empreendimento}}.&#10;&#10;Atenciosamente,&#10;Equipe Inmovya"
+                  placeholder="Olá {{nome_cliente}},&#10;&#10;Obrigado pelo seu interesse.&#10;&#10;Atenciosamente,&#10;Equipe Inmovya"
                 />
               </div>
 
@@ -267,7 +267,6 @@ export function EmailTemplates({ onSelectTemplate }: EmailTemplatesProps) {
                 <p className="text-sm font-medium mb-2">Placeholders disponíveis:</p>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <Badge variant="outline">{'{{nome_cliente}}'}</Badge>
-                  <Badge variant="outline">{'{{empreendimento}}'}</Badge>
                   <Badge variant="outline">{'{{telefone}}'}</Badge>
                   <Badge variant="outline">{'{{email}}'}</Badge>
                   <Badge variant="outline">{'{{data_contato}}'}</Badge>

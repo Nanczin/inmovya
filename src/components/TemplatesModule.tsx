@@ -83,7 +83,6 @@ export function TemplatesModule() {
         { codigo: "{{primeiro_nome}}", descricao: "Pequeno Nome" },
         { codigo: "{{telefone}}", descricao: "Telefone do Cliente" },
         { codigo: "{{email}}", descricao: "Email do Cliente" },
-        { codigo: "{{empreendimento}}", descricao: "Empreendimento de Interesse" },
         { codigo: "{{vendedor}}", descricao: "Nome do Vendedor" },
     ];
 
@@ -119,8 +118,8 @@ export function TemplatesModule() {
     };
 
     const MOCK_TEMPLATES: Template[] = [
-        { id: '1', nome: 'Boas-vindas WhatsApp', tipo: 'whatsapp', conteudo: 'Olá {{nome}}, tudo bem? Sou {{vendedor}} da Inmovia Project. Vi seu interesse no {{empreendimento}}.', categoria: 'Primeiro Contato' },
-        { id: '2', nome: 'Email Apresentação', tipo: 'email', assunto: 'Apresentação {{empreendimento}}', conteudo: 'Olá {{nome}},\n\nSegue em anexo a apresentação do {{empreendimento}}.\n\nAtenciosamente,\n{{vendedor}}', categoria: 'Geral' },
+        { id: '1', nome: 'Boas-vindas WhatsApp', tipo: 'whatsapp', conteudo: 'Olá {{nome}}, tudo bem? Sou {{vendedor}} da Inmovia Project. Vi seu interesse em imóveis.', categoria: 'Primeiro Contato' },
+        { id: '2', nome: 'Email Apresentação', tipo: 'email', assunto: 'Apresentação do imóvel', conteudo: 'Olá {{nome}},\n\nSegue em anexo a apresentação do imóvel.\n\nAtenciosamente,\n{{vendedor}}', categoria: 'Geral' },
     ];
 
     const saveToLocalStorage = (newTemplates: Template[]) => {

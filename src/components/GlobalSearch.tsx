@@ -9,7 +9,6 @@ import {
   User,
   Phone,
   Mail,
-  Building,
   Calendar,
   BarChart3,
   Users,
@@ -20,7 +19,7 @@ import {
 
 interface SearchResult {
   id: string;
-  type: 'lead' | 'campanha' | 'empreendimento' | 'material' | 'relatorio';
+  type: 'lead' | 'campanha' | 'material' | 'relatorio';
   title: string;
   subtitle: string;
   module: string;
@@ -92,27 +91,6 @@ export function GlobalSearch({ isOpen, onClose, onNavigate }: GlobalSearchProps)
         });
       }
 
-      // Buscar empreendimentos
-      const { data: empreendimentos } = await supabase
-        .from('empreendimentos')
-        .select('*')
-        .or(`nome.ilike.%${query}%,descricao.ilike.%${query}%,cidade.ilike.%${query}%`)
-        .limit(2);
-
-      if (empreendimentos) {
-        empreendimentos.forEach(emp => {
-          searchResults.push({
-            id: emp.id,
-            type: 'empreendimento',
-            title: emp.nome,
-            subtitle: `${emp.cidade || 'Sem cidade'} • ${emp.descricao || 'Sem descrição'}`,
-            module: 'empreendimentos',
-            icon: <Building className="w-4 h-4" />,
-            badge: emp.status
-          });
-        });
-      }
-
       setResults(searchResults.slice(0, 8));
     } catch (error) {
       console.error('Erro na busca:', error);
@@ -134,7 +112,6 @@ export function GlobalSearch({ isOpen, onClose, onNavigate }: GlobalSearchProps)
     switch (type) {
       case 'lead': return 'Lead';
       case 'campanha': return 'Campanha';
-      case 'empreendimento': return 'Empreendimento';
       case 'material': return 'Material';
       case 'relatorio': return 'Relatório';
       default: return '';
@@ -145,7 +122,6 @@ export function GlobalSearch({ isOpen, onClose, onNavigate }: GlobalSearchProps)
     switch (type) {
       case 'lead': return 'bg-primary text-primary-foreground';
       case 'campanha': return 'bg-accent text-accent-foreground';
-      case 'empreendimento': return 'bg-success text-success-foreground';
       case 'material': return 'bg-warning text-warning-foreground';
       case 'relatorio': return 'bg-secondary text-secondary-foreground';
       default: return 'bg-muted text-muted-foreground';
@@ -183,7 +159,7 @@ export function GlobalSearch({ isOpen, onClose, onNavigate }: GlobalSearchProps)
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Buscar leads, campanhas, empreendimentos..."
+              placeholder="Buscar leads, campanhas, materiais..."
               className="pl-10"
               autoFocus
             />
@@ -250,7 +226,7 @@ export function GlobalSearch({ isOpen, onClose, onNavigate }: GlobalSearchProps)
           {!searchTerm && (
             <div className="mt-4">
               <div className="text-sm text-muted-foreground mb-4">
-                Busque por leads, campanhas, empreendimentos e mais...
+                Busque por leads, campanhas, materiais e mais...
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg bg-muted/30">
@@ -269,15 +245,6 @@ export function GlobalSearch({ isOpen, onClose, onNavigate }: GlobalSearchProps)
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Encontre campanhas ativas e pausadas
-                  </p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/30">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Building className="w-4 h-4" />
-                    <span className="font-medium">Empreendimentos</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Localize projetos e informações
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-muted/30">

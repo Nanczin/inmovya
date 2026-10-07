@@ -25,7 +25,6 @@ const moduleNames: Record<string, string> = {
   esteiras: "Esteiras",
   funil: "Funil de Vendas",
   campanhas: "Campanhas Ativas",
-  empreendimentos: "Empreendimentos",
   materiais: "Materiais de Venda",
   vozes: "Vozes Sintéticas",
   mailing: "Listas de Contatos",

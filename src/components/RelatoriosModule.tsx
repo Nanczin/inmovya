@@ -696,17 +696,15 @@ export function RelatoriosModule() {
         { data: leadsData, error: leadsError },
         { data: ligacoesData, error: ligacoesError },
         { data: emailsData, error: emailsError },
-        { data: campanhasData, error: campanhasError },
-        { data: empreendimentosData, error: empreendimentosError }
+        { data: campanhasData, error: campanhasError }
       ] = await Promise.all([
         supabase.from('leads').select('*').gte('created_at', inicio).lte('created_at', fim),
         supabase.from('ligacoes').select('*').gte('data_ligacao', inicio).lte('data_ligacao', fim),
         supabase.from('email_logs').select('*').gte('sent_at', inicio).lte('sent_at', fim),
-        supabase.from('campanhas').select('*').order('created_at', { ascending: false }),
-        supabase.from('empreendimentos').select('*').eq('status', 'ativo')
+        supabase.from('campanhas').select('*').order('created_at', { ascending: false })
       ]);
 
-      if (leadsError || ligacoesError || emailsError || campanhasError || empreendimentosError) {
+      if (leadsError || ligacoesError || emailsError || campanhasError) {
         throw new Error('Erro ao buscar dados do banco');
       }
 
@@ -774,21 +772,6 @@ export function RelatoriosModule() {
             status: c.status,
             tipo: c.tipo,
             dataInicio: c.data_inicio ? new Date(c.data_inicio).toLocaleDateString('pt-BR') : 'Não definida'
-          })) || []
-        },
-
-        // Empreendimentos
-        empreendimentos: {
-          total: empreendimentosData?.length || 0,
-          comLeads: empreendimentosData?.filter(e =>
-            leadsData?.some(l => l.empreendimento_id === e.id)
-          ).length || 0,
-          lista: empreendimentosData?.slice(0, 10).map(e => ({
-            nome: e.nome,
-            cidade: e.cidade,
-            status: e.status,
-            unidades: e.unidades,
-            vendidas: e.vendidas
           })) || []
         }
       };
@@ -884,7 +867,7 @@ export function RelatoriosModule() {
           </div>
 
           <div class="section">
-            <h2>🏢 Campanhas e Empreendimentos</h2>
+            <h2>🏢 Campanhas</h2>
             <div style="display: flex; gap: 20px;">
               <div style="flex: 1;">
                 <h3>Campanhas (${relatorioCompleto.campanhas.total} total)</h3>
@@ -892,13 +875,6 @@ export function RelatoriosModule() {
                   <li>Ativas: ${relatorioCompleto.campanhas.ativas}</li>
                   <li>Pausadas: ${relatorioCompleto.campanhas.pausadas}</li>
                   <li>Concluídas: ${relatorioCompleto.campanhas.concluidas}</li>
-                </ul>
-              </div>
-              <div style="flex: 1;">
-                <h3>Empreendimentos (${relatorioCompleto.empreendimentos.total} total)</h3>
-                <ul>
-                  <li>Com Leads: ${relatorioCompleto.empreendimentos.comLeads}</li>
-                  <li>Ativos: ${relatorioCompleto.empreendimentos.total}</li>
                 </ul>
               </div>
             </div>

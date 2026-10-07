@@ -321,7 +321,7 @@ export function SettingsModule() {
         manager: {
           nivel: 4,
           nome: "Gerente",
-          modulos: ["dashboard", "leads", "campanhas", "empreendimentos", "relatorios", "ligacoes"],
+          modulos: ["dashboard", "leads", "campanhas", "relatorios", "ligacoes"],
           acoes: ["CREATE", "READ", "UPDATE", "DELETE", "VIEW_REPORTS", "MANAGE_CAMPAIGNS"],
           descricao: "Gestão de vendas e relatórios",
           cor: "#2563eb"

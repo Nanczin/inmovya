@@ -7,7 +7,6 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { NotificationsProvider } from "@/hooks/useNotifications";
 import { LeadsProvider } from "@/context/LeadsContext";
 import { EtiquetasWhatsAppProvider } from "@/context/EtiquetasWhatsAppContext";
-import { PropertiesProvider } from "@/context/PropertiesContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Install from "./pages/Install";
@@ -25,7 +24,6 @@ const App = () => (
         <TooltipProvider>
           <LeadsProvider>
             <EtiquetasWhatsAppProvider>
-            <PropertiesProvider>
               <Toaster />
               <Sonner />
               <TaskNotificationPoller />
@@ -40,7 +38,6 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>
-            </PropertiesProvider>
             </EtiquetasWhatsAppProvider>
           </LeadsProvider>
         </TooltipProvider>

@@ -46,7 +46,6 @@ export function CampanhasModule() {
 
   // Estados para dados reais
   const [campanhasReais, setCampanhasReais] = useState<any[]>([]);
-  const [empreendimentosReais, setEmpreendimentosReais] = useState<any[]>([]);
   const [listasContatos, setListasContatos] = useState<any[]>([]);
   const [statsReais, setStatsReais] = useState({
     campanhasAtivas: 0,
@@ -65,14 +64,12 @@ export function CampanhasModule() {
   });
   const [configData, setConfigData] = useState({
     nome: "",
-    empreendimento: "",
     baseMailing: "",
     audioPrincipal: "",
     perguntasRespostas: [] as { pergunta: string; resposta: string; palavrasChave: string; nomeInteracao: string; leadInteressado: boolean }[]
   });
   const [newCampanhaData, setNewCampanhaData] = useState({
     nome: "",
-    empreendimento: "",
     baseMailing: "",
     audioPrincipal: "",
     perguntasRespostas: [] as { pergunta: string; resposta: string; palavrasChave: string; nomeInteracao: string; leadInteressado: boolean }[]
@@ -131,10 +128,7 @@ export function CampanhasModule() {
         // Buscar campanhas reais
         const { data: campanhasData, error: campanhasError } = await supabase
           .from('campanhas')
-          .select(`
-            *,
-            empreendimento:empreendimentos(nome)
-          `)
+          .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
 
@@ -142,20 +136,6 @@ export function CampanhasModule() {
           console.error('Erro ao carregar campanhas:', campanhasError);
         } else {
           setCampanhasReais(campanhasData || []);
-        }
-
-        // Buscar empreendimentos reais
-        const { data: empreendimentosData, error: empreendimentosError } = await supabase
-          .from('empreendimentos')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('nome');
-
-        if (empreendimentosError) {
-          console.error('Erro ao carregar empreendimentos:', empreendimentosError);
-        } else {
-          console.log('Empreendimentos carregados:', empreendimentosData);
-          setEmpreendimentosReais(empreendimentosData || []);
         }
 
         // Buscar listas de contatos reais
@@ -365,7 +345,6 @@ export function CampanhasModule() {
               nome: resultado.contato,
               telefone: resultado.telefone,
               email: resultado.email,
-              empreendimento_id: campanhaAtual.empreendimento_id,
               origem: `Campanha: ${campanhaAtual.nome}`,
               status: 'interessado',
               observacoes: `Ligação automática - ${resultado.interacao}\nTranscrição: ${resultado.transcricao}`,
@@ -413,7 +392,6 @@ export function CampanhasModule() {
     const conteudo = campanha.conteudo || {};
     setConfigData({
       nome: campanha.nome || "",
-      empreendimento: campanha.empreendimento_id || "",
       baseMailing: conteudo.baseMailing || "",
       audioPrincipal: conteudo.audioPrincipal || "",
       perguntasRespostas: conteudo.perguntasRespostas || []
@@ -487,8 +465,7 @@ export function CampanhasModule() {
   const handleCreateNewCampanha = () => {
     setNewCampanhaData({
       nome: "",
-      empreendimento: "",
-      baseMailing: "",
+        baseMailing: "",
       audioPrincipal: "",
       perguntasRespostas: []
     });
@@ -718,22 +695,12 @@ export function CampanhasModule() {
       return;
     }
 
-    if (!newCampanhaData.empreendimento) {
-      toast({
-        title: "Empreendimento obrigatório",
-        description: "Por favor, selecione um empreendimento para a campanha.",
-        variant: "destructive"
-      });
-      return;
-    }
-
     try {
       const campanhaData = {
         nome: newCampanhaData.nome,
-        empreendimento_id: newCampanhaData.empreendimento,
         tipo: 'ligacao',
         status: 'rascunho',
-        descricao: `Campanha criada para ${empreendimentosReais.find(e => e.id === newCampanhaData.empreendimento)?.nome || ''}`,
+        descricao: `Campanha ${newCampanhaData.nome}`,
         conteudo: {
           baseMailing: newCampanhaData.baseMailing,
           audioPrincipal: newCampanhaData.audioPrincipal,
@@ -763,8 +730,7 @@ export function CampanhasModule() {
       // Limpar formulário
       setNewCampanhaData({
         nome: "",
-        empreendimento: "",
-        baseMailing: "",
+            baseMailing: "",
         audioPrincipal: "",
         perguntasRespostas: []
       });
@@ -931,7 +897,7 @@ export function CampanhasModule() {
                   <div>
                     <CardTitle className="text-xl">{campanha.nome}</CardTitle>
                     <p className="text-muted-foreground mt-1">
-                      {campanha.empreendimento?.nome || 'Sem empreendimento'} • Criada em {new Date(campanha.created_at).toLocaleDateString('pt-BR')}
+                      Criada em {new Date(campanha.created_at).toLocaleDateString('pt-BR')}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -1079,22 +1045,6 @@ export function CampanhasModule() {
                   onChange={(e) => setConfigData({ ...configData, nome: e.target.value })}
                   placeholder="Nome da campanha"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="config-empreendimento">Empreendimento</Label>
-                <Select value={configData.empreendimento} onValueChange={(value) => setConfigData({ ...configData, empreendimento: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o empreendimento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {empreendimentosReais.map((emp) => (
-                      <SelectItem key={emp.id} value={emp.id}>
-                        {emp.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="space-y-2">
@@ -1468,22 +1418,6 @@ export function CampanhasModule() {
                   onChange={(e) => setNewCampanhaData({ ...newCampanhaData, nome: e.target.value })}
                   placeholder="Ex: Residencial Aurora - Pré-lançamento"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="new-empreendimento">Empreendimento</Label>
-                <Select value={newCampanhaData.empreendimento} onValueChange={(value) => setNewCampanhaData({ ...newCampanhaData, empreendimento: value })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o empreendimento" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {empreendimentosReais.map((emp) => (
-                      <SelectItem key={emp.id} value={emp.id}>
-                        {emp.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="space-y-2">
@@ -2020,7 +1954,6 @@ export function CampanhasModule() {
                 audioPrincipal: campanhasReais.find(c => c.id === campanhaExecutando)?.conteudo?.audioPrincipal || "Áudio principal da campanha",
                 audioPrincipalUrl: campanhasReais.find(c => c.id === campanhaExecutando)?.conteudo?.audioUrls?.["config-audio-principal"] || "",
                 perguntasRespostas: campanhasReais.find(c => c.id === campanhaExecutando)?.conteudo?.perguntasRespostas || [],
-                empreendimento_id: campanhasReais.find(c => c.id === campanhaExecutando)?.empreendimento_id || "",
                 audioUrls: campanhasReais.find(c => c.id === campanhaExecutando)?.conteudo?.audioUrls || {}
               }}
               contatos={contatosParaCampanha}

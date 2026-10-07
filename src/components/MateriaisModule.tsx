@@ -65,7 +65,6 @@ export function MateriaisModule() {
   };
   const [filtroTipo, setFiltroTipo] = useState<string[]>([]);
   const [filtroCategoria, setFiltroCategoria] = useState<string[]>([]);
-  const [filtroEmpreendimento, setFiltroEmpreendimento] = useState<string[]>([]);
   const [filtroTags, setFiltroTags] = useState<string[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -80,7 +79,6 @@ export function MateriaisModule() {
   const [selectedMaterial, setSelectedMaterial] = useState<any>(null);
   const [targetFormat, setTargetFormat] = useState<"PNG" | "JPG">("PNG");
   const [converting, setConverting] = useState(false);
-  const [empreendimentos, setEmpreendimentos] = useState<any[]>([]);
   const [materiais, setMateriais] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -88,7 +86,6 @@ export function MateriaisModule() {
     nome: "",
     tipo: "",
     categoria: "",
-    empreendimento: "",
     descricao: "",
     tags: ""
   });
@@ -96,7 +93,6 @@ export function MateriaisModule() {
     nome: "",
     tipo: "",
     categoria: "",
-    empreendimento: "",
     descricao: "",
     tags: ""
   });
@@ -112,39 +108,6 @@ export function MateriaisModule() {
   const [isDeleteFolderDialogOpen, setIsDeleteFolderDialogOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<any>(null);
   const [editFolderName, setEditFolderName] = useState("");
-
-  // Função para carregar empreendimentos
-  const carregarEmpreendimentos = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('empreendimentos')
-        .select('id, nome, status')
-        .eq('user_id', user.id)
-        .order('nome');
-
-      if (error) {
-        console.error('Erro ao carregar empreendimentos:', error);
-        toast({
-          title: "Erro ao carregar empreendimentos",
-          description: "Não foi possível carregar a lista de empreendimentos.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setEmpreendimentos(data || []);
-    } catch (error) {
-      console.error('Erro ao buscar empreendimentos:', error);
-      toast({
-        title: "Erro inesperado",
-        description: "Ocorreu um erro ao carregar os empreendimentos.",
-        variant: "destructive",
-      });
-    }
-  };
 
   // Função para carregar pastas
   const carregarPastas = async () => {
@@ -177,10 +140,7 @@ export function MateriaisModule() {
 
       const { data, error } = await supabase
         .from('materiais')
-        .select(`
-          *,
-          empreendimentos(nome)
-        `)
+        .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -209,7 +169,6 @@ export function MateriaisModule() {
 
   // Carregar dados ao inicializar
   useEffect(() => {
-    carregarEmpreendimentos();
     carregarMateriais();
     carregarPastas();
   }, []);
@@ -359,7 +318,6 @@ export function MateriaisModule() {
           nome: newMaterial.nome,
           tipo: newMaterial.tipo,
           categoria: newMaterial.categoria,
-          empreendimento_id: newMaterial.empreendimento || null,
           descricao: newMaterial.descricao || null,
           tags: newMaterial.tags ? newMaterial.tags.split(',').map(tag => tag.trim()) : [],
           folder_id: currentFolder
@@ -387,8 +345,7 @@ export function MateriaisModule() {
         nome: "",
         tipo: "",
         categoria: "",
-        empreendimento: "",
-        descricao: "",
+            descricao: "",
         tags: ""
       });
       setIsDialogOpen(false);
@@ -513,7 +470,6 @@ export function MateriaisModule() {
       nome: material.nome,
       tipo: material.tipo,
       categoria: material.categoria,
-      empreendimento: material.empreendimento_id || '',
       descricao: material.descricao || '',
       tags: material.tags && Array.isArray(material.tags) ? material.tags.join(", ") : ''
     });
@@ -555,7 +511,6 @@ export function MateriaisModule() {
         nome: editMaterial.nome,
         tipo: editMaterial.tipo,
         categoria: editMaterial.categoria,
-        empreendimento_id: editMaterial.empreendimento || null,
         descricao: editMaterial.descricao || null,
         tags: editMaterial.tags
           ? editMaterial.tags.split(',').map((t) => t.trim()).filter(Boolean)
@@ -1166,9 +1121,7 @@ export function MateriaisModule() {
     // Basic folder filter
     if (material.folder_id !== currentFolder) return false;
 
-    const empreendimentoNome = material.empreendimentos?.nome || '';
     const matchesSearch = material.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      empreendimentoNome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (material.tags && material.tags.some((tag: string) => tag.toLowerCase().includes(searchTerm.toLowerCase())));
 
     let matchesTipo = filtroTipo.length === 0;
@@ -1182,22 +1135,20 @@ export function MateriaisModule() {
     }
 
     const matchesCategoria = filtroCategoria.length === 0 || filtroCategoria.includes(material.categoria);
-    const matchesEmpreendimento = filtroEmpreendimento.length === 0 || filtroEmpreendimento.includes(empreendimentoNome);
 
     // Filtro por Tags
     const matchesTags = filtroTags.length === 0 || (material.tags && Array.isArray(material.tags) && filtroTags.some(tag => material.tags.includes(tag)));
 
-    return matchesSearch && matchesTipo && matchesCategoria && matchesEmpreendimento && matchesTags;
+    return matchesSearch && matchesTipo && matchesCategoria && matchesTags;
   });
 
   const clearFilters = () => {
     setFiltroTipo([]);
     setFiltroCategoria([]);
-    setFiltroEmpreendimento([]);
     setFiltroTags([]);
   };
 
-  const activeFiltersCount = filtroTipo.length + filtroCategoria.length + filtroEmpreendimento.length + filtroTags.length;
+  const activeFiltersCount = filtroTipo.length + filtroCategoria.length + filtroTags.length;
 
   // Funções para manejar seleção múltipla
   const toggleTipoFilter = (tipo: string) => {
@@ -1213,14 +1164,6 @@ export function MateriaisModule() {
       prev.includes(categoria)
         ? prev.filter(c => c !== categoria)
         : [...prev, categoria]
-    );
-  };
-
-  const toggleEmpreendimentoFilter = (empreendimento: string) => {
-    setFiltroEmpreendimento(prev =>
-      prev.includes(empreendimento)
-        ? prev.filter(e => e !== empreendimento)
-        : [...prev, empreendimento]
     );
   };
 
@@ -1274,7 +1217,7 @@ export function MateriaisModule() {
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar materiais por nome, empreendimento ou tags..."
+            placeholder="Buscar materiais por nome ou tags..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -1338,31 +1281,6 @@ export function MateriaisModule() {
                     onCheckedChange={() => toggleCategoriaFilter(categoria)}
                   />
                   <span>{categoria}</span>
-                </div>
-              </DropdownMenuItem>
-            ))}
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuLabel>Filtrar por Empreendimento</DropdownMenuLabel>
-            {empreendimentos.map((empreendimento) => (
-              <DropdownMenuItem
-                key={empreendimento.id}
-                className="cursor-pointer"
-                onClick={(e) => {
-                  e.preventDefault();
-                  toggleEmpreendimentoFilter(empreendimento.nome);
-                }}
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <Checkbox
-                    checked={filtroEmpreendimento.includes(empreendimento.nome)}
-                    onCheckedChange={() => toggleEmpreendimentoFilter(empreendimento.nome)}
-                  />
-                  <span>{empreendimento.nome}</span>
-                  <Badge variant="outline" className="ml-auto text-xs">
-                    {empreendimento.status}
-                  </Badge>
                 </div>
               </DropdownMenuItem>
             ))}
@@ -1596,10 +1514,6 @@ export function MateriaisModule() {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 text-xs sm:text-sm">
                           <div>
-                            <div className="text-muted-foreground">Empreendimento</div>
-                            <div className="font-medium truncate">{material.empreendimentos?.nome || 'Não informado'}</div>
-                          </div>
-                          <div>
                             <div className="text-muted-foreground">Tamanho</div>
                             <div className="font-medium">{material.arquivo_tamanho ? `${(material.arquivo_tamanho / 1024 / 1024).toFixed(2)} MB` : 'N/A'}</div>
                           </div>
@@ -1830,34 +1744,6 @@ export function MateriaisModule() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="empreendimento">Empreendimento</Label>
-              <Select
-                value={newMaterial.empreendimento}
-                onValueChange={(value) => setNewMaterial({ ...newMaterial, empreendimento: value })}
-                disabled={loading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loading ? "Carregando..." : "Selecione o empreendimento"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {empreendimentos.length === 0 ? (
-                    <SelectItem value="" disabled>
-                      {loading ? "Carregando empreendimentos..." : "Nenhum empreendimento cadastrado"}
-                    </SelectItem>
-                  ) : (
-                    empreendimentos.map((empreendimento) => (
-                      <SelectItem key={empreendimento.id} value={empreendimento.id}>
-                        {empreendimento.nome}
-                        <Badge variant="outline" className="ml-2 text-xs">
-                          {empreendimento.status}
-                        </Badge>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="descricao">Descrição</Label>
               <Textarea
                 id="descricao"
@@ -1943,34 +1829,6 @@ export function MateriaisModule() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-empreendimento">Empreendimento</Label>
-              <Select
-                value={editMaterial.empreendimento}
-                onValueChange={(value) => setEditMaterial({ ...editMaterial, empreendimento: value })}
-                disabled={loading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loading ? "Carregando..." : "Selecione o empreendimento"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {empreendimentos.length === 0 ? (
-                    <SelectItem value="" disabled>
-                      {loading ? "Carregando empreendimentos..." : "Nenhum empreendimento cadastrado"}
-                    </SelectItem>
-                  ) : (
-                    empreendimentos.map((empreendimento) => (
-                      <SelectItem key={empreendimento.id} value={empreendimento.id}>
-                        {empreendimento.nome}
-                        <Badge variant="outline" className="ml-2 text-xs">
-                          {empreendimento.status}
-                        </Badge>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="edit-descricao">Descrição</Label>
               <Textarea
                 id="edit-descricao"
@@ -2029,10 +1887,6 @@ export function MateriaisModule() {
 
               {/* Material Details Grid */}
               <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-muted/20">
-                <div>
-                  <div className="text-sm text-muted-foreground">Empreendimento</div>
-                  <div className="font-medium">{selectedMaterial.empreendimentos?.nome || 'Não informado'}</div>
-                </div>
                 <div>
                   <div className="text-sm text-muted-foreground">Categoria</div>
                   <div className="font-medium">{selectedMaterial.categoria}</div>

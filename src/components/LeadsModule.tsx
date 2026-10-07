@@ -108,7 +108,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     telefone: "",
     email: "",
     origem: "",
-    interesse: [] as string[],
     observacoes: "",
     tags: [] as string[],
     renda: "",
@@ -122,7 +121,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     status: [] as string[],
     origem: [] as string[],
     etapa: [] as string[],
-    interesse: [] as string[],
     tags: [] as string[],
     dataInicio: "",
     dataFim: ""
@@ -132,7 +130,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     telefone: "",
     email: "",
     origem: "",
-    interesse: [] as string[],
     observacoes: "",
     tags: [] as string[],
     renda: "",
@@ -145,7 +142,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
   // Estados para dados reais
   // const [leadsReais, setLeadsReais] = useState<any[]>([]); // REMOVIDO: Usar do Contexto
-  const [empreendimentos, setEmpreendimentos] = useState<any[]>([]);
 
 
 
@@ -180,26 +176,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   const { toast } = useToast();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Função para carregar empreendimentos
-  const carregarEmpreendimentos = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('empreendimentos')
-        .select('id, nome, status')
-        .not('status', 'in', '("Entregue","Inativo")')
-        .order('nome');
-
-      if (error) {
-        console.error('Erro ao carregar empreendimentos:', error);
-        return;
-      }
-
-      setEmpreendimentos(data || []);
-    } catch (error) {
-      console.error('Erro ao buscar empreendimentos:', error);
-    }
-  };
 
   // Calcular estatísticas sempre que 'leads' do contexto mudar
   useEffect(() => {
@@ -239,7 +215,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
   // Carregar dados auxiliares ao inicializar
   useEffect(() => {
-    carregarEmpreendimentos();
     refreshLeads(); // Garante dados frescos
   }, []);
 
@@ -293,7 +268,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     return activeFilters.status.length +
       activeFilters.origem.length +
       activeFilters.etapa.length +
-      activeFilters.interesse.length +
       activeFilters.tags.length +
       (activeFilters.dataInicio ? 1 : 0) +
       (activeFilters.dataFim ? 1 : 0);
@@ -302,7 +276,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   // Função para obter todas as tags disponíveis dos leads
   const getAvailableTags = () => {
     if (!leads || !Array.isArray(leads)) return [];
-    const tagsExtrasPrefixes = ["Interesse: ", "Renda: ", "Profissão: ", "Entrada: "];
+    const tagsExtrasPrefixes = ["Renda: ", "Profissão: ", "Entrada: "];
     const allTags = leads.flatMap(lead => lead.tags || []).filter((t: string) => {
       // Retornar apenas tags normais, ignorando as de sistema
       return !tagsExtrasPrefixes.some(prefix => t.startsWith(prefix));
@@ -339,20 +313,11 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
   const filteredLeads = (leads && Array.isArray(leads) ? leads : [])
     .map(lead => {
-      // Remover tags de empreendimentos que não existem mais
-      const validTags = (lead.tags || []).filter((t: string) => {
-        if (t.startsWith("Interesse: ")) {
-          const nomeInteresse = t.replace("Interesse: ", "").trim();
-          return empreendimentos.some(emp => emp.nome.trim() === nomeInteresse);
-        }
-        return true;
-      });
-
       // Diferenciar homônimos adicionando telefone ou email ao nome de exibição
       const extraInfo = lead.telefone ? ` - ${lead.telefone}` : (lead.email ? ` - ${lead.email}` : '');
       const displayNome = `${lead.nome}${extraInfo}`;
 
-      return { ...lead, tags: validTags, displayNome };
+      return { ...lead, tags: lead.tags || [], displayNome };
     })
     .filter(lead => {
     // Filtro por busca textual
@@ -372,11 +337,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       const normalizedLeadOrigem = lead.origem.trim().toLowerCase();
       const match = activeFilters.origem.some(o => o.trim().toLowerCase() === normalizedLeadOrigem);
       if (!match) return false;
-    }
-
-    // Filtro por empreendimento
-    if (activeFilters.interesse.length > 0 && lead.empreendimento?.nome && !activeFilters.interesse.includes(lead.empreendimento.nome)) {
-      return false;
     }
 
     // Filtro por tags
@@ -438,14 +398,9 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           origem: newLead.origem || null,
           observacoes: newLead.observacoes || null,
           ultimo_contato: new Date().toISOString(),
-          empreendimento_id: newLead.interesse.length > 0 ? newLead.interesse[0] : null,
           status: newLead.status || 'Validação',
           tags: [
             ...newLead.tags,
-            ...newLead.interesse.map(id => {
-              const emp = empreendimentos.find(e => e.id === id);
-              return emp ? `Interesse: ${emp.nome}` : null;
-            }).filter(Boolean) as string[],
             // Campos extras como tags
             newLead.renda ? `Renda: ${newLead.renda}` : null,
             newLead.profissao ? `Profissão: ${newLead.profissao}` : null,
@@ -469,7 +424,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         telefone: "",
         email: "",
         origem: "",
-        interesse: [],
         observacoes: "",
         tags: [],
         tagsRaw: "",
@@ -538,24 +492,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   const handleEditLead = (lead: any) => {
     setSelectedLead(lead);
 
-    // Recuperar interesses a partir do ID principal e das tags
-    const interessePrincipal = lead.empreendimento_id ? [lead.empreendimento_id] : [];
-
-    // Procurar nas tags por "Interesse: Nome"
-    const tagsInteresse = (lead.tags || [])
-      .filter((t: string) => t.startsWith("Interesse: "))
-      .map((t: string) => t.replace("Interesse: ", ""));
-
-    const interessesDasTags = empreendimentos
-      .filter(emp => tagsInteresse.includes(emp.nome))
-      .map(emp => emp.id);
-
-    // Combinar e remover duplicatas
-    const todosInteresses = [...new Set([...interessePrincipal, ...interessesDasTags])];
-
-    // Filtrar tags normais (sem ser de interesse) para o campo de tags
-    // Filtrar tags normais (sem ser de interesse ou campos extras) para o campo de tags
-    const tagsExtrasPrefixes = ["Interesse: ", "Renda: ", "Profissão: ", "Entrada: "];
+    // Tags normais (sem os campos extras) vão para o campo de tags; "Interesse: ..." fica como tag
+    const tagsExtrasPrefixes = ["Renda: ", "Profissão: ", "Entrada: "];
     const tagsNormais = (lead.tags || []).filter((t: string) => !tagsExtrasPrefixes.some(prefix => t.startsWith(prefix)));
 
     // Extrair campos extras das tags
@@ -568,7 +506,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       telefone: lead.telefone,
       email: lead.email,
       origem: lead.origem || "",
-      interesse: todosInteresses,
       observacoes: lead.observacoes || "",
       tags: tagsNormais,
       renda: rendaTag ? rendaTag.replace("Renda: ", "") : "",
@@ -585,7 +522,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   useEffect(() => {
     if (!initialLeadId) return;
     if (!leads || !Array.isArray(leads) || leads.length === 0) return;
-    if (!empreendimentos || !Array.isArray(empreendimentos) || empreendimentos.length === 0) return;
     if (initialLeadId === lastProcessedLeadId.current) return;
 
     const lead = leads.find(l => l.id === initialLeadId);
@@ -593,7 +529,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       handleEditLead(lead);
       lastProcessedLeadId.current = initialLeadId;
     }
-  }, [initialLeadId, leads, empreendimentos]);
+  }, [initialLeadId, leads]);
 
   const handleDeleteLead = (lead: any) => {
     setSelectedLead(lead);
@@ -680,15 +616,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           origem: editLead.origem || null,
           observacoes: editLead.observacoes || null,
           status: editLead.status || 'Validação',
-          // Se tiver empreendimentos selecionados, salvar o primeiro como empreendimento_id
-          empreendimento_id: editLead.interesse.length > 0 ? editLead.interesse[0] : null,
-          // Salvar interesses como tags para persistir múltiplos
           tags: [
             ...editLead.tags,
-            ...editLead.interesse.map(id => {
-              const emp = empreendimentos.find(e => e.id === id);
-              return emp ? `Interesse: ${emp.nome}` : null;
-            }).filter(Boolean) as string[],
             // Campos extras como tags
             editLead.renda ? `Renda: ${editLead.renda}` : null,
             editLead.profissao ? `Profissão: ${editLead.profissao}` : null,
@@ -1013,7 +942,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         "valor do sinal", "vl sinal", "vlr sinal", "sinal valor",
         "entrada (r$)", "entrada (valor)", "entrada reais"
       ]);
-      const colInteresse = findColumn(["interesse", "empreendimento", "projeto", "imovel", "imóvel", "property"]);
+      const colInteresse = findColumn(["interesse", "projeto", "imovel", "imóvel", "property"]);
       const colObservacoes = findColumn(["observacoes", "observações", "obs", "notas", "notes", "comentarios", "comentários"]);
       const colTags = findColumn(["tags", "etiquetas", "labels", "categorias"]);
 
@@ -1122,43 +1051,9 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         // Construir array de tags
         const tags = [`Importação: ${listName}`];
 
-        // Matching inteligente de empreendimento
-        let empreendimentoId = null;
+        // Interesse da planilha vira tag
         if (interesse) {
-          const interesseNormalizado = interesse.toString().toLowerCase().trim();
-
-          // Tentar encontrar empreendimento por matching parcial
-          const empreendimentoEncontrado = empreendimentos.find(emp => {
-            const nomeEmp = emp.nome.toLowerCase();
-
-            // Match exato
-            if (nomeEmp === interesseNormalizado) return true;
-
-            // Match parcial - interesse contém parte do nome do empreendimento
-            if (nomeEmp.includes(interesseNormalizado) || interesseNormalizado.includes(nomeEmp)) return true;
-
-            // Match por palavras-chave (split por espaços e verifica se alguma palavra bate)
-            const palavrasInteresse = interesseNormalizado.split(/\s+/);
-            const palavrasEmp = nomeEmp.split(/\s+/);
-
-            // Se alguma palavra do interesse (com mais de 3 caracteres) está no nome do empreendimento
-            const temPalavraComum = palavrasInteresse.some(palavra =>
-              palavra.length > 3 && palavrasEmp.some(palavraEmp =>
-                palavraEmp.includes(palavra) || palavra.includes(palavraEmp)
-              )
-            );
-
-            return temPalavraComum;
-          });
-
-          if (empreendimentoEncontrado) {
-            empreendimentoId = empreendimentoEncontrado.id;
-            // Adicionar tag com o nome completo do empreendimento encontrado
-            tags.push(`Interesse: ${empreendimentoEncontrado.nome}`);
-          } else {
-            // Se não encontrou, adicionar como tag apenas
-            tags.push(`Interesse: ${interesse}`);
-          }
+          tags.push(`Interesse: ${interesse}`);
         }
 
         // Adicionar renda como tag se existir
@@ -1198,7 +1093,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           origem: origem || listName,
           status: 'novo',
           user_id: user.id,
-          empreendimento_id: empreendimentoId, // Vincula ao empreendimento se encontrado
           observacoes: observacoes || '',
           tags: tags
         };
@@ -1245,7 +1139,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         Nome: lead.nome || '',
         Telefone: lead.telefone || '',
         Email: lead.email || '',
-        Projeto: lead.empreendimento?.nome || 'N/A',
         Renda: renda,
         Profissão: profissao,
         Entrada: entrada,
@@ -1404,50 +1297,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                       />
                     )}
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="interesse">Empreendimentos de Interesse</Label>
-                  <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2">
-                    {empreendimentos.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">Nenhum empreendimento cadastrado</div>
-                    ) : (
-                      empreendimentos.map((empreendimento) => (
-                        <div key={empreendimento.id} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`interesse-${empreendimento.id}`}
-                            checked={newLead.interesse.includes(empreendimento.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setNewLead({
-                                  ...newLead,
-                                  interesse: [...newLead.interesse, empreendimento.id]
-                                });
-                              } else {
-                                setNewLead({
-                                  ...newLead,
-                                  interesse: newLead.interesse.filter(id => id !== empreendimento.id)
-                                });
-                              }
-                            }}
-                          />
-                          <Label
-                            htmlFor={`interesse-${empreendimento.id}`}
-                            className="text-sm font-normal cursor-pointer flex items-center gap-2"
-                          >
-                            {empreendimento.nome}
-                            <Badge variant="outline" className="text-xs">
-                              {empreendimento.status}
-                            </Badge>
-                          </Label>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {newLead.interesse.length > 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      {newLead.interesse.length} empreendimento(s) selecionado(s)
-                    </div>
-                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="observacoes">Observações</Label>
@@ -1684,13 +1533,12 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                           <span className="font-medium">Cadastro:</span> {new Date(lead.created_at).toLocaleDateString('pt-BR')}
                         </div>
                         <div className="col-span-1 sm:col-span-2">
-                          <span className="font-medium">Projetos:</span>{' '}
+                          <span className="font-medium">Interesse:</span>{' '}
                           {(() => {
-                            const primary = lead.empreendimento?.nome;
                             const tagInterests = (lead.tags || [])
                               .filter((t: string) => t.startsWith("Interesse: "))
                               .map((t: string) => t.replace("Interesse: ", ""));
-                            const allInterests = Array.from(new Set([primary, ...tagInterests].filter(Boolean)));
+                            const allInterests = Array.from(new Set(tagInterests.filter(Boolean)));
 
                             return allInterests.length > 0 ? allInterests.join(', ') : 'N/A';
                           })()}
@@ -1802,11 +1650,10 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                       <td className="p-3">
                         <div className="flex flex-col gap-1 max-w-[180px]">
                           {(() => {
-                            const primary = lead.empreendimento?.nome;
                             const tagInterests = (lead.tags || [])
                               .filter((t: string) => t.startsWith("Interesse: "))
                               .map((t: string) => t.replace("Interesse: ", ""));
-                            const allInterests = Array.from(new Set([primary, ...tagInterests].filter(Boolean)));
+                            const allInterests = Array.from(new Set(tagInterests.filter(Boolean)));
 
                             if (allInterests.length === 0) return <span className="text-sm text-foreground">N/A</span>;
 
@@ -1906,7 +1753,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         onClose={() => setIsFiltersOpen(false)}
         onApplyFilters={applyFilters}
         activeFilters={activeFilters}
-        empreendimentos={empreendimentos}
         availableTags={getAvailableTags()}
         availableOrigins={getAvailableOrigins()}
         availableStages={funnelStages.map(s => s.name)}
@@ -2028,52 +1874,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   />
                 )}
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-interesse">Empreendimentos de Interesse</Label>
-              <div className="border rounded-md p-3 max-h-40 overflow-y-auto space-y-2">
-                {empreendimentos.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Nenhum empreendimento cadastrado</div>
-                ) : (
-                  empreendimentos.map((empreendimento) => (
-                    <div key={empreendimento.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`edit-interesse-${empreendimento.id}`}
-                        className="h-4 w-4 min-w-[16px] min-h-[16px] rounded-sm shrink-0"
-                        style={{ width: '16px', height: '16px' }}
-                        checked={editLead.interesse.includes(empreendimento.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setEditLead({
-                              ...editLead,
-                              interesse: [...editLead.interesse, empreendimento.id]
-                            });
-                          } else {
-                            setEditLead({
-                              ...editLead,
-                              interesse: editLead.interesse.filter(id => id !== empreendimento.id)
-                            });
-                          }
-                        }}
-                      />
-                      <Label
-                        htmlFor={`edit-interesse-${empreendimento.id}`}
-                        className="text-sm font-normal cursor-pointer flex items-center gap-2"
-                      >
-                        {empreendimento.nome}
-                        <Badge variant="outline" className="text-xs">
-                          {empreendimento.status}
-                        </Badge>
-                      </Label>
-                    </div>
-                  ))
-                )}
-              </div>
-              {editLead.interesse.length > 0 && (
-                <div className="text-xs text-muted-foreground">
-                  {editLead.interesse.length} empreendimento(s) selecionado(s)
-                </div>
-              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-observacoes">Observações</Label>
@@ -2295,7 +2095,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
               <ul className="list-disc list-inside space-y-1 text-xs font-medium opacity-90">
                 <li><strong>Entrada</strong> (Sim/Não)</li>
                 <li><strong>Valor Entrada</strong></li>
-                <li><strong>Interesse/Empreendimento</strong></li>
+                <li><strong>Interesse</strong></li>
                 <li><strong>Observações</strong></li>
                 <li><strong>Tags</strong> (separadas por vírgula)</li>
               </ul>

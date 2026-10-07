@@ -9,7 +9,6 @@ import { Header } from "@/components/Header";
 import { Dashboard } from "@/components/Dashboard";
 import { LeadsModule } from "@/components/LeadsModule";
 import { GmailSystemModule } from "@/components/GmailSystemModule";
-import { EmpreendimentosModule } from "@/components/EmpreendimentosModule";
 import { MateriaisModule } from "@/components/MateriaisModule";
 import { MailingModule } from "@/components/MailingModule";
 import { LigacoesModule } from "@/components/LigacoesModule";
@@ -104,8 +103,6 @@ const Index = () => {
         return <NegociosModule onNavigate={handleNavigation} />;
       case "esteiras":
         return <EsteirasModule />;
-      case "empreendimentos":
-        return <EmpreendimentosModule />;
       case "materiais":
         return <MateriaisModule />;
       case "mailing":

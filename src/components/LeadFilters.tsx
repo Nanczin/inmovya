@@ -16,7 +16,6 @@ interface FilterState {
   status: string[];
   origem: string[];
   etapa: string[];
-  interesse: string[];
   tags: string[];
   dataInicio: string;
   dataFim: string;
@@ -27,17 +26,14 @@ interface LeadFiltersProps {
   onClose: () => void;
   onApplyFilters: (filters: FilterState) => void;
   activeFilters: FilterState;
-  empreendimentos: any[];
   availableTags: string[];
   availableOrigins: string[];
   availableStages: string[];
 }
 
-export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, empreendimentos, availableTags, availableOrigins, availableStages = [] }: LeadFiltersProps) {
+export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, availableTags, availableOrigins, availableStages = [] }: LeadFiltersProps) {
   const [filters, setFilters] = useState<FilterState>(activeFilters);
 
-  // Usar empreendimentos do banco de dados
-  const interesseOptions = empreendimentos.map(emp => emp.nome);
 
   const handleCheckboxChange = (category: keyof FilterState, value: string, checked: boolean) => {
     setFilters(prev => ({
@@ -60,7 +56,6 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, em
       status: [],
       origem: [],
       etapa: [],
-      interesse: [],
       tags: [],
       dataInicio: "",
       dataFim: ""
@@ -76,7 +71,6 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, em
     return filters.status.length +
       filters.origem.length +
       filters.etapa.length +
-      filters.interesse.length +
       filters.tags.length +
       (filters.dataInicio ? 1 : 0) +
       (filters.dataFim ? 1 : 0);
@@ -145,33 +139,6 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, em
                     />
                     <Label htmlFor={`status-${etapa}`} className="text-sm">
                       {etapa}
-                    </Label>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Interesse */}
-          <div>
-            <Label className="text-base font-medium">Empreendimento de Interesse</Label>
-            <div className="grid grid-cols-1 gap-3 mt-2 max-h-40 overflow-y-auto">
-              {interesseOptions.length === 0 ? (
-                <div className="text-sm text-muted-foreground p-2">
-                  Nenhum empreendimento cadastrado
-                </div>
-              ) : (
-                interesseOptions.map((interesse) => (
-                  <div key={interesse} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`interesse-${interesse}`}
-                      checked={filters.interesse.includes(interesse)}
-                      onCheckedChange={(checked) =>
-                        handleCheckboxChange('interesse', interesse, checked as boolean)
-                      }
-                    />
-                    <Label htmlFor={`interesse-${interesse}`} className="text-sm">
-                      {interesse}
                     </Label>
                   </div>
                 ))

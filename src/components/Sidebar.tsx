@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Home, Users, Megaphone, Building2, FileText, Mic, Mail, Settings, BarChart3, Phone } from "lucide-react";
+import { Home, Users, Megaphone, FileText, Mic, Mail, Settings, BarChart3, Phone } from "lucide-react";
 import inmovyaLogo from "@/assets/inmovya-logo.png";
 interface SidebarProps {
   activeModule: string;
@@ -18,10 +18,6 @@ const menuItems = [{
   id: "campanhas",
   label: "Campanhas",
   icon: Megaphone
-}, {
-  id: "empreendimentos",
-  label: "Empreendimentos",
-  icon: Building2
 }, {
   id: "materiais",
   label: "Materiais",

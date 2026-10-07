@@ -58,13 +58,6 @@ interface Contato {
   lista_id: string;
 }
 
-interface Empreendimento {
-  id: string;
-  nome: string;
-  cidade: string;
-  status: string;
-}
-
 const classificacoes = [
   "Cliente Interessado",
   "Deny List",
@@ -224,13 +217,11 @@ const formatName = (name: string) => {
 export function LigacoesModule() {
   const [listas, setListas] = useState<Lista[]>([]);
   const [contatos, setContatos] = useState<Contato[]>([]);
-  const [empreendimentos, setEmpreendimentos] = useState<Empreendimento[]>([]);
   const [listaSelecionada, setListaSelecionada] = useState<string>("");
   const [contatoSelecionado, setContatoSelecionado] = useState<Contato | null>(null);
   const [showOfertaAtiva, setShowOfertaAtiva] = useState(false);
   const [showClientData, setShowClientData] = useState(false);
   const [mailingSelecionado, setMailingSelecionado] = useState("");
-  const [empreendimentoSelecionado, setEmpreendimentoSelecionado] = useState("");
   const [classificacaoSelecionada, setClassificacaoSelecionada] = useState("");
   const [interesseCliente, setInteresseCliente] = useState("");
   const [descricaoCliente, setDescricaoCliente] = useState("");
@@ -368,8 +359,8 @@ export function LigacoesModule() {
       // 3. Se ainda não tem nada, usar MOCK patterns padrão
       if (templatesFinais.length === 0) {
         templatesFinais = [
-          { id: 'mock1', nome: 'Boas-vindas WhatsApp', tipo: 'whatsapp', conteudo: 'Olá {{nome}}, tudo bem? Sou corretor da Inmovia. Vi seu interesse no {{empreendimento}}.', categoria: 'Primeiro Contato' },
-          { id: 'mock2', nome: 'Email Apresentação', tipo: 'email', assunto: 'Apresentação {{empreendimento}}', conteudo: 'Olá {{nome}},\n\nSegue em anexo a apresentação do {{empreendimento}}.', categoria: 'Geral' }
+          { id: 'mock1', nome: 'Boas-vindas WhatsApp', tipo: 'whatsapp', conteudo: 'Olá {{nome}}, tudo bem? Sou corretor da Inmovia. Vi seu interesse em imóveis.', categoria: 'Primeiro Contato' },
+          { id: 'mock2', nome: 'Email Apresentação', tipo: 'email', assunto: 'Apresentação do imóvel', conteudo: 'Olá {{nome}},\n\nSegue em anexo a apresentação do imóvel.', categoria: 'Geral' }
         ];
       }
 
@@ -425,7 +416,6 @@ export function LigacoesModule() {
     msg = msg.replace(/{{primeiro_nome}}/g, primeiroNome || '');
     msg = msg.replace(/{{telefone}}/g, dados.telefone || '');
     msg = msg.replace(/{{email}}/g, dados.email || '');
-    msg = msg.replace(/{{empreendimento}}/g, empreendimentos.find(e => e.id === empreendimentoSelecionado)?.nome || 'Empreendimento');
 
     // Se tiver anexo, adicionar link no final da mensagem SOMENTE SE solicitado
     if (includeAttachmentLink && template.arquivo_url) {
@@ -481,21 +471,7 @@ export function LigacoesModule() {
 
       if (listasError) throw listasError;
 
-      // Carregar empreendimentos
-      const { data: empData, error: empError } = await supabase
-        .from('empreendimentos')
-        .select('id, nome, cidade, status')
-        .select('id, nome, cidade, status')
-        //.eq('status', 'Ativo') // Removendo filtro para garantir que carregue tudo por enquanto
-        .eq('user_id', user?.id)
-        .order('nome');
-
-      console.log('Empreendimentos carregados:', empData);
-
-      if (empError) throw empError;
-
       setListas(listasData || []);
-      setEmpreendimentos(empData || []);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       toast({
@@ -538,7 +514,6 @@ export function LigacoesModule() {
     setClassificacaoSelecionada(contato.dados_extras?.classificacao || "");
     setInteresseCliente(contato.dados_extras?.interesse || "");
     setDescricaoCliente(contato.dados_extras?.descricao || "");
-    setEmpreendimentoSelecionado("");
     setEtiquetaInteressado("");
     setEtapaInteressado("");
     setShowClientData(true);
@@ -687,8 +662,7 @@ export function LigacoesModule() {
         setInteresseCliente((contato.dados_extras as any)?.interesse || "");
         setClassificacaoSelecionada((contato.dados_extras as any)?.classificacao || "");
         setDescricaoCliente((contato.dados_extras as any)?.descricao || "");
-        setEmpreendimentoSelecionado("");
-        setEtiquetaInteressado("");
+            setEtiquetaInteressado("");
         setEtapaInteressado("");
         setShowClientData(true);
 
@@ -736,9 +710,6 @@ export function LigacoesModule() {
 
       if (classificacaoSelecionada === "Cliente Interessado" || classificacaoSelecionada === "Interessado e Interação Efetiva") {
         interesseAutomatico = "Tem Interesse";
-        if (empreendimentoSelecionado) {
-          dadosExtrasAtualizados.empreendimento_interesse = empreendimentoSelecionado;
-        }
       } else if (classificacaoSelecionada === "Deny List" || classificacaoSelecionada === "Número não existe") {
         interesseAutomatico = "Não Quer Mais Contato";
       } else if (classificacaoSelecionada === "Caixa Postal/Cliente Não Atendeu") {
@@ -841,7 +812,6 @@ export function LigacoesModule() {
               tags: etiquetaNormalizada ? [etiquetaNormalizada] : [],
               origem: listas.find(l => l.id === mailingSelecionado)?.nome || 'Mailing',
               observacoes: observacoesLead,
-              empreendimento_id: empreendimentoSelecionado || null,
               user_id: user?.id
             })
             .select()
@@ -963,8 +933,7 @@ export function LigacoesModule() {
       setInteresseCliente("");
       setClassificacaoSelecionada("");
       setDescricaoCliente("");
-      setEmpreendimentoSelecionado("");
-      setEtiquetaInteressado("");
+        setEtiquetaInteressado("");
       setEtapaInteressado("");
 
       // Salvar o progresso - marcar este contato como o último processado
@@ -1138,7 +1107,7 @@ export function LigacoesModule() {
   };
 
   const enviarOfertaAtiva = async () => {
-    if (!contatoSelecionado || !empreendimentoSelecionado) return;
+    if (!contatoSelecionado) return;
 
     try {
       // Aqui você pode implementar a lógica para enviar a oferta
@@ -1151,8 +1120,7 @@ export function LigacoesModule() {
 
       setShowOfertaAtiva(false);
       setContatoSelecionado(null);
-      setEmpreendimentoSelecionado("");
-    } catch (error) {
+      } catch (error) {
       console.error('Erro ao enviar oferta:', error);
       toast({
         title: "Erro",
@@ -1728,33 +1696,9 @@ export function LigacoesModule() {
                       </Select>
                     </div>
 
-                    {/* Empreendimento - aparece apenas quando cliente tem interesse */}
+                    {/* Etiqueta e etapa - aparecem apenas quando o cliente tem interesse */}
                     {(classificacaoSelecionada === "Cliente Interessado" || classificacaoSelecionada === "Interessado e Interação Efetiva") && (
                       <div className="space-y-4 pt-2 border-t border-border mt-2">
-                        <div className="space-y-2">
-                          <Label className="text-sm font-medium">Empreendimento de Interesse (opcional)</Label>
-                          <Select
-                            value={empreendimentoSelecionado || "__sem_empreendimento__"}
-                            onValueChange={(value) => setEmpreendimentoSelecionado(value === "__sem_empreendimento__" ? "" : value)}
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Não definir empreendimento" />
-                            </SelectTrigger>
-                            <SelectContent className="bg-background border shadow-lg z-50">
-                              <SelectItem value="__sem_empreendimento__">Não definir empreendimento</SelectItem>
-                              {empreendimentos.map((emp) => (
-                                <SelectItem
-                                  key={emp.id}
-                                  value={emp.id}
-                                  className="hover:bg-accent hover:text-accent-foreground"
-                                >
-                                  {emp.nome} ({emp.cidade})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
                         <div className="space-y-2">
                           <Label htmlFor="etiqueta-interessado" className="text-sm font-medium">Etiqueta (opcional)</Label>
                           <Input

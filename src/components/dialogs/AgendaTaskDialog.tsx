@@ -198,7 +198,7 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
                                 <SelectItem value="none">Nenhum (Compromisso Pessoal)</SelectItem>
                                 {leads.map(lead => (
                                     <SelectItem key={lead.id} value={lead.id}>
-                                        {lead.nome} {lead.empreendimento ? `- ${lead.empreendimento}` : ''}
+                                        {lead.nome}
                                     </SelectItem>
                                 ))}
                             </SelectContent>

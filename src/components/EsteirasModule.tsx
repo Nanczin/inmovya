@@ -56,9 +56,6 @@ import {
   tirarDaEsteira,
   moverParaPasso,
   leadDepoisDoEnvio,
-  conteudoDoPasso,
-  todosAnexosDoPasso,
-  PassoVariante,
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { etiquetasDoLead, isWhatsAppOcupado, pacoteEtiquetas, registrarEtiquetas, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
@@ -97,7 +94,6 @@ type ItemFila = {
   esteira: Esteira;
   passos: EsteiraPasso[];
   passo: EsteiraPasso;
-  conteudo: ReturnType<typeof conteudoDoPasso>; // versão do projeto do lead (ou a padrão)
   mensagem: string;
   telefone: string;
 };
@@ -139,17 +135,6 @@ export function EsteirasModule() {
   const [semTabelas, setSemTabelas] = useState(false);
   const [extensaoOk, setExtensaoOk] = useState<boolean | null>(null);
   const [aba, setAba] = useState("hoje");
-
-  // Projetos (empreendimentos) para as versões da mensagem por projeto
-  const [projetos, setProjetos] = useState<{ id: string; nome: string }[]>([]);
-  useEffect(() => {
-    supabase
-      .from("empreendimentos")
-      .select("id, nome")
-      .order("nome")
-      .then(({ data }) => setProjetos((data as { id: string; nome: string }[]) || []));
-  }, []);
-  const nomeProjeto = (id?: string | null) => projetos.find((p) => p.id === id)?.nome || "Projeto";
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -198,14 +183,12 @@ export function EsteirasModule() {
       if (!ps.length) return;
       if ((lead.esteira_passo || 0) >= ps.length) return; // já recebeu tudo: aguardando resposta
       const passo = ps[Math.min(Math.max(lead.esteira_passo || 0, 0), ps.length - 1)];
-      const conteudo = conteudoDoPasso(passo, (lead as any).empreendimento_id);
       itens.push({
         lead,
         esteira,
         passos: ps,
         passo,
-        conteudo,
-        mensagem: montarMensagem(conteudo.mensagem, lead.nome),
+        mensagem: montarMensagem(passo.mensagem, lead.nome),
         telefone: telefoneWhatsApp(lead.telefone),
       });
     });
@@ -285,7 +268,7 @@ export function EsteirasModule() {
   const filaAuto = filaVisivel;
   const filaManual: ItemFila[] = [];
   const [editados, setEditados] = useState<Record<string, string>>({});
-  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.conteudo.mensagem, item.lead.nome);
+  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome);
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
 
   const esperar = (segundos: number) =>
@@ -305,7 +288,7 @@ export function EsteirasModule() {
 
   const rodar = async () => {
     // libera a leitura dos arquivos do computador (o Chrome pede logo após o clique)
-    const comAnexo = selecionados.flatMap((i) => i.conteudo.anexos);
+    const comAnexo = selecionados.flatMap((i) => i.passo.anexos || []);
     const unicos = Array.from(new Map(comAnexo.map((a) => [a.local_id || a.path || a.name, a])).values());
     if (unicos.length) {
       const faltando = await liberarArquivosLocais(unicos);
@@ -354,7 +337,7 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
-        const anexos = await prepararAnexosParaEnvio(item.conteudo.anexos, item.lead.nome, partesDaMensagem(texto).length);
+        const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length);
         // etiqueta do WhatsApp = etapa do funil que o lead terá depois deste envio
         const etiquetas = etiquetasDoLead(leadDepoisDoEnvio(item.lead, item.esteira, item.passos, item.passo));
         const { labelError } = await enviarPeloWhatsApp(item.telefone, texto, anexos, pacoteEtiquetas(etiquetas));
@@ -398,7 +381,7 @@ export function EsteirasModule() {
 
   const marcarManualEnviado = async (item: ItemFila) => {
     try {
-      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.conteudo.mensagem, item.lead.nome));
+      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.passo.mensagem, item.lead.nome));
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado" } }));
       await refreshLeads();
     } catch (err: any) {
@@ -524,23 +507,13 @@ export function EsteirasModule() {
           etapa: esteira.etapa || null,
           ...(esteiras.some((x) => "ao_concluir_etapa" in x) ? { ao_concluir_etapa: esteira.ao_concluir_etapa || null } : {}),
           ...(esteiras.some((x) => "ao_concluir_dias" in x) ? { ao_concluir_dias: Math.max(0, Number(esteira.ao_concluir_dias) || 0) } : {}),
-          // projeto antigo (único) não é mais usado: limpa se alguma tinha
-          ...((esteira as any).empreendimento_id ? { empreendimento_id: null } : {}),
-          ...(esteiras.some((x) => "empreendimento_ids" in x) ? { empreendimento_ids: esteira.empreendimento_ids || [] } : {}),
         })
         .eq("id", esteira.id);
       if (error) throw error;
 
-      if (!esteiras.some((x) => "empreendimento_ids" in x) && (esteira.empreendimento_ids || []).length) {
-        throw new Error("Para ligar projetos à esteira, rode supabase/esteiras_varios_projetos.sql no Supabase (SQL Editor) uma vez.");
-      }
       const atuais = passosDe(esteira.id);
       const temColunaAnexos = passos.some((x) => "anexos" in x);
       const temColunaEtapa = passos.some((x) => "etapa" in x);
-      const temColunaVariantes = passos.some((x) => "variantes" in x);
-      if (!temColunaVariantes && ps.some((p) => (p.variantes || []).length)) {
-        throw new Error("Para salvar versões por projeto, rode supabase/esteiras_variantes.sql no Supabase (SQL Editor) uma vez.");
-      }
       const manter = new Set(ps.filter((p) => !p.id.startsWith("novo-")).map((p) => p.id));
       const remover = atuais.filter((p) => !manter.has(p.id)).map((p) => p.id);
       if (remover.length) {
@@ -557,7 +530,6 @@ export function EsteirasModule() {
           so_colar: !!p.so_colar,
           ...(temColunaAnexos || (p.anexos && p.anexos.length) ? { anexos: p.anexos || [] } : {}),
           ...(temColunaEtapa || p.etapa ? { etapa: p.etapa || null } : {}),
-          ...(temColunaVariantes ? { variantes: (p.variantes || []).filter((v) => v.empreendimento_ids.length) } : {}),
         };
         const { error: eUp } = p.id.startsWith("novo-")
           ? await supabase.from("esteira_passos").insert({ ...row, user_id: user?.id })
@@ -566,8 +538,8 @@ export function EsteirasModule() {
       }
       // apaga do Storage os anexos que saíram da esteira
       const chave = (a: EsteiraAnexo) => a.local_id || a.path || "";
-      const ficam = new Set(ps.flatMap((p) => todosAnexosDoPasso(p).map(chave)));
-      const sairam = atuais.flatMap((p) => todosAnexosDoPasso(p)).filter((a) => !ficam.has(chave(a)));
+      const ficam = new Set(ps.flatMap((p) => (p.anexos || []).map(chave)));
+      const sairam = atuais.flatMap((p) => p.anexos || []).filter((a) => !ficam.has(chave(a)));
       for (const a of sairam) {
         if (a.path) await removerAnexoDoStorage(a.path).catch(() => {});
         if (a.local_id) await esquecerArquivoLocal(a.local_id);
@@ -610,12 +582,6 @@ export function EsteirasModule() {
   const [novaEtiqueta, setNovaEtiqueta] = useState("");
   const mudarEtiquetas = (lista: string[]) =>
     setRascunho((r) => (r ? { ...r, esteira: { ...r.esteira, ao_concluir_tag: Array.from(new Set(lista.map((t) => t.trim()).filter(Boolean))).join(",") || null } } : r));
-
-  // Versões da mensagem por projeto
-  const mudarVariantes = (idx: number, fn: (vs: PassoVariante[]) => PassoVariante[]) =>
-    setRascunho((r) => (r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, variantes: fn(p.variantes || []) } : p)) } : r));
-  const mudarVariante = (idx: number, id: string, campos: Partial<PassoVariante>) =>
-    mudarVariantes(idx, (vs) => vs.map((v) => (v.id === id ? { ...v, ...campos } : v)));
 
   const moverPasso = (idx: number, dir: -1 | 1) =>
     setRascunho((r) => {
@@ -692,15 +658,11 @@ export function EsteirasModule() {
     const etapa = rascunho?.esteira.etapa;
     if (!etapa || esteiras.find((e) => e.id === rascunho?.esteira.id)?.etapa !== etapa) return [];
     const alvo = getStageForStatus(etapa)?.id;
-    // outras esteiras na mesma coluna (cada uma com seus projetos)
+    // outras esteiras na mesma coluna: quem já está nelas não conta
     const mesmas = esteiras.filter((e) => e.id !== rascunho!.esteira.id && e.etapa && getStageForStatus(e.etapa)?.id === alvo);
-    const meus = rascunho!.esteira.empreendimento_ids || [];
-    const deOutra = (proj?: string | null) => !!proj && mesmas.some((e) => (e.empreendimento_ids || []).includes(proj));
     return ((leads || []) as LeadEsteira[]).filter((l) => {
       if (l.esteira_id === rascunho!.esteira.id || !alvo || getStageForStatus(l.status)?.id !== alvo) return false;
-      if (mesmas.some((e) => e.id === l.esteira_id)) return false; // já está em outra esteira desta coluna
-      const proj = (l as any).empreendimento_id as string | null;
-      return meus.length ? !!proj && meus.includes(proj) : !deOutra(proj);
+      return !mesmas.some((e) => e.id === l.esteira_id);
     });
   }, [rascunho, esteiras, leads]);
 
@@ -978,14 +940,9 @@ export function EsteirasModule() {
                                     : "2 esteiras hoje ✓"
                                   : "2 esteiras hoje?"}
                               </button>
-                              {item.conteudo.variante && (
-                                <span className="text-[11px] rounded bg-blue-50 text-blue-800 px-1.5 py-0.5" title="Versão da mensagem para o projeto do lead">
-                                  {nomeProjeto((item.lead as any).empreendimento_id)}
-                                </span>
-                              )}
-                              {!!item.conteudo.anexos.length && (
-                                <span className="text-[11px] rounded bg-slate-100 px-1.5 py-0.5 inline-flex items-center gap-1" title={item.conteudo.anexos.map((a) => a.name).join(", ")}>
-                                  <Paperclip className="w-3 h-3" /> {item.conteudo.anexos.length}
+                              {!!item.passo.anexos?.length && (
+                                <span className="text-[11px] rounded bg-slate-100 px-1.5 py-0.5 inline-flex items-center gap-1" title={item.passo.anexos.map((a) => a.name).join(", ")}>
+                                  <Paperclip className="w-3 h-3" /> {item.passo.anexos.length}
                                 </span>
                               )}
                               {item.passo.so_colar && (
@@ -1223,54 +1180,8 @@ export function EsteirasModule() {
                     </Select>
                     <p className="text-[11px] text-muted-foreground">
                       Quem for movido para essa etapa em Negócios (ou em Leads) entra nesta esteira no primeiro passo. Ao sair da etapa, sai da esteira.
-                      Várias esteiras podem usar a mesma coluna: o lead vai para a esteira do projeto dele (ou para a que não tem projeto).
+                      Várias esteiras podem usar a mesma coluna: nesse caso o lead não entra sozinho, você escolhe a esteira dele.
                     </p>
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-xs font-medium">Projetos desta esteira:</span>
-                      {(rascunho.esteira.empreendimento_ids || []).map((pid) => (
-                        <span key={pid} className="inline-flex items-center gap-1 rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[11px]">
-                          {nomeProjeto(pid)}
-                          <button
-                            type="button"
-                            className="text-red-600"
-                            title="Tirar projeto"
-                            onClick={() =>
-                              setRascunho({
-                                ...rascunho,
-                                esteira: { ...rascunho.esteira, empreendimento_ids: (rascunho.esteira.empreendimento_ids || []).filter((x) => x !== pid) },
-                              })
-                            }
-                          >
-                            <XIcon className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                      <Select
-                        value=""
-                        onValueChange={(pid) =>
-                          setRascunho({
-                            ...rascunho,
-                            esteira: { ...rascunho.esteira, empreendimento_ids: [...(rascunho.esteira.empreendimento_ids || []), pid] },
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-7 w-[170px] text-xs">
-                          <SelectValue placeholder="+ projeto" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[50vh]">
-                          {projetos
-                            .filter((pr) => !(rascunho.esteira.empreendimento_ids || []).includes(pr.id))
-                            .map((pr) => (
-                              <SelectItem key={pr.id} value={pr.id}>
-                                {pr.nome}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                      {!(rascunho.esteira.empreendimento_ids || []).length && (
-                        <span className="text-[11px] text-muted-foreground">nenhum = esteira geral (recebe quem não tem esteira do próprio projeto)</span>
-                      )}
-                    </div>
                     {foraDaEsteira.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-2 py-1.5 text-xs">
                         <span>
@@ -1334,80 +1245,12 @@ export function EsteirasModule() {
                           </Button>
                         </div>
                       </div>
-                      {(p.variantes || []).length > 0 && (
-                        <div className="text-[11px] font-semibold text-slate-600">Mensagem padrão (leads sem projeto ou de outros projetos)</div>
-                      )}
                       <ConteudoPassoEditor
                         mensagem={p.mensagem}
                         anexos={p.anexos || []}
                         onMensagem={(v) => mudarPasso(idx, "mensagem", v)}
                         onAnexos={(v) => mudarPasso(idx, "anexos", v)}
                       />
-                      {(p.variantes || []).map((v) => {
-                        const usados = new Set((p.variantes || []).filter((o) => o.id !== v.id).flatMap((o) => o.empreendimento_ids));
-                        return (
-                          <div key={v.id} className="rounded-md border border-blue-200 bg-blue-50/40 p-2 space-y-2">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[11px] font-semibold text-blue-900">Versão para:</span>
-                              {v.empreendimento_ids.map((pid) => (
-                                <span key={pid} className="inline-flex items-center gap-1 rounded bg-white border px-1.5 py-0.5 text-[11px]">
-                                  {nomeProjeto(pid)}
-                                  <button
-                                    type="button"
-                                    className="text-red-600"
-                                    title="Tirar projeto"
-                                    onClick={() => mudarVariante(idx, v.id, { empreendimento_ids: v.empreendimento_ids.filter((x) => x !== pid) })}
-                                  >
-                                    <XIcon className="w-3 h-3" />
-                                  </button>
-                                </span>
-                              ))}
-                              <Select value="" onValueChange={(pid) => mudarVariante(idx, v.id, { empreendimento_ids: [...v.empreendimento_ids, pid] })}>
-                                <SelectTrigger className="h-7 w-[170px] text-xs bg-white">
-                                  <SelectValue placeholder="+ projeto" />
-                                </SelectTrigger>
-                                <SelectContent className="max-h-[50vh]">
-                                  {projetos
-                                    .filter((pr) => !v.empreendimento_ids.includes(pr.id) && !usados.has(pr.id))
-                                    .map((pr) => (
-                                      <SelectItem key={pr.id} value={pr.id}>
-                                        {pr.nome}
-                                      </SelectItem>
-                                    ))}
-                                </SelectContent>
-                              </Select>
-                              <button
-                                type="button"
-                                className="ml-auto text-xs text-red-600 hover:text-red-800 inline-flex items-center gap-1"
-                                onClick={() => mudarVariantes(idx, (vs) => vs.filter((o) => o.id !== v.id))}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" /> Tirar versão
-                              </button>
-                            </div>
-                            {!v.empreendimento_ids.length && (
-                              <p className="text-[11px] text-amber-700">Escolha pelo menos um projeto (sem projeto, esta versão não é salva).</p>
-                            )}
-                            <ConteudoPassoEditor
-                              mensagem={v.mensagem}
-                              anexos={v.anexos || []}
-                              onMensagem={(m) => mudarVariante(idx, v.id, { mensagem: m })}
-                              onAnexos={(an) => mudarVariante(idx, v.id, { anexos: an })}
-                              placeholder="Mensagem para quem tem interesse neste(s) projeto(s)"
-                            />
-                          </div>
-                        );
-                      })}
-                      <button
-                        type="button"
-                        disabled={!projetos.length}
-                        onClick={() =>
-                          mudarVariantes(idx, (vs) => [...vs, { id: crypto.randomUUID(), empreendimento_ids: [], mensagem: p.mensagem, anexos: [] }])
-                        }
-                        className="inline-flex items-center gap-1 text-xs rounded-md border border-blue-200 text-blue-800 px-2 py-1 hover:bg-blue-50 disabled:opacity-60"
-                        title="O lead recebe a versão do projeto dele; os outros recebem a mensagem padrão"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Versão por projeto
-                      </button>
                     </div>
                   ))}
                   <Button

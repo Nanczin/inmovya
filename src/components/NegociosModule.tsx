@@ -65,32 +65,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
   const [activePhase, setActivePhase] = useState<"all" | NegocioPhaseId>("all");
   const [search, setSearch] = useState("");
-  // Projeto (empreendimento): cada projeto tem seu próprio quadro e suas esteiras
-  // Seletor de projeto removido: o quadro mostra sempre todos os leads
-  const [projeto, setProjeto] = useState<string>(() => {
-    try {
-      localStorage.removeItem("negocios_projeto");
-    } catch {
-      /* ignore */
-    }
-    return "todos";
-  });
-  const [projetos, setProjetos] = useState<{ id: string; nome: string }[]>([]);
-  useEffect(() => {
-    supabase
-      .from("empreendimentos")
-      .select("id, nome")
-      .order("nome")
-      .then(({ data, error }) => !error && setProjetos((data as any) || []));
-  }, []);
-  const escolherProjeto = (v: string) => {
-    setProjeto(v);
-    try {
-      localStorage.setItem("negocios_projeto", v);
-    } catch {
-      /* ignore */
-    }
-  };
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [timelineLeadId, setTimelineLeadId] = useState<string | null>(null);
@@ -101,7 +75,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState<string>("");
   const [bulkMoving, setBulkMoving] = useState(false);
-  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; empreendimento_id?: string | null; ao_concluir_etapa?: string | null }[]>([]);
+  const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; ao_concluir_etapa?: string | null }[]>([]);
   const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string; etapa?: string | null }[]>([]);
   const [bulkEsteira, setBulkEsteira] = useState<string>("");
 
@@ -146,14 +120,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     }
   };
 
-  const setLeadProjeto = async (lead: Lead, empreendimentoId: string) => {
-    const { error } = await supabase.from("leads").update({ empreendimento_id: empreendimentoId }).eq("id", lead.id);
-    if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
-    const nome = projetos.find((p) => p.id === empreendimentoId)?.nome;
-    toast({ title: "Projeto definido", description: `${lead.nome} → ${nome}` });
-    await refreshLeads();
-  };
-
   const esteiraDaEtapa = (stage: NegocioStage) => {
     // coluna ligada a um passo (ex.: P3 = passo 3 da esteira de prospecção)
     const passoDaColuna = (passosLista as any[]).find((p) => p.etapa && getStageForStatus(p.etapa)?.id === stage.id);
@@ -161,7 +127,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       const est = esteirasLista.find((e) => e.id === passoDaColuna.esteira_id);
       if (est) return { ...est, nome: `${est.nome} · ${passoDaColuna.titulo || stage.name}` };
     }
-    // várias esteiras podem dividir a mesma coluna (uma por projeto)
+    // várias esteiras podem dividir a mesma coluna
     const daColuna = esteirasLista.filter((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
     return daColuna.length ? { ...daColuna[0], nome: daColuna.map((e) => e.nome).join(", ") } : undefined;
   };
@@ -220,10 +186,8 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     const digits = search.replace(/\D/g, "");
 
     (leads || []).forEach((lead) => {
-      if (projeto === "sem" && lead.empreendimento_id) return;
-      if (projeto !== "todos" && projeto !== "sem" && lead.empreendimento_id !== projeto) return;
       if (term) {
-        const hay = normalizeStatus(`${lead.nome} ${lead.email} ${lead.observacoes || ""} ${lead.empreendimento?.nome || ""}`);
+        const hay = normalizeStatus(`${lead.nome} ${lead.email} ${lead.observacoes || ""}`);
         const phoneMatch = digits.length >= 3 && (lead.telefone || "").replace(/\D/g, "").includes(digits);
         if (!hay.includes(term) && !phoneMatch) return;
       }
@@ -241,7 +205,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     });
 
     return map;
-  }, [leads, search, projeto]);
+  }, [leads, search]);
 
   const phaseCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -376,7 +340,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           observacoes: newDeal.observacoes.trim() || null,
           status: stage.value,
           user_id: user.id,
-          ...(projeto !== "todos" && projeto !== "sem" ? { empreendimento_id: projeto } : {}),
         },
       ]);
       if (error) throw error;
@@ -552,11 +515,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       <div className="flex flex-wrap gap-1 mt-2 min-w-0">
         {lead.origem && (
           <span className={`max-w-full truncate text-[10px] px-1.5 py-0.5 rounded border ${origemBadgeClass(lead.origem)}`} title={lead.origem}>{lead.origem}</span>
-        )}
-        {lead.empreendimento?.nome && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded border bg-slate-50 text-slate-600 border-slate-200 truncate max-w-full">
-            {lead.empreendimento.nome}
-          </span>
         )}
       </div>
 
@@ -896,7 +854,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             </div>
             <div className="grid gap-1.5">
               <Label>Observações</Label>
-              <Textarea rows={2} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Empreendimento de interesse..." />
+              <Textarea rows={2} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Interesse do lead..." />
             </div>
           </div>
           <DialogFooter>

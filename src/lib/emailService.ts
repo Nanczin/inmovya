@@ -166,7 +166,6 @@ export const emailTemplates = {
 export async function sendLeadWelcomeEmail(leadData: {
   nome: string;
   email: string;
-  empreendimento?: string;
 }): Promise<{ success: boolean; message: string }> {
   // Processa template com variáveis
   let htmlBody = emailTemplates.leadWelcome
@@ -175,8 +174,7 @@ export async function sendLeadWelcomeEmail(leadData: {
     .replace(/{{consultor}}/g, 'Estevão')
     .replace(/{{telefone}}/g, '(11) 93930-2207')
     .replace(/{{email}}/g, 'estevao@inmovya.com.br')
-    .replace(/{{website}}/g, 'https://inmovya.com.br')
-    .replace(/{{empreendimento}}/g, leadData.empreendimento || 'Nossos Empreendimentos');
+    .replace(/{{website}}/g, 'https://inmovya.com.br');
 
   return await emailMarketing({
     to: leadData.email,

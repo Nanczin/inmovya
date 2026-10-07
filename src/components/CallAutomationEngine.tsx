@@ -32,7 +32,6 @@ interface CampanhaLigacao {
   audioPrincipal: string;
   audioPrincipalUrl?: string;
   perguntasRespostas: PerguntaResposta[];
-  empreendimento_id: string;
   audioUrls: { [key: string]: string };
 }
 
