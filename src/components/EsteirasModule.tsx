@@ -9,6 +9,16 @@ import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { NEGOCIO_STAGES, getStageForStatus } from "@/lib/negociosStages";
 import {
   Esteira,
@@ -46,7 +56,11 @@ import {
   tirarDaEsteira,
   moverParaPasso,
   leadDepoisDoEnvio,
+  conteudoDoPasso,
+  todosAnexosDoPasso,
+  PassoVariante,
 } from "@/lib/esteiras";
+import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { etiquetasDoLead, isWhatsAppOcupado, pacoteEtiquetas, registrarEtiquetas, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
 import { useEtiquetasWhatsApp } from "@/context/EtiquetasWhatsAppContext";
 import {
@@ -83,6 +97,7 @@ type ItemFila = {
   esteira: Esteira;
   passos: EsteiraPasso[];
   passo: EsteiraPasso;
+  conteudo: ReturnType<typeof conteudoDoPasso>; // versão do projeto do lead (ou a padrão)
   mensagem: string;
   telefone: string;
 };
@@ -101,6 +116,20 @@ const fmtData = (iso?: string | null) =>
 export function EsteirasModule() {
   const { leads, refreshLeads } = useLeads();
   const { toast } = useToast();
+  // Confirmação dentro do Inmovya (em vez da janela do navegador)
+  const [confirmacao, setConfirmacao] = useState<{
+    titulo: string;
+    descricao: string;
+    acao: string;
+    perigo?: boolean;
+    resolver: (ok: boolean) => void;
+  } | null>(null);
+  const confirmar = (titulo: string, descricao: string, acao = "Confirmar", perigo = false) =>
+    new Promise<boolean>((resolver) => setConfirmacao({ titulo, descricao, acao, perigo, resolver }));
+  const responderConfirmacao = (ok: boolean) => {
+    confirmacao?.resolver(ok);
+    setConfirmacao(null);
+  };
   // Etiquetas do WhatsApp: função global do Inmovya (botão no cabeçalho)
   const etiquetasWa = useEtiquetasWhatsApp();
 
@@ -110,6 +139,17 @@ export function EsteirasModule() {
   const [semTabelas, setSemTabelas] = useState(false);
   const [extensaoOk, setExtensaoOk] = useState<boolean | null>(null);
   const [aba, setAba] = useState("hoje");
+
+  // Projetos (empreendimentos) para as versões da mensagem por projeto
+  const [projetos, setProjetos] = useState<{ id: string; nome: string }[]>([]);
+  useEffect(() => {
+    supabase
+      .from("empreendimentos")
+      .select("id, nome")
+      .order("nome")
+      .then(({ data }) => setProjetos((data as { id: string; nome: string }[]) || []));
+  }, []);
+  const nomeProjeto = (id?: string | null) => projetos.find((p) => p.id === id)?.nome || "Projeto";
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -158,12 +198,14 @@ export function EsteirasModule() {
       if (!ps.length) return;
       if ((lead.esteira_passo || 0) >= ps.length) return; // já recebeu tudo: aguardando resposta
       const passo = ps[Math.min(Math.max(lead.esteira_passo || 0, 0), ps.length - 1)];
+      const conteudo = conteudoDoPasso(passo, (lead as any).empreendimento_id);
       itens.push({
         lead,
         esteira,
         passos: ps,
         passo,
-        mensagem: montarMensagem(passo.mensagem, lead.nome),
+        conteudo,
+        mensagem: montarMensagem(conteudo.mensagem, lead.nome),
         telefone: telefoneWhatsApp(lead.telefone),
       });
     });
@@ -243,7 +285,7 @@ export function EsteirasModule() {
   const filaAuto = filaVisivel;
   const filaManual: ItemFila[] = [];
   const [editados, setEditados] = useState<Record<string, string>>({});
-  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome);
+  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.conteudo.mensagem, item.lead.nome);
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
 
   const esperar = (segundos: number) =>
@@ -263,7 +305,7 @@ export function EsteirasModule() {
 
   const rodar = async () => {
     // libera a leitura dos arquivos do computador (o Chrome pede logo após o clique)
-    const comAnexo = selecionados.flatMap((i) => i.passo.anexos || []);
+    const comAnexo = selecionados.flatMap((i) => i.conteudo.anexos);
     const unicos = Array.from(new Map(comAnexo.map((a) => [a.local_id || a.path || a.name, a])).values());
     if (unicos.length) {
       const faltando = await liberarArquivosLocais(unicos);
@@ -312,7 +354,7 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
-        const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length);
+        const anexos = await prepararAnexosParaEnvio(item.conteudo.anexos, item.lead.nome, partesDaMensagem(texto).length);
         // etiqueta do WhatsApp = etapa do funil que o lead terá depois deste envio
         const etiquetas = etiquetasDoLead(leadDepoisDoEnvio(item.lead, item.esteira, item.passos, item.passo));
         const { labelError } = await enviarPeloWhatsApp(item.telefone, texto, anexos, pacoteEtiquetas(etiquetas));
@@ -356,7 +398,7 @@ export function EsteirasModule() {
 
   const marcarManualEnviado = async (item: ItemFila) => {
     try {
-      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.passo.mensagem, item.lead.nome));
+      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.conteudo.mensagem, item.lead.nome));
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado" } }));
       await refreshLeads();
     } catch (err: any) {
@@ -379,7 +421,6 @@ export function EsteirasModule() {
   };
 
   const tirarLead = async (leadId: string, nome: string) => {
-    if (!window.confirm(`Tirar ${nome} da esteira? Os envios agendados dele param.`)) return;
     try {
       await tirarDaEsteira([leadId]);
       toast({ title: "Lead tirado da esteira", description: nome });
@@ -392,7 +433,7 @@ export function EsteirasModule() {
   const liberarSegundaRodada = async () => {
     const ids = segundaRodada.map((a) => a.lead.id);
     if (!ids.length) return;
-    if (!window.confirm(`Liberar o próximo passo hoje para ${ids.length} lead(s) que já receberam a esteira hoje?`)) return;
+    if (!(await confirmar("Liberar 2ª rodada hoje", `O próximo passo será liberado hoje para ${ids.length} lead(s) que já receberam a esteira hoje.`, "Liberar"))) return;
     for (let i = 0; i < ids.length; i += 200) {
       const { error } = await supabase.from("leads").update({ esteira_proximo: new Date().toISOString() }).in("id", ids.slice(i, i + 200));
       if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
@@ -492,6 +533,10 @@ export function EsteirasModule() {
       const atuais = passosDe(esteira.id);
       const temColunaAnexos = passos.some((x) => "anexos" in x);
       const temColunaEtapa = passos.some((x) => "etapa" in x);
+      const temColunaVariantes = passos.some((x) => "variantes" in x);
+      if (!temColunaVariantes && ps.some((p) => (p.variantes || []).length)) {
+        throw new Error("Para salvar versões por projeto, rode supabase/esteiras_variantes.sql no Supabase (SQL Editor) uma vez.");
+      }
       const manter = new Set(ps.filter((p) => !p.id.startsWith("novo-")).map((p) => p.id));
       const remover = atuais.filter((p) => !manter.has(p.id)).map((p) => p.id);
       if (remover.length) {
@@ -508,6 +553,7 @@ export function EsteirasModule() {
           so_colar: !!p.so_colar,
           ...(temColunaAnexos || (p.anexos && p.anexos.length) ? { anexos: p.anexos || [] } : {}),
           ...(temColunaEtapa || p.etapa ? { etapa: p.etapa || null } : {}),
+          ...(temColunaVariantes ? { variantes: (p.variantes || []).filter((v) => v.empreendimento_ids.length) } : {}),
         };
         const { error: eUp } = p.id.startsWith("novo-")
           ? await supabase.from("esteira_passos").insert({ ...row, user_id: user?.id })
@@ -516,8 +562,8 @@ export function EsteirasModule() {
       }
       // apaga do Storage os anexos que saíram da esteira
       const chave = (a: EsteiraAnexo) => a.local_id || a.path || "";
-      const ficam = new Set(ps.flatMap((p) => (p.anexos || []).map(chave)));
-      const sairam = atuais.flatMap((p) => p.anexos || []).filter((a) => !ficam.has(chave(a)));
+      const ficam = new Set(ps.flatMap((p) => todosAnexosDoPasso(p).map(chave)));
+      const sairam = atuais.flatMap((p) => todosAnexosDoPasso(p)).filter((a) => !ficam.has(chave(a)));
       for (const a of sairam) {
         if (a.path) await removerAnexoDoStorage(a.path).catch(() => {});
         if (a.local_id) await esquecerArquivoLocal(a.local_id);
@@ -534,7 +580,7 @@ export function EsteirasModule() {
   const excluirEsteira = async () => {
     if (!rascunho) return;
     const qtd = leadsEmEsteira.filter((l) => l.esteira_id === rascunho.esteira.id).length;
-    if (!window.confirm(`Excluir a esteira "${rascunho.esteira.nome}"?${qtd ? ` ${qtd} lead(s) saem dela.` : ""}`)) return;
+    if (!(await confirmar(`Excluir a esteira "${rascunho.esteira.nome}"?`, qtd ? `${qtd} lead(s) saem dela. Isso não pode ser desfeito.` : "Isso não pode ser desfeito.", "Excluir", true))) return;
     const { error } = await supabase.from("esteiras").delete().eq("id", rascunho.esteira.id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     setEsteiraSel(null);
@@ -561,36 +607,11 @@ export function EsteirasModule() {
   const mudarEtiquetas = (lista: string[]) =>
     setRascunho((r) => (r ? { ...r, esteira: { ...r.esteira, ao_concluir_tag: Array.from(new Set(lista.map((t) => t.trim()).filter(Boolean))).join(",") || null } } : r));
 
-  const [enviandoAnexo, setEnviandoAnexo] = useState<number | null>(null);
-  const anexarArquivos = async (idx: number) => {
-    setEnviandoAnexo(idx);
-    let novos: EsteiraAnexo[] = [];
-    try {
-      novos = await escolherArquivosDoComputador();
-    } catch (err: any) {
-      toast({ title: "Anexo não adicionado", description: err?.message, variant: "destructive" });
-    }
-    setRascunho((r) =>
-      r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: [...(p.anexos || []), ...novos] } : p)) } : r
-    );
-    setEnviandoAnexo(null);
-    if (novos.length) toast({ title: `${novos.length} anexo(s) adicionado(s)`, description: "Clique em Salvar esteira para guardar." });
-  };
-  const mudarAnexo = (idx: number, chave: string, campos: Partial<EsteiraAnexo>) =>
-    setRascunho((r) =>
-      r
-        ? {
-            ...r,
-            passos: r.passos.map((p, i) =>
-              i === idx ? { ...p, anexos: (p.anexos || []).map((a) => ((a.local_id || a.path) === chave ? { ...a, ...campos } : a)) } : p
-            ),
-          }
-        : r
-    );
-  const tirarAnexo = (idx: number, path: string) =>
-    setRascunho((r) =>
-      r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, anexos: (p.anexos || []).filter((a) => (a.local_id || a.path) !== path) } : p)) } : r
-    );
+  // Versões da mensagem por projeto
+  const mudarVariantes = (idx: number, fn: (vs: PassoVariante[]) => PassoVariante[]) =>
+    setRascunho((r) => (r ? { ...r, passos: r.passos.map((p, i) => (i === idx ? { ...p, variantes: fn(p.variantes || []) } : p)) } : r));
+  const mudarVariante = (idx: number, id: string, campos: Partial<PassoVariante>) =>
+    mudarVariantes(idx, (vs) => vs.map((v) => (v.id === id ? { ...v, ...campos } : v)));
 
   const moverPasso = (idx: number, dir: -1 | 1) =>
     setRascunho((r) => {
@@ -702,6 +723,23 @@ export function EsteirasModule() {
 
   return (
     <div className="flex flex-col gap-4 min-w-0">
+      <AlertDialog open={!!confirmacao} onOpenChange={(aberto) => !aberto && responderConfirmacao(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmacao?.titulo}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmacao?.descricao}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => responderConfirmacao(false)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className={confirmacao?.perigo ? "bg-red-600 hover:bg-red-700 text-white" : undefined}
+              onClick={() => responderConfirmacao(true)}
+            >
+              {confirmacao?.acao}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -932,9 +970,14 @@ export function EsteirasModule() {
                                     : "2 esteiras hoje ✓"
                                   : "2 esteiras hoje?"}
                               </button>
-                              {!!item.passo.anexos?.length && (
-                                <span className="text-[11px] rounded bg-slate-100 px-1.5 py-0.5 inline-flex items-center gap-1" title={item.passo.anexos.map((a) => a.name).join(", ")}>
-                                  <Paperclip className="w-3 h-3" /> {item.passo.anexos.length}
+                              {item.conteudo.variante && (
+                                <span className="text-[11px] rounded bg-blue-50 text-blue-800 px-1.5 py-0.5" title="Versão da mensagem para o projeto do lead">
+                                  {nomeProjeto((item.lead as any).empreendimento_id)}
+                                </span>
+                              )}
+                              {!!item.conteudo.anexos.length && (
+                                <span className="text-[11px] rounded bg-slate-100 px-1.5 py-0.5 inline-flex items-center gap-1" title={item.conteudo.anexos.map((a) => a.name).join(", ")}>
+                                  <Paperclip className="w-3 h-3" /> {item.conteudo.anexos.length}
                                 </span>
                               )}
                               {item.passo.so_colar && (
@@ -1236,118 +1279,80 @@ export function EsteirasModule() {
                           </Button>
                         </div>
                       </div>
-                      <Textarea rows={4} value={p.mensagem} onChange={(ev) => mudarPasso(idx, "mensagem", ev.target.value)} placeholder="Oi {{nome}}, {{saudacao}}! ..." />
-                      <div className="flex flex-wrap items-center gap-2">
-                        {(p.anexos || []).map((a) => {
-                          const chave = (a.local_id || a.path)!;
-                          const modo = (a.legenda ?? null) !== null ? "propria" : a.legenda_texto ? "texto" : "nenhuma";
-                          return (
-                            <div key={chave} className="w-full flex flex-col sm:flex-row sm:items-center gap-1.5 rounded-md border bg-slate-50 px-2 py-1.5 text-xs">
-                              <span className="inline-flex items-center gap-1 min-w-0 sm:w-56 shrink-0">
-                                <Paperclip className="w-3 h-3 shrink-0" />
-                                <span className="truncate" title={a.name}>{a.name}</span>
-                                <span className="text-muted-foreground shrink-0">({tamanhoLegivel(a.size)})</span>
-                              </span>
-                              {partesDaMensagem(p.mensagem).length > 1 && (
-                                <Select
-                                  value={String(
-                                    Number.isInteger(a.depois_de)
-                                      ? Math.min(a.depois_de as number, partesDaMensagem(p.mensagem).length - 1)
-                                      : partesDaMensagem(p.mensagem).length - 1
-                                  )}
-                                  onValueChange={(v) => mudarAnexo(idx, chave, { depois_de: parseInt(v) })}
-                                >
-                                  <SelectTrigger className="h-7 w-full sm:w-[170px] text-xs bg-white" title="Em que ponto da sequência este arquivo é enviado">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {partesDaMensagem(p.mensagem).map((_, k) => (
-                                      <SelectItem key={k} value={String(k)}>
-                                        Depois da mensagem {k + 1}
+                      {(p.variantes || []).length > 0 && (
+                        <div className="text-[11px] font-semibold text-slate-600">Mensagem padrão (leads sem projeto ou de outros projetos)</div>
+                      )}
+                      <ConteudoPassoEditor
+                        mensagem={p.mensagem}
+                        anexos={p.anexos || []}
+                        onMensagem={(v) => mudarPasso(idx, "mensagem", v)}
+                        onAnexos={(v) => mudarPasso(idx, "anexos", v)}
+                      />
+                      {(p.variantes || []).map((v) => {
+                        const usados = new Set((p.variantes || []).filter((o) => o.id !== v.id).flatMap((o) => o.empreendimento_ids));
+                        return (
+                          <div key={v.id} className="rounded-md border border-blue-200 bg-blue-50/40 p-2 space-y-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] font-semibold text-blue-900">Versão para:</span>
+                              {v.empreendimento_ids.map((pid) => (
+                                <span key={pid} className="inline-flex items-center gap-1 rounded bg-white border px-1.5 py-0.5 text-[11px]">
+                                  {nomeProjeto(pid)}
+                                  <button
+                                    type="button"
+                                    className="text-red-600"
+                                    title="Tirar projeto"
+                                    onClick={() => mudarVariante(idx, v.id, { empreendimento_ids: v.empreendimento_ids.filter((x) => x !== pid) })}
+                                  >
+                                    <XIcon className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                              <Select value="" onValueChange={(pid) => mudarVariante(idx, v.id, { empreendimento_ids: [...v.empreendimento_ids, pid] })}>
+                                <SelectTrigger className="h-7 w-[170px] text-xs bg-white">
+                                  <SelectValue placeholder="+ projeto" />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-[50vh]">
+                                  {projetos
+                                    .filter((pr) => !v.empreendimento_ids.includes(pr.id) && !usados.has(pr.id))
+                                    .map((pr) => (
+                                      <SelectItem key={pr.id} value={pr.id}>
+                                        {pr.nome}
                                       </SelectItem>
                                     ))}
-                                  </SelectContent>
-                                </Select>
-                              )}
-                              <Select
-                                value={modo}
-                                onValueChange={(v) =>
-                                  mudarAnexo(idx, chave, {
-                                    legenda: v === "propria" ? a.legenda || "" : null,
-                                    legenda_texto: v === "texto",
-                                  })
-                                }
-                              >
-                                <SelectTrigger className="h-7 w-full sm:w-[190px] text-xs bg-white">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="nenhuma">Sem legenda</SelectItem>
-                                  <SelectItem value="texto">Legenda = texto da mensagem</SelectItem>
-                                  <SelectItem value="propria">Escrever legenda</SelectItem>
                                 </SelectContent>
                               </Select>
-                              {modo === "propria" && (
-                                <Input
-                                  value={a.legenda || ""}
-                                  placeholder="Ex.: {{nome}}, segue a planta do apartamento"
-                                  onChange={(ev) => mudarAnexo(idx, chave, { legenda: ev.target.value })}
-                                  className="h-7 text-xs flex-1 bg-white"
-                                />
-                              )}
-                              <button type="button" className="text-red-600 hover:text-red-800 self-end sm:self-auto" onClick={() => tirarAnexo(idx, chave)} title="Tirar anexo">
-                                <XIcon className="w-3.5 h-3.5" />
+                              <button
+                                type="button"
+                                className="ml-auto text-xs text-red-600 hover:text-red-800 inline-flex items-center gap-1"
+                                onClick={() => mudarVariantes(idx, (vs) => vs.filter((o) => o.id !== v.id))}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Tirar versão
                               </button>
                             </div>
-                          );
-                        })}
-                        <button
-                          type="button"
-                          disabled={enviandoAnexo === idx}
-                          onClick={() => anexarArquivos(idx)}
-                          className="inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 hover:bg-slate-50 disabled:opacity-60"
-                        >
-                          {enviandoAnexo === idx ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
-                          Anexar arquivo do computador
-                        </button>
-                        <span className="text-[11px] text-muted-foreground">
-                          PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB · separe as mensagens com === e escolha depois de qual mensagem cada arquivo vai · o arquivo fica no seu computador (não mova nem apague)
-                        </span>
-                      </div>
-                      {(p.anexos || []).length > 0 && (
-                        <div className="rounded-md bg-blue-50/60 border border-blue-100 px-2 py-1.5">
-                          <div className="text-[11px] font-semibold text-blue-900 mb-0.5">Ordem do envio deste passo</div>
-                          <ol className="list-decimal pl-5 text-[11px] text-slate-700 space-y-0.5">
-                            {(() => {
-                              const partes = partesDaMensagem(p.mensagem);
-                              const ultima = partes.length - 1;
-                              const pos = (a: EsteiraAnexo) => (Number.isInteger(a.depois_de) ? Math.min(Math.max(0, a.depois_de as number), ultima) : ultima);
-                              const itens: JSX.Element[] = [];
-                              partes.forEach((parte, k) => {
-                                const ligados = (p.anexos || []).filter((a) => pos(a) === k);
-                                const comoLegenda = ligados.find((a) => a.legenda_texto && !(a.legenda || "").trim() && (a.legenda ?? null) === null);
-                                const resumo = parte.replace(/\s+/g, " ").trim();
-                                if (resumo && !comoLegenda) {
-                                  itens.push(<li key={`m${k}`}>Mensagem {k + 1}: “{resumo.slice(0, 60)}{resumo.length > 60 ? "…" : ""}”</li>);
-                                }
-                                ligados.forEach((a) =>
-                                  itens.push(
-                                    <li key={`a${a.local_id || a.path}`}>
-                                      📎 {a.name}
-                                      {a === comoLegenda
-                                        ? ` — legenda: mensagem ${k + 1}`
-                                        : (a.legenda || "").trim()
-                                        ? ` — legenda: “${String(a.legenda).slice(0, 40)}”`
-                                        : ""}
-                                    </li>
-                                  )
-                                );
-                              });
-                              return itens;
-                            })()}
-                          </ol>
-                        </div>
-                      )}
+                            {!v.empreendimento_ids.length && (
+                              <p className="text-[11px] text-amber-700">Escolha pelo menos um projeto (sem projeto, esta versão não é salva).</p>
+                            )}
+                            <ConteudoPassoEditor
+                              mensagem={v.mensagem}
+                              anexos={v.anexos || []}
+                              onMensagem={(m) => mudarVariante(idx, v.id, { mensagem: m })}
+                              onAnexos={(an) => mudarVariante(idx, v.id, { anexos: an })}
+                              placeholder="Mensagem para quem tem interesse neste(s) projeto(s)"
+                            />
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        disabled={!projetos.length}
+                        onClick={() =>
+                          mudarVariantes(idx, (vs) => [...vs, { id: crypto.randomUUID(), empreendimento_ids: [], mensagem: p.mensagem, anexos: [] }])
+                        }
+                        className="inline-flex items-center gap-1 text-xs rounded-md border border-blue-200 text-blue-800 px-2 py-1 hover:bg-blue-50 disabled:opacity-60"
+                        title="O lead recebe a versão do projeto dele; os outros recebem a mensagem padrão"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Versão por projeto
+                      </button>
                     </div>
                   ))}
                   <Button

@@ -37,7 +37,32 @@ export interface EsteiraPasso {
   scale_id?: string | null;
   anexos?: EsteiraAnexo[] | null;
   etapa?: string | null; // coluna do Negócios para onde o card vai quando este passo é enviado (ex.: "P3")
+  variantes?: PassoVariante[] | null; // versões da mensagem por projeto (o lead recebe a do projeto dele)
 }
+
+/** Versão de um passo para um ou mais projetos (empreendimentos). */
+export interface PassoVariante {
+  id: string;
+  empreendimento_ids: string[];
+  mensagem: string;
+  anexos?: EsteiraAnexo[] | null;
+}
+
+/** Mensagem e anexos que o lead recebe neste passo: a versão do projeto dele ou a padrão. */
+export function conteudoDoPasso(passo: EsteiraPasso, empreendimentoId?: string | null) {
+  const variante = empreendimentoId
+    ? (passo.variantes || []).find((v) => (v.empreendimento_ids || []).includes(empreendimentoId))
+    : undefined;
+  return variante
+    ? { mensagem: variante.mensagem, anexos: variante.anexos || [], variante }
+    : { mensagem: passo.mensagem, anexos: passo.anexos || [], variante: undefined };
+}
+
+/** Todos os anexos do passo (padrão + versões), para liberar/limpar arquivos. */
+export const todosAnexosDoPasso = (passo: EsteiraPasso) => [
+  ...(passo.anexos || []),
+  ...(passo.variantes || []).flatMap((v) => v.anexos || []),
+];
 
 // ---------- Anexos (PDF, vídeo, imagem, áudio, documentos...) ----------
 // Os arquivos ficam NO COMPUTADOR (não ocupam o banco do Inmovya).
