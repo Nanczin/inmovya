@@ -111,6 +111,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
+  // Etiquetas em lote na aba do WhatsApp já aberta (modo rápido)
+  if (request.action === 'labels_batch') {
+    window.IS.WhatsAppLabels.applyBatch(Array.isArray(request.items) ? request.items : [])
+      .then(results => sendResponse({ ok: true, results }))
+      .catch(error => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
+
   if (request.action === 'start_scraper') {
     (async () => {
       const data = await window.IS.Scraper.run();

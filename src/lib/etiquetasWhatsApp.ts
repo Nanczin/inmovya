@@ -71,3 +71,34 @@ export const etiquetarNoWhatsApp = (telefone: string, etiquetas: string[]) =>
       })
     );
   });
+
+export type ResultadoLote = { id: string; ok: boolean; notFound?: boolean; error?: string };
+
+/**
+ * Modo rápido: etiqueta vários leads na aba do WhatsApp Web já aberta (procura pelo número,
+ * sem recarregar a página). Quem não for achado volta com notFound para o modo normal.
+ */
+export const etiquetarEmLote = (itens: { id: string; telefone: string; etiquetas: string[] }[]) =>
+  new Promise<ResultadoLote[]>((resolve, reject) => {
+    const token = crypto.randomUUID();
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("INMOVYA_LABEL_BATCH_RESULT", onResult as EventListener);
+      reject(new Error("Tempo esgotado aguardando o WhatsApp Web."));
+    }, 30000 + itens.length * 20000);
+    const onResult = (event: CustomEvent) => {
+      if (event.detail?.token !== token) return;
+      window.clearTimeout(timeout);
+      window.removeEventListener("INMOVYA_LABEL_BATCH_RESULT", onResult as EventListener);
+      if (event.detail?.ok) resolve(event.detail.results || []);
+      else reject(new Error(event.detail?.error || "O modo rápido não respondeu."));
+    };
+    window.addEventListener("INMOVYA_LABEL_BATCH_RESULT", onResult as EventListener);
+    window.dispatchEvent(
+      new CustomEvent("INMOVYA_LABEL_BATCH", {
+        detail: {
+          token,
+          items: itens.map((i) => ({ id: i.id, phone: telefoneWhatsApp(i.telefone), ...pacoteEtiquetas(i.etiquetas) })),
+        },
+      })
+    );
+  });

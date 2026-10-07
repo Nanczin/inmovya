@@ -7,6 +7,7 @@ import { useLeads, Lead } from "@/context/LeadsContext";
 import { checarExtensao, extensaoAtualizada, telefoneWhatsApp } from "@/lib/esteiras";
 import {
   chaveEtiquetas,
+  etiquetarEmLote,
   etiquetarNoWhatsApp,
   etiquetasDoLead,
   isWhatsAppOcupado,
@@ -16,6 +17,8 @@ import {
 
 const AUTO_KEY = "inmovya_etiquetas_auto";
 const VERSAO_MINIMA = "1.2.6";
+const VERSAO_RAPIDA = "1.2.7"; // modo rápido (lote na aba do WhatsApp já aberta)
+const LOTE = 15;
 const INTERVALO_MS = 4000; // entre uma conversa e outra
 const ESPERA_MUDANCA_MS = 20000; // espera o lead "assentar" depois de mudar de etapa
 
@@ -99,7 +102,8 @@ export function EtiquetasWhatsAppProvider({ children }: { children: ReactNode })
   }, []);
 
   const processar = useCallback(
-    async (lista: PendenteEtiqueta[], manual: boolean) => {
+    async (listaInicial: PendenteEtiqueta[], manual: boolean) => {
+      let lista = listaInicial;
       if (rodandoRef.current || !lista.length) return;
       if (!(await verificarExtensao())) return;
       rodandoRef.current = true;
@@ -107,6 +111,50 @@ export function EtiquetasWhatsAppProvider({ children }: { children: ReactNode })
       setRodando(true);
       const novasFalhas: { nome: string; erro: string }[] = [];
       try {
+        // Modo rápido (só no "Sincronizar agora": traz a aba do WhatsApp para a frente durante o lote).
+        // Quem não for achado na pesquisa segue para o modo normal logo abaixo.
+        if (manual && extensaoAtualizada(VERSAO_RAPIDA)) {
+          const restantes: PendenteEtiqueta[] = [];
+          let rapidoOk = true;
+          for (let i = 0; i < lista.length && rapidoOk; i += LOTE) {
+            if (pararRef.current) break;
+            while (isWhatsAppOcupado() && !pararRef.current) await new Promise((r) => setTimeout(r, 2000));
+            if (pararRef.current) break;
+            const lote = lista.slice(i, i + LOTE);
+            setProgresso({ feitos: i, total: lista.length });
+            setWhatsAppOcupado(true);
+            try {
+              const resultados = await etiquetarEmLote(
+                lote.map(({ lead, etiquetas }) => ({ id: lead.id, telefone: lead.telefone || "", etiquetas }))
+              );
+              const porId = new Map(resultados.map((r) => [r.id, r]));
+              for (const item of lote) {
+                const r = porId.get(item.lead.id);
+                if (r?.ok) {
+                  try {
+                    await registrarEtiquetas(item.lead.id, item.etiquetas);
+                    falhouRef.current.delete(item.lead.id);
+                  } catch (err: any) {
+                    falhouRef.current.add(item.lead.id);
+                    novasFalhas.push({ nome: item.lead.nome, erro: err?.message || "falha" });
+                  }
+                } else if (r && !r.notFound) {
+                  falhouRef.current.add(item.lead.id);
+                  novasFalhas.push({ nome: item.lead.nome, erro: r.error || "falha" });
+                } else {
+                  restantes.push(item); // não achou na pesquisa: abre a conversa pelo número
+                }
+              }
+            } catch {
+              // sem aba do WhatsApp aberta ou extensão antiga: o resto vai pelo modo normal
+              rapidoOk = false;
+              restantes.push(...lista.slice(i));
+            } finally {
+              setWhatsAppOcupado(false);
+            }
+          }
+          lista = restantes;
+        }
         for (let i = 0; i < lista.length; i++) {
           if (pararRef.current) break;
           // a esteira está enviando: espera ela terminar

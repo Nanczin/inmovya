@@ -94,6 +94,28 @@ async function sendCampaignMessage(request, returnTabId = null) {
   }
 }
 
+// Etiquetas em lote: usa a aba do WhatsApp Web que já está aberta (sem recarregar por lead).
+// A aba vem para a frente durante o lote (o Chrome deixa abas escondidas muito lentas)
+// e depois o foco volta para o Inmovya.
+async function applyLabelsBatch(request, returnTabId = null) {
+  const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+  const tab = tabs.find(t => !String(t.url || '').includes('inmovya_auto=1'));
+  if (!tab?.id) throw new Error('Abra o WhatsApp Web numa aba para o modo rápido.');
+  await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+  if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, { action: 'labels_batch', items: request.items || [] });
+    if (!response?.ok) throw new Error(response?.error || 'O WhatsApp Web não respondeu.');
+    return { results: response.results || [] };
+  } finally {
+    if (returnTabId && returnTabId !== tab.id) {
+      await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+      const back = await chrome.tabs.get(returnTabId).catch(() => null);
+      if (back?.windowId != null) await chrome.windows.update(back.windowId, { focused: true }).catch(() => {});
+    }
+  }
+}
+
 const NATIVE_FILE_HOST = 'com.inmovya.scale.files';
 
 function callNativeFileHost(message) {
@@ -205,6 +227,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request?.action === 'campaign_send') {
     sendCampaignMessage(request, sender.tab?.id || null)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (request?.action === 'labels_batch') {
+    applyLabelsBatch(request, sender.tab?.id || null)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;

@@ -17,6 +17,22 @@
     });
   });
 
+  // Etiquetas em lote (modo rápido)
+  window.addEventListener('INMOVYA_LABEL_BATCH', event => {
+    const detail = event.detail || {};
+    chrome.runtime.sendMessage({ action: 'labels_batch', items: detail.items || [] }, response => {
+      const error = chrome.runtime.lastError?.message;
+      window.dispatchEvent(new CustomEvent('INMOVYA_LABEL_BATCH_RESULT', {
+        detail: {
+          token: detail.token,
+          ok: !!response?.ok && !error,
+          results: response?.results || [],
+          error: error || response?.error || ''
+        }
+      }));
+    });
+  });
+
   window.addEventListener('INMOVYA_PICK_CAMPAIGN_IMAGE', event => {
     const detail = event.detail || {};
     chrome.runtime.sendMessage({ action: 'campaign_pick_image', localId: detail.localId }, response => {

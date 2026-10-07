@@ -110,6 +110,83 @@ window.IS.WhatsAppLabels = {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   },
 
+  // ---------- Modo rápido: abre a conversa pela pesquisa da aba já aberta (sem recarregar) ----------
+  digitsOf(value) {
+    return String(value || '').replace(/\D/g, '');
+  },
+
+  // Linhas de resultado que são conversas/contatos (não trechos de mensagens)
+  searchResultRows() {
+    const S = window.IS.Scraper;
+    const rows = S.getChatRows();
+    const messagesHeader = Array.from(document.querySelectorAll('#pane-side div, #side div'))
+      .find(el => el.childElementCount === 0 && /^(mensagens|messages)$/.test(this.norm(el.textContent)) && this.visible(el));
+    if (!messagesHeader) return rows;
+    const limit = messagesHeader.getBoundingClientRect().top;
+    return rows.filter(row => row.getBoundingClientRect().top < limit);
+  },
+
+  rowMatchesPhone(row, phoneDigits) {
+    const S = window.IS.Scraper;
+    const tail = phoneDigits.slice(-8);
+    const identity = this.digitsOf(S.getContactIdentity(row));
+    if (identity.length >= 8 && identity.endsWith(tail)) return true;
+    // contato não salvo: o título da conversa é o próprio número
+    const titleDigits = this.digitsOf(S.getContactName(row));
+    return titleDigits.length >= 8 && titleDigits.endsWith(tail);
+  },
+
+  async openChatByPhone(phone) {
+    const S = window.IS.Scraper;
+    const digits = this.digitsOf(phone);
+    if (digits.length < 10) return false;
+    const national = digits.startsWith('55') && digits.length >= 12 ? digits.slice(2) : digits;
+    for (const query of [national, digits]) {
+      if (!await S.clearContactSearch()) return false;
+      const input = S.findSearchInput();
+      if (!input || !await S.setContactSearchQuery(input, query)) return false;
+      let row = null;
+      for (let attempt = 0; attempt < 12 && !row; attempt++) {
+        await this.delay(250);
+        const rows = this.searchResultRows();
+        // número exato no identificador/título; senão, um único resultado de conversa
+        row = rows.find(r => this.rowMatchesPhone(r, digits)) || (rows.length === 1 && attempt >= 3 ? rows[0] : null);
+      }
+      if (!row) continue;
+      const contact = { name: S.getContactName(row), chatId: S.getContactIdentity(row) };
+      if (await S.openChatRow(row, contact)) {
+        await this.waitFor(() => document.querySelector('#main header'), 3000);
+        return true;
+      }
+    }
+    return false;
+  },
+
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  },
+
+  /** Etiqueta vários leads na aba já aberta. Quem não for achado na pesquisa volta com notFound. */
+  async applyBatch(items = []) {
+    const results = [];
+    for (const item of items) {
+      try {
+        if (!await this.openChatByPhone(item.phone)) {
+          results.push({ id: item.id, ok: false, notFound: true, error: 'Conversa não encontrada na pesquisa.' });
+          continue;
+        }
+        await this.apply(item.set || [], item.managed || []);
+        results.push({ id: item.id, ok: true });
+      } catch (error) {
+        this.closeDialog();
+        results.push({ id: item.id, ok: false, error: error.message || String(error) });
+      }
+      await this.delay(300);
+    }
+    await window.IS.Scraper.clearContactSearch().catch(() => {});
+    return results;
+  },
+
   /** wanted: etiquetas que o lead deve ter; managed: etiquetas controladas pelo Inmovya. */
   async apply(wanted = [], managed = []) {
     const wantedKeys = new Set(wanted.map(name => this.norm(name)).filter(Boolean));
