@@ -58,6 +58,7 @@ import {
   leadDepoisDoEnvio,
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
+import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { etiquetasDoLead, isWhatsAppOcupado, pacoteEtiquetas, registrarEtiquetas, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
 import { useEtiquetasWhatsApp } from "@/context/EtiquetasWhatsAppContext";
 import {
@@ -604,6 +605,63 @@ export function EsteirasModule() {
       .slice(0, 10);
   }, [buscaLead, leads, rascunho]);
 
+  // ---------------- BACKUP ----------------
+  const [baixandoBackup, setBaixandoBackup] = useState(false);
+  const [backupLido, setBackupLido] = useState<BackupEsteiras | null>(null);
+  const [restaurarPosicoes, setRestaurarPosicoes] = useState(true);
+  const [restaurando, setRestaurando] = useState(false);
+  const backupRef = useRef<HTMLInputElement>(null);
+
+  const baixarBackup = async () => {
+    setBaixandoBackup(true);
+    try {
+      const b = await baixarBackupEsteiras();
+      toast({ title: "Backup baixado", description: `${b.esteiras.length} esteira(s), ${b.passos.length} passo(s) e ${b.leads.length} lead(s) em esteira.` });
+    } catch (err: any) {
+      toast({ title: "Não consegui gerar o backup", description: err?.message, variant: "destructive" });
+    } finally {
+      setBaixandoBackup(false);
+    }
+  };
+
+  const lerArquivoBackup = async (file?: File | null) => {
+    if (backupRef.current) backupRef.current.value = "";
+    if (!file) return;
+    try {
+      setBackupLido(lerBackupEsteiras(await file.text()));
+    } catch (err: any) {
+      toast({ title: "Arquivo inválido", description: err?.message, variant: "destructive" });
+    }
+  };
+
+  const restaurarBackup = async () => {
+    if (!backupLido) return;
+    const ok = await confirmar(
+      "Restaurar backup das esteiras?",
+      `As ${backupLido.esteiras.length} esteira(s) do arquivo voltam como estavam em ${new Date(backupLido.criado_em).toLocaleString("pt-BR")}` +
+        (restaurarPosicoes ? ", e os leads voltam ao passo em que estavam." : ".") +
+        " Antes, um backup de agora é baixado por segurança.",
+      "Restaurar"
+    );
+    if (!ok) return;
+    setRestaurando(true);
+    try {
+      await baixarBackupEsteiras("esteiras-antes-de-restaurar");
+      const r = await restaurarBackupEsteiras(backupLido, { posicoes: restaurarPosicoes });
+      toast({
+        title: "Backup restaurado",
+        description: `${r.esteiras} esteira(s), ${r.passos} passo(s)${restaurarPosicoes ? ` e ${r.leads} lead(s) reposicionados` : ""}.`,
+      });
+      setBackupLido(null);
+      await carregar();
+      await refreshLeads();
+    } catch (err: any) {
+      toast({ title: "Erro ao restaurar", description: err?.message, variant: "destructive" });
+    } finally {
+      setRestaurando(false);
+    }
+  };
+
   // ---------------- IMPORTAR ----------------
   const [plano, setPlano] = useState<PlanoImportacao | null>(null);
   const [importando, setImportando] = useState(false);
@@ -732,7 +790,7 @@ export function EsteirasModule() {
         <TabsList className="w-full sm:w-auto grid grid-cols-3 sm:inline-flex">
           <TabsTrigger value="hoje">Hoje ({fila.length})</TabsTrigger>
           <TabsTrigger value="esteiras">Esteiras ({esteiras.length})</TabsTrigger>
-          <TabsTrigger value="importar">Importar do Scale</TabsTrigger>
+          <TabsTrigger value="importar">Backup e importação</TabsTrigger>
         </TabsList>
 
         {/* HOJE */}
@@ -1392,6 +1450,50 @@ export function EsteirasModule() {
         {/* IMPORTAR */}
         <TabsContent value="importar" className="mt-4 space-y-4">
           <div className="rounded-lg border bg-white p-4 space-y-3 max-w-2xl">
+            <h3 className="font-semibold">Backup das esteiras</h3>
+            <p className="text-sm">
+              Baixa um arquivo com todas as esteiras, passos, mensagens, colunas, etiquetas e a posição de cada lead. Guarde o arquivo (ex.: no Google Drive)
+              e use-o para voltar tudo como estava.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Os anexos vão só com o nome: os arquivos continuam no seu computador. Restaurando neste mesmo computador e navegador, eles continuam
+              funcionando; em outro, anexe de novo.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button onClick={baixarBackup} disabled={baixandoBackup}>
+                {baixandoBackup ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Download className="w-4 h-4 mr-1" />}
+                Baixar backup
+              </Button>
+              <Button variant="outline" onClick={() => backupRef.current?.click()} disabled={restaurando}>
+                <Upload className="w-4 h-4 mr-1" /> Restaurar backup (.json)
+              </Button>
+              <input ref={backupRef} type="file" accept="application/json,.json" className="hidden" onChange={(e) => lerArquivoBackup(e.target.files?.[0])} />
+            </div>
+            {backupLido && (
+              <div className="rounded-md border border-blue-200 bg-blue-50/50 p-3 space-y-2 text-sm">
+                <p>
+                  Backup de <b>{new Date(backupLido.criado_em).toLocaleString("pt-BR")}</b>: {backupLido.esteiras.length} esteira(s) (
+                  {backupLido.esteiras.map((e) => e.nome).join(", ")}), {backupLido.passos.length} passo(s) e {backupLido.leads.length} lead(s) em esteira.
+                </p>
+                <label className="flex items-center gap-2 text-xs">
+                  <Switch checked={restaurarPosicoes} onCheckedChange={setRestaurarPosicoes} />
+                  Voltar também os leads para o passo e a data em que estavam
+                </label>
+                <div className="flex gap-2">
+                  <Button className="bg-blue-800 hover:bg-blue-900 text-white" onClick={restaurarBackup} disabled={restaurando}>
+                    {restaurando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                    {restaurando ? "Restaurando..." : "Restaurar agora"}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setBackupLido(null)} disabled={restaurando}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border bg-white p-4 space-y-3 max-w-2xl">
+            <h3 className="font-semibold">Importar do Inmovya Scale</h3>
             <p className="text-sm">
               Traz para o Inmovya as categorias (esteiras), as mensagens D1, D2… e o passo em que cada lead está no Inmovya Scale. Os leads são
               encontrados pelo telefone ou, se não houver, pelo nome exato.
@@ -1402,7 +1504,7 @@ export function EsteirasModule() {
                 Ler direto do Inmovya Scale
               </Button>
               <Button variant="outline" onClick={() => fileRef.current?.click()}>
-                <Upload className="w-4 h-4 mr-1" /> Usar arquivo de backup (.json)
+                <Upload className="w-4 h-4 mr-1" /> Usar arquivo de backup do Scale (.json)
               </Button>
               <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={(e) => lerArquivo(e.target.files?.[0])} />
             </div>

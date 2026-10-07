@@ -150,8 +150,9 @@ All colors MUST be HSL.
       min-height: 44px;
     }
 
-    /* Exceção para checkboxes manterem formato quadrado */
-    button[role="checkbox"] {
+    /* Exceção para checkboxes e chaves (liga/desliga) manterem o formato */
+    button[role="checkbox"],
+    button[role="switch"] {
       min-height: unset;
       min-width: unset;
     }
