@@ -139,8 +139,9 @@ All colors MUST be HSL.
     min-height: 100dvh;
   }
 
-  /* Touch optimizations for mobile */
-  @media (pointer: coarse) {
+  /* Touch optimizations for mobile (só celular: computador com tela de toque
+     também é "pointer: coarse" e os botões pequenos ficavam gordinhos) */
+  @media (pointer: coarse) and (max-width: 767px) {
 
     button,
     a,
