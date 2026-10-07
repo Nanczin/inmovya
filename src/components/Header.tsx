@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { NotificationsDialog } from "@/components/dialogs/NotificationsDialog";
 import { EditProfileDialog } from "@/components/dialogs/EditProfileDialog";
+import { EtiquetasWhatsAppMenu } from "@/components/EtiquetasWhatsAppMenu";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -100,6 +101,8 @@ export function Header({
 
 
 
+        <EtiquetasWhatsAppMenu />
+
         {/* Notifications */}
         <Button
           variant="ghost"
@@ -156,6 +159,7 @@ export function Header({
         <Button variant="ghost" size="icon" onClick={() => setIsSearchOpen(true)}>
           <Search className="w-5 h-5" />
         </Button>
+        <EtiquetasWhatsAppMenu />
         <Button variant="ghost" size="icon" className="relative" onClick={() => setIsNotificationsOpen(true)}>
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && (

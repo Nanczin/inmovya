@@ -45,7 +45,10 @@ import {
   telefoneWhatsApp,
   tirarDaEsteira,
   moverParaPasso,
+  leadDepoisDoEnvio,
 } from "@/lib/esteiras";
+import { etiquetasDoLead, isWhatsAppOcupado, pacoteEtiquetas, registrarEtiquetas, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
+import { useEtiquetasWhatsApp } from "@/context/EtiquetasWhatsAppContext";
 import {
   Paperclip,
   X as XIcon,
@@ -72,6 +75,7 @@ type LeadEsteira = Lead & {
   esteira_passo?: number | null;
   esteira_proximo?: string | null;
   esteira_ultimo_envio?: string | null;
+  wa_etiqueta?: string | null; // etiquetas do funil já aplicadas no WhatsApp
 };
 
 type ItemFila = {
@@ -97,6 +101,8 @@ const fmtData = (iso?: string | null) =>
 export function EsteirasModule() {
   const { leads, refreshLeads } = useLeads();
   const { toast } = useToast();
+  // Etiquetas do WhatsApp: função global do Inmovya (botão no cabeçalho)
+  const etiquetasWa = useEtiquetasWhatsApp();
 
   const [esteiras, setEsteiras] = useState<Esteira[]>([]);
   const [passos, setPassos] = useState<EsteiraPasso[]>([]);
@@ -280,10 +286,10 @@ export function EsteirasModule() {
       });
       return;
     }
-    if (!extensaoAtualizada("1.2.4")) {
+    if (!extensaoAtualizada("1.2.6")) {
       toast({
         title: "Atualize o Inmovya Scale",
-        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.4 — anexos, legendas, ordem dos anexos e intervalo entre mensagens). Depois recarregue esta página e o WhatsApp Web.",
+        description: "Abra chrome://extensions e clique em Recarregar no Inmovya Scale (versão 1.2.6 — etiquetas do WhatsApp e anexos de fotos/vídeos). Depois recarregue esta página e o WhatsApp Web.",
         variant: "destructive",
       });
       return;
@@ -292,8 +298,13 @@ export function EsteirasModule() {
     if (!lista.length) return;
     pararRef.current = false;
     setRodando(true);
+    // se a sincronização de etiquetas estiver rodando, termina a conversa atual e para
+    if (etiquetasWa.rodando) etiquetasWa.parar();
+    while (isWhatsAppOcupado()) await new Promise((r) => setTimeout(r, 1000));
+    setWhatsAppOcupado(true); // a sincronização automática de etiquetas espera
     let enviados = 0;
     const prontosParaSegunda: string[] = [];
+    const falhasEtiqueta: string[] = [];
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
@@ -302,7 +313,11 @@ export function EsteirasModule() {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length);
-        await enviarPeloWhatsApp(item.telefone, texto, anexos);
+        // etiqueta do WhatsApp = etapa do funil que o lead terá depois deste envio
+        const etiquetas = etiquetasDoLead(leadDepoisDoEnvio(item.lead, item.esteira, item.passos, item.passo));
+        const { labelError } = await enviarPeloWhatsApp(item.telefone, texto, anexos, pacoteEtiquetas(etiquetas));
+        if (labelError) falhasEtiqueta.push(`${item.lead.nome}: ${labelError}`);
+        else await registrarEtiquetas(item.lead.id, etiquetas).catch((e) => falhasEtiqueta.push(`${item.lead.nome}: ${e.message}`));
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
@@ -317,6 +332,7 @@ export function EsteirasModule() {
       if (i < lista.length - 1 && !pararRef.current) await esperar(intervaloAleatorio());
     }
     setRodando(false);
+    setWhatsAppOcupado(false);
     pararRef.current = false;
     await refreshLeads();
     // quem faz 2 esteiras hoje volta para a fila com o próximo passo, pronto para a 2ª rodada
@@ -328,6 +344,14 @@ export function EsteirasModule() {
       });
     }
     toast({ title: "Esteira de hoje", description: `${enviados} mensagem(ns) enviada(s).` });
+    if (falhasEtiqueta.length) {
+      console.warn("Etiquetas não aplicadas:", falhasEtiqueta);
+      toast({
+        title: `Etiqueta do WhatsApp não aplicada em ${falhasEtiqueta.length} lead(s)`,
+        description: `${falhasEtiqueta[0]}${falhasEtiqueta.length > 1 ? " (…)" : ""} Use o botão de etiquetas no topo para tentar de novo.`,
+        variant: "destructive",
+      });
+    }
   };
 
   const marcarManualEnviado = async (item: ItemFila) => {
@@ -747,6 +771,21 @@ export function EsteirasModule() {
                   </Button>
                 ) : (
                   <>
+                  {etiquetasWa.pendentes.length > 0 && !etiquetasWa.automatico && (
+                    <Button
+                      variant="outline"
+                      className="h-10"
+                      disabled={rodando || etiquetasWa.rodando}
+                      onClick={etiquetasWa.sincronizarAgora}
+                      title="Coloca no WhatsApp a etiqueta da etapa do funil (20%, 50%, 75%, Fechado, Lead). Não envia mensagem."
+                    >
+                      {etiquetasWa.rodando ? (
+                        <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Etiquetas…</>
+                      ) : (
+                        <><Workflow className="w-4 h-4 mr-1" /> Sincronizar etiquetas ({etiquetasWa.pendentes.length})</>
+                      )}
+                    </Button>
+                  )}
                   {segundaRodada.length > 0 && (
                     <Button variant="outline" className="h-10" onClick={liberarSegundaRodada} title="Quem já recebeu hoje recebe o próximo passo ainda hoje">
                       <Clock className="w-4 h-4 mr-1" /> 2ª rodada hoje ({segundaRodada.length})

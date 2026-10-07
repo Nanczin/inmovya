@@ -284,8 +284,13 @@ export const setIntervaloMensagens = (min: number, max: number) => {
   }
 };
 
-export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any[] = []) =>
-  new Promise<void>((resolve, reject) => {
+export const enviarPeloWhatsApp = (
+  phone: string,
+  text: string,
+  attachments: any[] = [],
+  labels?: { set: string[]; managed: string[] } // etiquetas do funil aplicadas depois do envio
+) =>
+  new Promise<{ labelError: string }>((resolve, reject) => {
     const token = crypto.randomUUID();
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
@@ -295,7 +300,9 @@ export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
-      event.detail?.ok ? resolve() : reject(new Error(event.detail?.error || "O envio não foi confirmado."));
+      event.detail?.ok
+        ? resolve({ labelError: event.detail?.labelError || "" })
+        : reject(new Error(event.detail?.error || "O envio não foi confirmado."));
     };
     window.addEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
     window.dispatchEvent(new CustomEvent("INMOVYA_OPEN_WHATSAPP", {
@@ -306,6 +313,7 @@ export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any
           attachments,
           gapMinMs: getIntervaloMensagens().min * 1000,
           gapMaxMs: getIntervaloMensagens().max * 1000,
+          ...(labels ? { labels } : {}),
         },
       }));
   });
@@ -336,13 +344,14 @@ export const lerDadosDoScale = (timeoutMs = 8000) =>
 // ---------- Avanço do lead na esteira ----------
 const addDias = (dias: number) => new Date(Date.now() + Math.max(0, dias) * 86400000).toISOString();
 
-/** Registra o envio do passo atual e move o lead para o próximo passo (ou conclui a esteira). */
-export async function avancarLead(
-  lead: { id: string; nome: string; tags?: string[] | null; esteira_passo?: number | null },
+type LeadAvanco = { id: string; nome: string; status?: string | null; tags?: string[] | null; esteira_passo?: number | null };
+
+/** Calcula como o lead fica depois de enviar o passo (sem gravar). */
+export function calcularAvanco(
+  lead: LeadAvanco,
   esteira: Esteira,
   passos: EsteiraPasso[],
   passoEnviado: EsteiraPasso,
-  detalhe: string,
   opcoes: { proximoHoje?: boolean } = {}
 ) {
   const indice = passos.findIndex((p) => p.id === passoEnviado.id);
@@ -396,6 +405,28 @@ export async function avancarLead(
         : {}),
     };
   }
+  return { update, concluiu, indice };
+}
+
+/** Status e tags que o lead terá depois do envio (para a etiqueta do WhatsApp). */
+export function leadDepoisDoEnvio(lead: LeadAvanco, esteira: Esteira, passos: EsteiraPasso[], passoEnviado: EsteiraPasso) {
+  const { update } = calcularAvanco(lead, esteira, passos, passoEnviado);
+  return {
+    status: "status" in update ? (update.status as string | null) : lead.status ?? null,
+    tags: (update.tags as string[] | undefined) ?? lead.tags ?? [],
+  };
+}
+
+/** Registra o envio do passo atual e move o lead para o próximo passo (ou conclui a esteira). */
+export async function avancarLead(
+  lead: LeadAvanco,
+  esteira: Esteira,
+  passos: EsteiraPasso[],
+  passoEnviado: EsteiraPasso,
+  detalhe: string,
+  opcoes: { proximoHoje?: boolean } = {}
+) {
+  const { update, concluiu, indice } = calcularAvanco(lead, esteira, passos, passoEnviado, opcoes);
 
   let { error } = await supabase.from("leads").update(update).eq("id", lead.id);
   if (error && "status" in update) {

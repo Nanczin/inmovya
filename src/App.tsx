@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { NotificationsProvider } from "@/hooks/useNotifications";
 import { LeadsProvider } from "@/context/LeadsContext";
+import { EtiquetasWhatsAppProvider } from "@/context/EtiquetasWhatsAppContext";
 import { PropertiesProvider } from "@/context/PropertiesContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -23,6 +24,7 @@ const App = () => (
       <NotificationsProvider>
         <TooltipProvider>
           <LeadsProvider>
+            <EtiquetasWhatsAppProvider>
             <PropertiesProvider>
               <Toaster />
               <Sonner />
@@ -39,6 +41,7 @@ const App = () => (
                 </Routes>
               </BrowserRouter>
             </PropertiesProvider>
+            </EtiquetasWhatsAppProvider>
           </LeadsProvider>
         </TooltipProvider>
       </NotificationsProvider>

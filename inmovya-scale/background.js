@@ -47,7 +47,8 @@ async function sendCampaignMessage(request, returnTabId = null) {
   if (!phone) throw new Error('Telefone inválido.');
   const tab = await chrome.tabs.create({
     url: `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`,
-    active: true
+    // só etiqueta: abre em segundo plano para não tirar o foco de quem está usando o Inmovya
+    active: !request.labelsOnly
   });
   if (!tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
 
@@ -69,9 +70,14 @@ async function sendCampaignMessage(request, returnTabId = null) {
           // anexos das esteiras do Inmovya (qualquer tipo de arquivo, já em base64)
           attachments: Array.isArray(request.attachments) ? request.attachments : [],
           gapMinMs: Number(request.gapMinMs) || 0,
-          gapMaxMs: Number(request.gapMaxMs) || 0
+          gapMaxMs: Number(request.gapMaxMs) || 0,
+          // etiquetas do funil (Inmovya -> WhatsApp)
+          labels: request.labels || null,
+          labelsOnly: !!request.labelsOnly
         });
         if (response?.ok) return response;
+        // erro de etiqueta não melhora tentando de novo
+        if (response?.labelError) throw new Error(response.labelError);
         lastError = new Error(response?.error || 'Envio não confirmado.');
       } catch (error) {
         lastError = error;
