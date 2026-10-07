@@ -11,7 +11,8 @@ export interface Esteira {
   ao_concluir_etapa?: string | null; // coluna do Negócios para onde o lead vai ao terminar (ex.: "Perdido")
   ao_concluir_dias?: number | null; // dias sem resposta depois do último passo antes de finalizar
   etapa?: string | null; // etapa de Negócios ligada (ex.: "20%")
-  empreendimento_id?: string | null; // projeto da esteira (null = geral)
+  empreendimento_id?: string | null; // (antigo) projeto único da esteira
+  empreendimento_ids?: string[] | null; // projetos da esteira: vários podem dividir a mesma coluna (ex.: P1)
   scale_id?: string | null;
   created_at?: string;
 }

@@ -161,7 +161,9 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       const est = esteirasLista.find((e) => e.id === passoDaColuna.esteira_id);
       if (est) return { ...est, nome: `${est.nome} · ${passoDaColuna.titulo || stage.name}` };
     }
-    return esteirasLista.find((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
+    // várias esteiras podem dividir a mesma coluna (uma por projeto)
+    const daColuna = esteirasLista.filter((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
+    return daColuna.length ? { ...daColuna[0], nome: daColuna.map((e) => e.nome).join(", ") } : undefined;
   };
 
   const infoEsteira = (lead: Lead) => {

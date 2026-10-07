@@ -524,12 +524,16 @@ export function EsteirasModule() {
           etapa: esteira.etapa || null,
           ...(esteiras.some((x) => "ao_concluir_etapa" in x) ? { ao_concluir_etapa: esteira.ao_concluir_etapa || null } : {}),
           ...(esteiras.some((x) => "ao_concluir_dias" in x) ? { ao_concluir_dias: Math.max(0, Number(esteira.ao_concluir_dias) || 0) } : {}),
-          // projeto não é mais usado nas esteiras: limpa se alguma tinha
+          // projeto antigo (único) não é mais usado: limpa se alguma tinha
           ...((esteira as any).empreendimento_id ? { empreendimento_id: null } : {}),
+          ...(esteiras.some((x) => "empreendimento_ids" in x) ? { empreendimento_ids: esteira.empreendimento_ids || [] } : {}),
         })
         .eq("id", esteira.id);
       if (error) throw error;
 
+      if (!esteiras.some((x) => "empreendimento_ids" in x) && (esteira.empreendimento_ids || []).length) {
+        throw new Error("Para ligar projetos à esteira, rode supabase/esteiras_varios_projetos.sql no Supabase (SQL Editor) uma vez.");
+      }
       const atuais = passosDe(esteira.id);
       const temColunaAnexos = passos.some((x) => "anexos" in x);
       const temColunaEtapa = passos.some((x) => "etapa" in x);
@@ -688,12 +692,16 @@ export function EsteirasModule() {
     const etapa = rascunho?.esteira.etapa;
     if (!etapa || esteiras.find((e) => e.id === rascunho?.esteira.id)?.etapa !== etapa) return [];
     const alvo = getStageForStatus(etapa)?.id;
-    return ((leads || []) as LeadEsteira[]).filter(
-      (l) =>
-        l.esteira_id !== rascunho!.esteira.id &&
-        alvo &&
-        getStageForStatus(l.status)?.id === alvo
-    );
+    // outras esteiras na mesma coluna (cada uma com seus projetos)
+    const mesmas = esteiras.filter((e) => e.id !== rascunho!.esteira.id && e.etapa && getStageForStatus(e.etapa)?.id === alvo);
+    const meus = rascunho!.esteira.empreendimento_ids || [];
+    const deOutra = (proj?: string | null) => !!proj && mesmas.some((e) => (e.empreendimento_ids || []).includes(proj));
+    return ((leads || []) as LeadEsteira[]).filter((l) => {
+      if (l.esteira_id === rascunho!.esteira.id || !alvo || getStageForStatus(l.status)?.id !== alvo) return false;
+      if (mesmas.some((e) => e.id === l.esteira_id)) return false; // já está em outra esteira desta coluna
+      const proj = (l as any).empreendimento_id as string | null;
+      return meus.length ? !!proj && meus.includes(proj) : !deOutra(proj);
+    });
   }, [rascunho, esteiras, leads]);
 
   const colocarEtapaNaEsteira = async () => {
@@ -1203,11 +1211,11 @@ export function EsteirasModule() {
                       <SelectContent className="max-h-[50vh]">
                         <SelectItem value="nenhuma">Nenhuma (só manual)</SelectItem>
                         {NEGOCIO_STAGES.map((st) => {
-                          const usadaPor = esteiras.find((x) => x.id !== rascunho.esteira.id && x.etapa === st.value);
+                          const usadaPor = esteiras.filter((x) => x.id !== rascunho.esteira.id && x.etapa === st.value);
                           return (
                             <SelectItem key={st.id} value={st.value}>
                               {st.name}
-                              {usadaPor ? ` (já ligada a ${usadaPor.nome})` : ""}
+                              {usadaPor.length ? ` (também: ${usadaPor.map((x) => x.nome).join(", ")})` : ""}
                             </SelectItem>
                           );
                         })}
@@ -1215,7 +1223,54 @@ export function EsteirasModule() {
                     </Select>
                     <p className="text-[11px] text-muted-foreground">
                       Quem for movido para essa etapa em Negócios (ou em Leads) entra nesta esteira no primeiro passo. Ao sair da etapa, sai da esteira.
+                      Várias esteiras podem usar a mesma coluna: o lead vai para a esteira do projeto dele (ou para a que não tem projeto).
                     </p>
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-xs font-medium">Projetos desta esteira:</span>
+                      {(rascunho.esteira.empreendimento_ids || []).map((pid) => (
+                        <span key={pid} className="inline-flex items-center gap-1 rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[11px]">
+                          {nomeProjeto(pid)}
+                          <button
+                            type="button"
+                            className="text-red-600"
+                            title="Tirar projeto"
+                            onClick={() =>
+                              setRascunho({
+                                ...rascunho,
+                                esteira: { ...rascunho.esteira, empreendimento_ids: (rascunho.esteira.empreendimento_ids || []).filter((x) => x !== pid) },
+                              })
+                            }
+                          >
+                            <XIcon className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                      <Select
+                        value=""
+                        onValueChange={(pid) =>
+                          setRascunho({
+                            ...rascunho,
+                            esteira: { ...rascunho.esteira, empreendimento_ids: [...(rascunho.esteira.empreendimento_ids || []), pid] },
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-7 w-[170px] text-xs">
+                          <SelectValue placeholder="+ projeto" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[50vh]">
+                          {projetos
+                            .filter((pr) => !(rascunho.esteira.empreendimento_ids || []).includes(pr.id))
+                            .map((pr) => (
+                              <SelectItem key={pr.id} value={pr.id}>
+                                {pr.nome}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      {!(rascunho.esteira.empreendimento_ids || []).length && (
+                        <span className="text-[11px] text-muted-foreground">nenhum = esteira geral (recebe quem não tem esteira do próprio projeto)</span>
+                      )}
+                    </div>
                     {foraDaEsteira.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 rounded-md bg-blue-50 border border-blue-200 px-2 py-1.5 text-xs">
                         <span>
