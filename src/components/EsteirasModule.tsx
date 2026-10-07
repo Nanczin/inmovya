@@ -127,7 +127,7 @@ export function EsteirasModule() {
     confirmacao?.resolver(ok);
     setConfirmacao(null);
   };
-  // Etiquetas do WhatsApp: função global do Inmovya (botão no cabeçalho)
+  // Etiquetas do WhatsApp: função global do Inmovya (botão no cabeçalho); aqui só para não enviar ao mesmo tempo
   const etiquetasWa = useEtiquetasWhatsApp();
 
   const [esteiras, setEsteiras] = useState<Esteira[]>([]);
@@ -837,21 +837,6 @@ export function EsteirasModule() {
                   </Button>
                 ) : (
                   <>
-                  {etiquetasWa.pendentes.length > 0 && !etiquetasWa.automatico && (
-                    <Button
-                      variant="outline"
-                      className="h-10"
-                      disabled={rodando || etiquetasWa.rodando}
-                      onClick={etiquetasWa.sincronizarAgora}
-                      title="Coloca no WhatsApp a etiqueta da etapa do funil (20%, 50%, 75%, Fechado, Lead). Não envia mensagem."
-                    >
-                      {etiquetasWa.rodando ? (
-                        <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> Etiquetas…</>
-                      ) : (
-                        <><Workflow className="w-4 h-4 mr-1" /> Sincronizar etiquetas ({etiquetasWa.pendentes.length})</>
-                      )}
-                    </Button>
-                  )}
                   {segundaRodada.length > 0 && (
                     <Button variant="outline" className="h-10" onClick={liberarSegundaRodada} title="Quem já recebeu hoje recebe o próximo passo ainda hoje">
                       <Clock className="w-4 h-4 mr-1" /> 2ª rodada hoje ({segundaRodada.length})
