@@ -10,23 +10,22 @@
         detail: {
           token: detail.token,
           ok: !!response?.ok && !error,
-          error: error || response?.error || '',
-          labelError: response?.labelError || ''
+          error: error || response?.error || ''
         }
       }));
     });
   });
 
-  // Etiquetas em lote (modo rápido)
-  window.addEventListener('INMOVYA_LABEL_BATCH', event => {
+  // Leitura das etiquetas do WhatsApp (o WhatsApp é a referência do Inmovya)
+  window.addEventListener('INMOVYA_READ_WA_LABELS', event => {
     const detail = event.detail || {};
-    chrome.runtime.sendMessage({ action: 'labels_batch', items: detail.items || [] }, response => {
+    chrome.runtime.sendMessage({ action: 'read_wa_labels' }, response => {
       const error = chrome.runtime.lastError?.message;
-      window.dispatchEvent(new CustomEvent('INMOVYA_LABEL_BATCH_RESULT', {
+      window.dispatchEvent(new CustomEvent('INMOVYA_WA_LABELS_RESULT', {
         detail: {
           token: detail.token,
           ok: !!response?.ok && !error,
-          results: response?.results || [],
+          labels: response?.labels || [],
           error: error || response?.error || ''
         }
       }));

@@ -55,12 +55,10 @@ import {
   telefoneWhatsApp,
   tirarDaEsteira,
   moverParaPasso,
-  leadDepoisDoEnvio,
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
-import { etiquetasDoLead, isWhatsAppOcupado, pacoteEtiquetas, registrarEtiquetas, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
-import { useEtiquetasWhatsApp } from "@/context/EtiquetasWhatsAppContext";
+import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
 import {
   Paperclip,
   X as XIcon,
@@ -127,8 +125,6 @@ export function EsteirasModule() {
     confirmacao?.resolver(ok);
     setConfirmacao(null);
   };
-  // Etiquetas do WhatsApp: função global do Inmovya (botão no cabeçalho); aqui só para não enviar ao mesmo tempo
-  const etiquetasWa = useEtiquetasWhatsApp();
 
   const [esteiras, setEsteiras] = useState<Esteira[]>([]);
   const [passos, setPassos] = useState<EsteiraPasso[]>([]);
@@ -324,13 +320,11 @@ export function EsteirasModule() {
     if (!lista.length) return;
     pararRef.current = false;
     setRodando(true);
-    // se a sincronização de etiquetas estiver rodando, termina a conversa atual e para
-    if (etiquetasWa.rodando) etiquetasWa.parar();
+    // se a leitura das etiquetas do WhatsApp estiver rodando, espera terminar
     while (isWhatsAppOcupado()) await new Promise((r) => setTimeout(r, 1000));
-    setWhatsAppOcupado(true); // a sincronização automática de etiquetas espera
+    setWhatsAppOcupado(true); // a leitura das etiquetas do WhatsApp espera a esteira
     let enviados = 0;
     const prontosParaSegunda: string[] = [];
-    const falhasEtiqueta: string[] = [];
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
@@ -339,11 +333,7 @@ export function EsteirasModule() {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length);
-        // etiqueta do WhatsApp = etapa do funil que o lead terá depois deste envio
-        const etiquetas = etiquetasDoLead(leadDepoisDoEnvio(item.lead, item.esteira, item.passos, item.passo));
-        const { labelError } = await enviarPeloWhatsApp(item.telefone, texto, anexos, pacoteEtiquetas(etiquetas));
-        if (labelError) falhasEtiqueta.push(`${item.lead.nome}: ${labelError}`);
-        else await registrarEtiquetas(item.lead.id, etiquetas).catch((e) => falhasEtiqueta.push(`${item.lead.nome}: ${e.message}`));
+        await enviarPeloWhatsApp(item.telefone, texto, anexos);
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
@@ -370,14 +360,6 @@ export function EsteirasModule() {
       });
     }
     toast({ title: "Esteira de hoje", description: `${enviados} mensagem(ns) enviada(s).` });
-    if (falhasEtiqueta.length) {
-      console.warn("Etiquetas não aplicadas:", falhasEtiqueta);
-      toast({
-        title: `Etiqueta do WhatsApp não aplicada em ${falhasEtiqueta.length} lead(s)`,
-        description: `${falhasEtiqueta[0]}${falhasEtiqueta.length > 1 ? " (…)" : ""} Use o botão de etiquetas no topo para tentar de novo.`,
-        variant: "destructive",
-      });
-    }
   };
 
   const marcarManualEnviado = async (item: ItemFila) => {

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { EmailComposer } from "@/components/EmailComposer";
 import { LeadFilters } from "@/components/LeadFilters";
+import { SincronizarWhatsAppButton } from "@/components/EtiquetasWhatsAppMenu";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { useLeads } from "@/context/LeadsContext";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -1354,6 +1355,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
               <Button variant="ghost" size="icon" onClick={() => setIsImportHelpOpen(true)} title="Ajuda sobre Importação">
                 <HelpCircle className="w-4 h-4 text-muted-foreground" />
               </Button>
+              <SincronizarWhatsAppButton className="h-10" />
             </div>
 
             {/* Bulk Actions */}

@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { SincronizarWhatsAppButton } from "@/components/EtiquetasWhatsAppMenu";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
@@ -118,18 +119,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     } catch (err: any) {
       toast({ title: "Erro", description: err?.message || "Tente novamente.", variant: "destructive" });
     }
-  };
-
-  const esteiraDaEtapa = (stage: NegocioStage) => {
-    // coluna ligada a um passo (ex.: P3 = passo 3 da esteira de prospecção)
-    const passoDaColuna = (passosLista as any[]).find((p) => p.etapa && getStageForStatus(p.etapa)?.id === stage.id);
-    if (passoDaColuna) {
-      const est = esteirasLista.find((e) => e.id === passoDaColuna.esteira_id);
-      if (est) return { ...est, nome: `${est.nome} · ${passoDaColuna.titulo || stage.name}` };
-    }
-    // várias esteiras podem dividir a mesma coluna
-    const daColuna = esteirasLista.filter((e) => e.etapa && getStageForStatus(e.etapa)?.id === stage.id);
-    return daColuna.length ? { ...daColuna[0], nome: daColuna.map((e) => e.nome).join(", ") } : undefined;
   };
 
   const infoEsteira = (lead: Lead) => {
@@ -629,20 +618,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           {isValidacao && (
             <p className="text-[11px] text-slate-500 mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
           )}
-          {(() => {
-            const est = esteiraDaEtapa(stage);
-            if (!est) return null;
-            return (
-              <button
-                type="button"
-                onClick={() => onNavigate?.("esteiras")}
-                className="mt-1 flex items-center gap-1 text-[10.5px] text-green-700 hover:underline"
-                title="Quem entra nesta etapa vai para esta esteira (D1)"
-              >
-                <Workflow className="w-3 h-3" /> Esteira: {est.nome}
-              </button>
-            );
-          })()}
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden pl-2 pr-1.5 pb-2 flex flex-col gap-2 [scrollbar-gutter:stable] [scrollbar-width:thin]">
           {stageLeads.map((lead) => renderCard(lead, isValidacao))}
@@ -673,6 +648,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar negócio..." className="pl-8 h-9 w-full sm:w-56" />
           </div>
+          <SincronizarWhatsAppButton className="h-9" />
           {normalizationTotal > 0 && (
             <Button variant="outline" className="h-9 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setIsNormalizeOpen(true)}>
               <Wand2 className="w-4 h-4 mr-1" /> Padronizar etapas ({normalizationTotal})

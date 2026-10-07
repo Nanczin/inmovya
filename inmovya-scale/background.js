@@ -47,8 +47,7 @@ async function sendCampaignMessage(request, returnTabId = null) {
   if (!phone) throw new Error('Telefone inválido.');
   const tab = await chrome.tabs.create({
     url: `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`,
-    // só etiqueta: abre em segundo plano para não tirar o foco de quem está usando o Inmovya
-    active: !request.labelsOnly
+    active: true
   });
   if (!tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
 
@@ -70,14 +69,9 @@ async function sendCampaignMessage(request, returnTabId = null) {
           // anexos das esteiras do Inmovya (qualquer tipo de arquivo, já em base64)
           attachments: Array.isArray(request.attachments) ? request.attachments : [],
           gapMinMs: Number(request.gapMinMs) || 0,
-          gapMaxMs: Number(request.gapMaxMs) || 0,
-          // etiquetas do funil (Inmovya -> WhatsApp)
-          labels: request.labels || null,
-          labelsOnly: !!request.labelsOnly
+          gapMaxMs: Number(request.gapMaxMs) || 0
         });
         if (response?.ok) return response;
-        // erro de etiqueta não melhora tentando de novo
-        if (response?.labelError) throw new Error(response.labelError);
         lastError = new Error(response?.error || 'Envio não confirmado.');
       } catch (error) {
         lastError = error;
@@ -94,19 +88,21 @@ async function sendCampaignMessage(request, returnTabId = null) {
   }
 }
 
-// Etiquetas em lote: usa a aba do WhatsApp Web que já está aberta (sem recarregar por lead).
-// A aba vem para a frente durante o lote (o Chrome deixa abas escondidas muito lentas)
-// e depois o foco volta para o Inmovya.
-async function applyLabelsBatch(request, returnTabId = null) {
+// Leitura das etiquetas (WhatsApp -> Inmovya): usa a aba do WhatsApp Web já aberta.
+// A aba vem para a frente durante a leitura (o Chrome deixa abas escondidas muito lentas)
+// e depois o foco volta para o Inmovya. Nada é alterado no WhatsApp.
+async function readWhatsAppLabels(returnTabId = null) {
   const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
   const tab = tabs.find(t => !String(t.url || '').includes('inmovya_auto=1'));
-  if (!tab?.id) throw new Error('Abra o WhatsApp Web numa aba para o modo rápido.');
+  if (!tab?.id) throw new Error('Abra o WhatsApp Web numa aba para ler as etiquetas.');
   await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
   if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'labels_batch', items: request.items || [] });
-    if (!response?.ok) throw new Error(response?.error || 'O WhatsApp Web não respondeu.');
-    return { results: response.results || [] };
+    const response = await chrome.tabs.sendMessage(tab.id, { action: 'start_scraper' });
+    const data = response?.data;
+    if (!data) throw new Error('O WhatsApp Web não respondeu. Dê F5 nele e tente de novo.');
+    if (!Array.isArray(data)) throw new Error(data.error || 'Não consegui ler as etiquetas.');
+    return { labels: data.map(label => ({ name: label.name, contacts: label.contacts || [] })) };
   } finally {
     if (returnTabId && returnTabId !== tab.id) {
       await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
@@ -231,8 +227,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
-  if (request?.action === 'labels_batch') {
-    applyLabelsBatch(request, sender.tab?.id || null)
+  if (request?.action === 'read_wa_labels') {
+    readWhatsAppLabels(sender.tab?.id || null)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;

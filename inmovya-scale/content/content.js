@@ -44,25 +44,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         input = window.IS.WhatsAppDOM.findMessageInput();
         if (!input) throw new Error('A conversa do WhatsApp ainda está carregando.');
 
-        // Etiquetas do funil vindas do Inmovya (ex.: 50%). Falha na etiqueta não desfaz o envio.
-        const applyLabels = async () => {
-          const labels = request.labels;
-          if (!labels || !Array.isArray(labels.set)) return '';
-          try {
-            await window.IS.WhatsAppLabels.apply(labels.set, labels.managed || []);
-            return '';
-          } catch (error) {
-            window.IS.error('Falha ao etiquetar a conversa', error);
-            return error.message || String(error);
-          }
-        };
-
-        if (request.labelsOnly) {
-          const labelError = await applyLabels();
-          sendResponse(labelError ? { ok: false, error: labelError, labelError } : { ok: true });
-          return;
-        }
-
         const attachments = request.attachment?.nativePath
           ? [{
             id: window.IS.generateUUID(),
@@ -100,9 +81,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         );
         if (!sent) throw new Error(window.IS.WhatsAppDOM.ultimoErro || 'O WhatsApp não confirmou o envio da campanha.');
 
-        await window.IS.WhatsAppDOM.delay(800);
-        const labelError = await applyLabels();
-        sendResponse({ ok: true, labelError });
+        sendResponse({ ok: true });
       } catch (error) {
         window.IS.error('Falha no disparo da campanha', error);
         sendResponse({ ok: false, error: error.message });
@@ -111,14 +90,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
-  // Etiquetas em lote na aba do WhatsApp já aberta (modo rápido)
-  if (request.action === 'labels_batch') {
-    window.IS.WhatsAppLabels.applyBatch(Array.isArray(request.items) ? request.items : [])
-      .then(results => sendResponse({ ok: true, results }))
-      .catch(error => sendResponse({ ok: false, error: error.message || String(error) }));
-    return true;
-  }
-
   if (request.action === 'start_scraper') {
     (async () => {
       const data = await window.IS.Scraper.run();

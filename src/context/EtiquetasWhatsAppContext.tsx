@@ -1,40 +1,28 @@
-// Sincronização das etiquetas do WhatsApp como função do Inmovya (Inmovya -> WhatsApp).
-// Vale para qualquer tela: mudou a etapa do lead (Negócios, Leads, esteira, fim automático),
-// a etiqueta da conversa é acertada pela extensão Inmovya Scale. No automático, roda sozinha
-// enquanto o Inmovya estiver aberto no Chrome com a extensão.
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useLeads, Lead } from "@/context/LeadsContext";
-import { checarExtensao, extensaoAtualizada, telefoneWhatsApp } from "@/lib/esteiras";
+// Sincronização com o WhatsApp (o WhatsApp é a referência): lê as etiquetas no WhatsApp Web,
+// mostra o que muda nos leads (etapa do funil e tags) e só grava depois da sua confirmação.
+// Abre pelo botão do cabeçalho, do Negócios ou do Leads.
+import { createContext, ReactNode, useContext, useState } from "react";
+import { useLeads } from "@/context/LeadsContext";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { checarExtensao, extensaoAtualizada } from "@/lib/esteiras";
 import {
-  chaveEtiquetas,
-  etiquetarEmLote,
-  etiquetarNoWhatsApp,
-  etiquetasDoLead,
+  aplicarSincronizacao,
   isWhatsAppOcupado,
-  registrarEtiquetas,
+  lerEtiquetasDoWhatsApp,
+  planejarSincronizacao,
+  PlanoSincronizacao,
   setWhatsAppOcupado,
 } from "@/lib/etiquetasWhatsApp";
+import { Loader2 } from "lucide-react";
 
-const AUTO_KEY = "inmovya_etiquetas_auto";
-const VERSAO_MINIMA = "1.2.6";
-const VERSAO_RAPIDA = "1.2.7"; // modo rápido (lote na aba do WhatsApp já aberta)
-const LOTE = 15;
-const INTERVALO_MS = 4000; // entre uma conversa e outra
-const ESPERA_MUDANCA_MS = 20000; // espera o lead "assentar" depois de mudar de etapa
-
-type LeadComEtiqueta = Lead & { wa_etiqueta?: string | null };
-export type PendenteEtiqueta = { lead: LeadComEtiqueta; etiquetas: string[] };
+const VERSAO_MINIMA = "1.2.8";
 
 interface EtiquetasWhatsAppValue {
-  pendentes: PendenteEtiqueta[];
-  automatico: boolean;
-  setAutomatico: (v: boolean) => void;
-  rodando: boolean;
-  progresso: { feitos: number; total: number } | null;
-  falhas: { nome: string; erro: string }[];
-  extensaoPronta: boolean | null;
-  sincronizarAgora: () => Promise<void>;
-  parar: () => void;
+  abrirSincronizacao: () => void;
+  lendo: boolean;
 }
 
 const Ctx = createContext<EtiquetasWhatsAppValue | null>(null);
@@ -45,182 +33,158 @@ export const useEtiquetasWhatsApp = () => {
   return v;
 };
 
-const lerAuto = () => {
-  try {
-    return localStorage.getItem(AUTO_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
+const rotuloStatus = (s: string | null | undefined) => (s === null ? "sai do funil" : s || "sem etapa");
 
 export function EtiquetasWhatsAppProvider({ children }: { children: ReactNode }) {
   const { leads, refreshLeads } = useLeads();
-  const [automatico, setAutomaticoState] = useState(lerAuto);
-  const [rodando, setRodando] = useState(false);
-  const [progresso, setProgresso] = useState<{ feitos: number; total: number } | null>(null);
-  const [falhas, setFalhas] = useState<{ nome: string; erro: string }[]>([]);
-  const [extensaoPronta, setExtensaoPronta] = useState<boolean | null>(null);
-  const pararRef = useRef(false);
-  const rodandoRef = useRef(false);
-  // quem falhou nesta sessão não é tentado de novo no automático (só no "Sincronizar agora")
-  const falhouRef = useRef<Set<string>>(new Set());
-  // quando cada lead apareceu como pendente (para não etiquetar no meio de uma edição)
-  const vistoEmRef = useRef<Map<string, number>>(new Map());
+  const { toast } = useToast();
+  const [aberto, setAberto] = useState(false);
+  const [lendo, setLendo] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [plano, setPlano] = useState<PlanoSincronizacao | null>(null);
+  const [erro, setErro] = useState("");
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
 
-  const setAutomatico = (v: boolean) => {
-    setAutomaticoState(v);
+  const abrirSincronizacao = () => {
+    setAberto(true);
+    setErro("");
+  };
+
+  const ler = async () => {
+    setErro("");
+    if (isWhatsAppOcupado()) return setErro("A esteira está enviando agora. Espere terminar e leia de novo.");
+    if (!(await checarExtensao()) || !extensaoAtualizada(VERSAO_MINIMA)) {
+      return setErro(`Atualize o Inmovya Scale (versão ${VERSAO_MINIMA}): recarregue em chrome://extensions e dê F5 no WhatsApp Web e aqui.`);
+    }
+    setLendo(true);
+    setWhatsAppOcupado(true);
     try {
-      localStorage.setItem(AUTO_KEY, v ? "1" : "0");
-    } catch {
-      /* ignore */
+      const etiquetas = await lerEtiquetasDoWhatsApp();
+      const p = planejarSincronizacao(etiquetas, (leads || []) as any);
+      setPlano(p);
+      setMarcados(new Set(p.mudancas.map((m) => m.leadId)));
+    } catch (err: any) {
+      setErro(err?.message || "Não consegui ler as etiquetas do WhatsApp.");
+    } finally {
+      setWhatsAppOcupado(false);
+      setLendo(false);
     }
   };
 
-  const pendentes = useMemo<PendenteEtiqueta[]>(
-    () =>
-      ((leads || []) as LeadComEtiqueta[])
-        .map((lead) => ({ lead, etiquetas: etiquetasDoLead(lead) }))
-        .filter(({ lead, etiquetas }) => {
-          const atual = lead.wa_etiqueta ?? null;
-          if (atual === null && !etiquetas.length) return false; // nunca etiquetado e fora do funil: não mexe
-          return chaveEtiquetas(etiquetas) !== atual && !!telefoneWhatsApp(lead.telefone);
-        }),
-    [leads]
-  );
-
-  useEffect(() => {
-    const agora = Date.now();
-    const ids = new Set(pendentes.map((p) => p.lead.id));
-    pendentes.forEach((p) => !vistoEmRef.current.has(p.lead.id) && vistoEmRef.current.set(p.lead.id, agora));
-    Array.from(vistoEmRef.current.keys()).forEach((id) => !ids.has(id) && vistoEmRef.current.delete(id));
-  }, [pendentes]);
-
-  const verificarExtensao = useCallback(async () => {
-    const ok = (await checarExtensao()) && extensaoAtualizada(VERSAO_MINIMA);
-    setExtensaoPronta(ok);
-    return ok;
-  }, []);
-
-  const processar = useCallback(
-    async (listaInicial: PendenteEtiqueta[], manual: boolean) => {
-      let lista = listaInicial;
-      if (rodandoRef.current || !lista.length) return;
-      if (!(await verificarExtensao())) return;
-      rodandoRef.current = true;
-      pararRef.current = false;
-      setRodando(true);
-      const novasFalhas: { nome: string; erro: string }[] = [];
-      try {
-        // Modo rápido (só no "Sincronizar agora": traz a aba do WhatsApp para a frente durante o lote).
-        // Quem não for achado na pesquisa segue para o modo normal logo abaixo.
-        if (manual && extensaoAtualizada(VERSAO_RAPIDA)) {
-          const restantes: PendenteEtiqueta[] = [];
-          let rapidoOk = true;
-          for (let i = 0; i < lista.length && rapidoOk; i += LOTE) {
-            if (pararRef.current) break;
-            while (isWhatsAppOcupado() && !pararRef.current) await new Promise((r) => setTimeout(r, 2000));
-            if (pararRef.current) break;
-            const lote = lista.slice(i, i + LOTE);
-            setProgresso({ feitos: i, total: lista.length });
-            setWhatsAppOcupado(true);
-            try {
-              const resultados = await etiquetarEmLote(
-                lote.map(({ lead, etiquetas }) => ({ id: lead.id, telefone: lead.telefone || "", etiquetas }))
-              );
-              const porId = new Map(resultados.map((r) => [r.id, r]));
-              for (const item of lote) {
-                const r = porId.get(item.lead.id);
-                if (r?.ok) {
-                  try {
-                    await registrarEtiquetas(item.lead.id, item.etiquetas);
-                    falhouRef.current.delete(item.lead.id);
-                  } catch (err: any) {
-                    falhouRef.current.add(item.lead.id);
-                    novasFalhas.push({ nome: item.lead.nome, erro: err?.message || "falha" });
-                  }
-                } else if (r && !r.notFound) {
-                  falhouRef.current.add(item.lead.id);
-                  novasFalhas.push({ nome: item.lead.nome, erro: r.error || "falha" });
-                } else {
-                  restantes.push(item); // não achou na pesquisa: abre a conversa pelo número
-                }
-              }
-            } catch {
-              // sem aba do WhatsApp aberta ou extensão antiga: o resto vai pelo modo normal
-              rapidoOk = false;
-              restantes.push(...lista.slice(i));
-            } finally {
-              setWhatsAppOcupado(false);
-            }
-          }
-          lista = restantes;
-        }
-        for (let i = 0; i < lista.length; i++) {
-          if (pararRef.current) break;
-          // a esteira está enviando: espera ela terminar
-          while (isWhatsAppOcupado() && !pararRef.current) await new Promise((r) => setTimeout(r, 2000));
-          if (pararRef.current) break;
-          const { lead, etiquetas } = lista[i];
-          setProgresso({ feitos: i, total: lista.length });
-          setWhatsAppOcupado(true);
-          try {
-            await etiquetarNoWhatsApp(lead.telefone || "", etiquetas);
-            await registrarEtiquetas(lead.id, etiquetas);
-            falhouRef.current.delete(lead.id);
-          } catch (err: any) {
-            falhouRef.current.add(lead.id);
-            novasFalhas.push({ nome: lead.nome, erro: err?.message || "falha" });
-          } finally {
-            setWhatsAppOcupado(false);
-          }
-          if (i < lista.length - 1) await new Promise((r) => setTimeout(r, INTERVALO_MS));
-        }
-      } finally {
-        rodandoRef.current = false;
-        setRodando(false);
-        setProgresso(null);
-        setFalhas((f) => (manual ? novasFalhas : [...novasFalhas, ...f].slice(0, 30)));
-        if (novasFalhas.length) console.warn("Etiquetas do WhatsApp não aplicadas:", novasFalhas);
-        await refreshLeads();
-      }
-    },
-    [refreshLeads, verificarExtensao]
-  );
-
-  const sincronizarAgora = useCallback(async () => {
-    falhouRef.current.clear();
-    await processar(pendentes, true);
-  }, [pendentes, processar]);
-
-  const parar = () => {
-    pararRef.current = true;
+  const aplicar = async () => {
+    if (!plano) return;
+    const escolhidas = plano.mudancas.filter((m) => marcados.has(m.leadId));
+    if (!escolhidas.length) return;
+    setAplicando(true);
+    try {
+      const r = await aplicarSincronizacao(escolhidas, (leads || []) as any);
+      await refreshLeads();
+      toast({
+        title: "Inmovya sincronizado com o WhatsApp",
+        description: r.erros.length ? `${r.feitos} lead(s) atualizados, ${r.erros.length} com erro. Ex.: ${r.erros[0]}` : `${r.feitos} lead(s) atualizados.`,
+        variant: r.erros.length ? "destructive" : undefined,
+      });
+      setPlano(null);
+      setAberto(false);
+    } finally {
+      setAplicando(false);
+    }
   };
 
-  // Automático: confere a cada 30 s se há etiqueta para acertar
-  useEffect(() => {
-    if (!automatico) return;
-    const tick = () => {
-      if (rodandoRef.current || isWhatsAppOcupado()) return;
-      const agora = Date.now();
-      const prontos = pendentes.filter(
-        (p) => !falhouRef.current.has(p.lead.id) && agora - (vistoEmRef.current.get(p.lead.id) ?? agora) >= ESPERA_MUDANCA_MS
-      );
-      if (prontos.length) processar(prontos, false);
-    };
-    tick();
-    const t = window.setInterval(tick, 30000);
-    return () => window.clearInterval(t);
-  }, [automatico, pendentes, processar]);
-
-  useEffect(() => {
-    verificarExtensao();
-  }, [verificarExtensao]);
+  const alternar = (id: string) =>
+    setMarcados((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
 
   return (
-    <Ctx.Provider
-      value={{ pendentes, automatico, setAutomatico, rodando, progresso, falhas, extensaoPronta, sincronizarAgora, parar }}
-    >
+    <Ctx.Provider value={{ abrirSincronizacao, lendo }}>
       {children}
+      <Dialog open={aberto} onOpenChange={(v) => !lendo && !aplicando && setAberto(v)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Sincronizar com o WhatsApp</DialogTitle>
+            <DialogDescription>
+              O WhatsApp é a referência: as etiquetas 20%, 50%, 75%, Fechado, Lead e Nutrição acertam a etapa e as tags dos leads no Negócios e no Leads.
+              Nada muda no WhatsApp.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-3 text-sm">
+            {!plano && !lendo && (
+              <div className="rounded-md bg-slate-50 border p-3 space-y-1 text-xs text-slate-700">
+                <p>Deixe o WhatsApp Web aberto numa aba. Durante a leitura ele vem para a frente e abre cada etiqueta (não use o WhatsApp até terminar).</p>
+                <p>
+                  20% → 20% · 50% → 50% · 75% → 70% · Fechado → Vendeu · Lead → tag “disparo” e sai do funil · Nutrição → tag “nutrição”.
+                </p>
+              </div>
+            )}
+            {lendo && (
+              <div className="flex items-center gap-2 text-slate-700">
+                <Loader2 className="w-4 h-4 animate-spin" /> Lendo as etiquetas no WhatsApp… pode levar alguns minutos.
+              </div>
+            )}
+            {erro && <p className="text-red-600 text-sm">{erro}</p>}
+
+            {plano && (
+              <>
+                <p>
+                  {plano.totalContatos} contato(s) etiquetados no WhatsApp · <b>{plano.mudancas.length}</b> lead(s) para atualizar ·{" "}
+                  {plano.jaCertos} já certos.
+                </p>
+                {plano.mudancas.length > 0 && (
+                  <div className="rounded-md border divide-y">
+                    {plano.mudancas.map((m) => (
+                      <label key={m.leadId} className="flex items-start gap-2 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                        <Checkbox checked={marcados.has(m.leadId)} onCheckedChange={() => alternar(m.leadId)} className="mt-0.5" />
+                        <span className="min-w-0">
+                          <span className="font-medium">{m.nome}</span>
+                          <span className="block text-xs text-slate-600">
+                            WhatsApp: {m.etiquetas.join(", ")}
+                            {m.statusNovo !== undefined && ` · etapa: ${rotuloStatus(m.statusAtual)} → ${rotuloStatus(m.statusNovo)}`}
+                            {m.tagsNovas.length > 0 && ` · + tag ${m.tagsNovas.join(", ")}`}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {plano.naoEncontrados.length > 0 && (
+                  <div className="text-xs text-amber-700">
+                    <b>{plano.naoEncontrados.length} contato(s) do WhatsApp não estão no Inmovya</b> (nada foi criado):{" "}
+                    {plano.naoEncontrados.map((c) => `${c.nome} (${c.etiquetas.join(", ")})`).join("; ")}
+                  </div>
+                )}
+                {plano.ambiguos.length > 0 && (
+                  <div className="text-xs text-amber-700">
+                    <b>{plano.ambiguos.length} com mais de um lead de mesmo nome</b> (não mexi): {plano.ambiguos.map((c) => c.nome).join(", ")}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            {plano ? (
+              <>
+                <Button variant="outline" onClick={ler} disabled={lendo || aplicando}>
+                  Ler de novo
+                </Button>
+                <Button onClick={aplicar} disabled={aplicando || !plano.mudancas.some((m) => marcados.has(m.leadId))}>
+                  {aplicando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                  Aplicar {Array.from(marcados).length} mudança(s)
+                </Button>
+              </>
+            ) : (
+              <Button onClick={ler} disabled={lendo}>
+                {lendo ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                {lendo ? "Lendo..." : "Ler etiquetas do WhatsApp"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Ctx.Provider>
   );
 }
