@@ -216,20 +216,24 @@ export const setMeuNome = (v: string) => {
 // Texto usado no {{empreendimento}} quando a descrição do lead não traz o empreendimento
 export const EMPREENDIMENTO_PADRAO = "imóveis";
 
-/**
- * Empreendimento que o lead procura, lido da descrição (observações) do lead.
- * Aceita "Empreendimento: X" em qualquer linha; senão usa a primeira linha preenchida.
- * Textos automáticos (ex.: "Lead criado automaticamente...") não contam como empreendimento.
- */
 const semAcentoEmp = (s: string) =>
   String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase().trim();
+
+// Textos que ocupam o campo mas não são um projeto (ex.: "Informar empreendimento", "não informado", "-")
+const naoEhProjeto = (texto: string) => {
+  const t = semAcentoEmp(texto);
+  if (!t) return true;
+  if (/^(informar|informe|preencher|definir|a definir|sem|nenhum|qual|cadastrar)( o| um)? (empreendimento|empreendimentos|projeto|imovel|produto)$/.test(t)) return true;
+  if (/^(empreendimento|projeto|imovel) (nao informado|a definir|indefinido)$/.test(t)) return true;
+  return /^(n a|na|nao informado|nao informou|a definir|indefinido|nenhum|sem|null|undefined|empreendimento|projeto)$/.test(t);
+};
 
 /**
  * Nome do projeto que o lead procura, lido da descrição (observações) do lead.
  * - "Empreendimento: X" em qualquer linha -> X
  * - Cadastro do Bitrix ("692363: Nome do Lead | Nurban Vila Buarque | Bitrix #692363") -> só o projeto
  * - Senão, a primeira linha preenchida.
- * Textos automáticos (ex.: "Lead criado automaticamente...") não contam como empreendimento.
+ * Textos automáticos ("Lead criado automaticamente...") e de preencher ("Informar empreendimento") não contam.
  */
 export const empreendimentoDoLead = (observacoes?: string | null, leadNome = "") => {
   const linhas = String(observacoes || "")
@@ -238,7 +242,7 @@ export const empreendimentoDoLead = (observacoes?: string | null, leadNome = "")
     .filter(Boolean);
   for (const l of linhas) {
     const m = l.match(/^(?:empreendimento|empreendimentos|projeto|im[óo]vel|interesse)\s*[:\-–]\s*(.+)$/i);
-    if (m && m[1].trim()) return m[1].trim();
+    if (m && m[1].trim() && !naoEhProjeto(m[1])) return m[1].trim();
   }
   const primeira = linhas[0] || "";
   if (!primeira || /^lead criado automaticamente/i.test(primeira)) return "";
@@ -251,17 +255,31 @@ export const empreendimentoDoLead = (observacoes?: string | null, leadNome = "")
       .filter((p) => !/^\d+\s*:/.test(p)) // "692363: Nome do lead"
       .filter((p) => !/\bbitrix\b/i.test(p) && !/#\s*\d+/.test(p)) // "Bitrix #692363"
       .filter((p) => !/^\d+$/.test(p))
-      .filter((p) => !nome || semAcentoEmp(p) !== nome);
+      .filter((p) => !nome || semAcentoEmp(p) !== nome)
+      .filter((p) => !naoEhProjeto(p));
     return partes[0] || "";
   }
-  return primeira.replace(/[.;,]+$/, "");
+  const projeto = primeira.replace(/[.;,]+$/, "");
+  return naoEhProjeto(projeto) ? "" : projeto;
 };
+
+/**
+ * Sem projeto, troca "{{empreendimento}}" por "imóveis" ajustando a palavra antes dele:
+ * "cadastro no {{empreendimento}}" -> "cadastro buscando imóveis"; "interesse em/do/o..." -> "em/de/ imóveis".
+ */
+const semProjeto = (template: string) =>
+  template
+    .replace(/\b(n[oa]s?)\s+\{\{\s*empreendimento\s*\}\}/gi, `buscando ${EMPREENDIMENTO_PADRAO}`)
+    .replace(/\b(d[oa]s?)\s+\{\{\s*empreendimento\s*\}\}/gi, `de ${EMPREENDIMENTO_PADRAO}`)
+    .replace(/\b(pel[oa]s?)\s+\{\{\s*empreendimento\s*\}\}/gi, `por ${EMPREENDIMENTO_PADRAO}`)
+    .replace(/(^|[^\p{L}])([oa]s?)\s+\{\{\s*empreendimento\s*\}\}/giu, `$1${EMPREENDIMENTO_PADRAO}`)
+    .replace(/\{\{\s*empreendimento\s*\}\}/gi, EMPREENDIMENTO_PADRAO);
 
 export const montarMensagem = (template: string, leadNome: string, observacoes?: string | null) => {
   if (!template) return "";
   const now = new Date();
-  return template
-    .replace(/\{\{\s*empreendimento\s*\}\}/gi, empreendimentoDoLead(observacoes, leadNome) || EMPREENDIMENTO_PADRAO)
+  const projeto = empreendimentoDoLead(observacoes, leadNome);
+  return (projeto ? template.replace(/\{\{\s*empreendimento\s*\}\}/gi, projeto) : semProjeto(template))
     .replace(/\{\{\s*(nome|primeiro_nome)\s*\}\}/gi, primeiroNome(leadNome))
     .replace(/\{\{\s*nome_completo\s*\}\}/gi, leadNome || "")
     .replace(/\{\{\s*saudacao\s*\}\}/gi, saudacao(now))
