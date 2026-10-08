@@ -243,7 +243,13 @@ export function EsteirasModule() {
   };
 
   // Bloco do dia: rodar uma esteira por vez (ex.: 70% de manhã, 50% à tarde)
-  const [filtroEsteira, setFiltroEsteira] = useState<string>("todas");
+  const [filtroEsteira, setFiltroEsteiraState] = useState<string>("todas");
+  // Momento (passo) dentro da esteira escolhida: "todos" ou o id do passo (ex.: D1 Manhã)
+  const [filtroPasso, setFiltroPasso] = useState<string>("todos");
+  const setFiltroEsteira = (v: string) => {
+    setFiltroEsteiraState(v);
+    setFiltroPasso("todos");
+  };
   // 2ª rodada: leads que já receberam hoje e cujo próximo passo ficou para outro dia
   const inicioDeHoje = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const segundaRodada = agendados.filter(
@@ -260,7 +266,19 @@ export function EsteirasModule() {
     });
     return c;
   }, [fila, estado]);
-  const filaVisivel = filtroEsteira === "todas" ? fila : fila.filter((i) => i.esteira.id === filtroEsteira);
+  const filaDaEsteira = filtroEsteira === "todas" ? fila : fila.filter((i) => i.esteira.id === filtroEsteira);
+  // momentos (passos) da esteira escolhida que têm envio hoje, na ordem da esteira
+  const momentosDaEsteira = useMemo(() => {
+    if (filtroEsteira === "todas") return [] as { passo: EsteiraPasso; n: number }[];
+    const m = new Map<string, { passo: EsteiraPasso; n: number }>();
+    filaDaEsteira.forEach((i) => {
+      const atual = m.get(i.passo.id) || { passo: i.passo, n: 0 };
+      if (estado[i.lead.id]?.s !== "enviado") atual.n++;
+      m.set(i.passo.id, atual);
+    });
+    return Array.from(m.values()).sort((a, b) => a.passo.ordem - b.passo.ordem);
+  }, [filaDaEsteira, filtroEsteira, estado]);
+  const filaVisivel = filtroPasso === "todos" ? filaDaEsteira : filaDaEsteira.filter((i) => i.passo.id === filtroPasso);
   // "Só colar" do Scale agora também entra no envio: a mensagem pode ser personalizada aqui antes de rodar
   const filaAuto = filaVisivel;
   const filaManual: ItemFila[] = [];
@@ -891,6 +909,30 @@ export function EsteirasModule() {
                 </div>
               )}
 
+              {momentosDaEsteira.length > 1 && (
+                <div className="flex flex-wrap gap-1.5 pl-3 border-l-2 border-blue-200">
+                  <button
+                    type="button"
+                    disabled={rodando}
+                    onClick={() => setFiltroPasso("todos")}
+                    className={`text-[11px] rounded-full border px-2.5 py-0.5 ${filtroPasso === "todos" ? "bg-blue-100 text-blue-900 border-blue-300" : "bg-white hover:bg-slate-50"}`}
+                  >
+                    Todos os momentos ({momentosDaEsteira.reduce((a, m) => a + m.n, 0)})
+                  </button>
+                  {momentosDaEsteira.map(({ passo, n }) => (
+                    <button
+                      key={passo.id}
+                      type="button"
+                      disabled={rodando}
+                      onClick={() => setFiltroPasso(passo.id)}
+                      className={`text-[11px] rounded-full border px-2.5 py-0.5 ${filtroPasso === passo.id ? "bg-blue-100 text-blue-900 border-blue-300" : "bg-white hover:bg-slate-50"}`}
+                    >
+                      {passo.titulo || `Passo ${passo.ordem + 1}`} ({n})
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {fila.length === 0 && (
                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
                   Nenhum envio de esteira para hoje.
@@ -900,6 +942,32 @@ export function EsteirasModule() {
 
               {filaAuto.length > 0 && (
                 <div className="space-y-2">
+                  {(() => {
+                    const marcaveis = filaAuto.filter((i) => i.telefone && estado[i.lead.id]?.s !== "enviado");
+                    const todosMarcados = marcaveis.length > 0 && marcaveis.every((i) => !desmarcados.has(i.lead.id));
+                    const algum = marcaveis.some((i) => !desmarcados.has(i.lead.id));
+                    return (
+                      <label className="flex items-center gap-2 text-sm font-medium px-3 cursor-pointer select-none w-fit">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          disabled={rodando || marcaveis.length === 0}
+                          checked={todosMarcados}
+                          ref={(el) => {
+                            if (el) el.indeterminate = algum && !todosMarcados;
+                          }}
+                          onChange={() =>
+                            setDesmarcados((s) => {
+                              const n = new Set(s);
+                              marcaveis.forEach((i) => (todosMarcados ? n.add(i.lead.id) : n.delete(i.lead.id)));
+                              return n;
+                            })
+                          }
+                        />
+                        Selecionar todos ({marcaveis.filter((i) => !desmarcados.has(i.lead.id)).length}/{marcaveis.length})
+                      </label>
+                    );
+                  })()}
                   <p className="text-xs text-muted-foreground">
                     Confira as mensagens antes de rodar (clique no texto para personalizar). Desmarque quem não deve receber hoje.{" "}
                     <button
