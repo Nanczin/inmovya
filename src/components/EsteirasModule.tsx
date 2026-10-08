@@ -185,7 +185,7 @@ export function EsteirasModule() {
         esteira,
         passos: ps,
         passo,
-        mensagem: montarMensagem(passo.mensagem, lead.nome),
+        mensagem: montarMensagem(passo.mensagem, lead.nome, lead.observacoes),
         telefone: telefoneWhatsApp(lead.telefone),
       });
     });
@@ -265,7 +265,7 @@ export function EsteirasModule() {
   const filaAuto = filaVisivel;
   const filaManual: ItemFila[] = [];
   const [editados, setEditados] = useState<Record<string, string>>({});
-  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome);
+  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes);
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
 
   const esperar = (segundos: number) =>
@@ -332,7 +332,7 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
-        const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length);
+        const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length, item.lead.observacoes);
         await enviarPeloWhatsApp(item.telefone, texto, anexos);
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
@@ -364,7 +364,7 @@ export function EsteirasModule() {
 
   const marcarManualEnviado = async (item: ItemFila) => {
     try {
-      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.passo.mensagem, item.lead.nome));
+      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes));
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado" } }));
       await refreshLeads();
     } catch (err: any) {
@@ -1219,7 +1219,7 @@ export function EsteirasModule() {
                     )}
                   </div>
                   <p className="sm:col-span-2 text-[11px] text-muted-foreground">
-                    Variáveis: {"{{nome}}"} (primeiro nome), {"{{saudacao}}"}, {"{{meu_nome}}"}, {"{{data}}"}, {"{{hora}}"}. Separe mensagens com uma linha <code>===</code>.
+                    Variáveis: {"{{nome}}"} (primeiro nome), {"{{empreendimento}}"} (da descrição do lead; sem ela: "imóveis"), {"{{saudacao}}"}, {"{{meu_nome}}"}, {"{{data}}"}, {"{{hora}}"}. Separe mensagens com uma linha <code>===</code>.
                   </p>
                 </div>
 

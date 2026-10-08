@@ -50,7 +50,7 @@ function LegendaEditor({ valor, onChange }: { valor: string; onChange: (v: strin
             {f.rotulo}
           </button>
         ))}
-        <span className="text-[11px] text-muted-foreground ml-1">Enter quebra a linha · aceita {"{{nome}}"}, {"{{saudacao}}"}…</span>
+        <span className="text-[11px] text-muted-foreground ml-1">Enter quebra a linha · aceita {"{{nome}}"}, {"{{empreendimento}}"}, {"{{saudacao}}"}…</span>
       </div>
       <Textarea
         ref={ref}
