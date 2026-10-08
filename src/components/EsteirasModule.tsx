@@ -46,6 +46,8 @@ import {
   enviarPeloWhatsApp,
   executarImportacao,
   getMeuNome,
+  getSegundoPlano,
+  setSegundoPlano,
   intervaloAleatorio,
   lerDadosDoScale,
   montarMensagem,
@@ -286,12 +288,15 @@ export function EsteirasModule() {
   const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes);
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
 
+  // Em segundo plano o Chrome atrasa os timers da aba escondida: a espera usa o relógio, não a contagem de ticks
+  const [segundoPlano, setSegundoPlanoState] = useState<boolean>(getSegundoPlano());
   const esperar = (segundos: number) =>
     new Promise<void>((resolve) => {
+      const fim = Date.now() + segundos * 1000;
       let restante = segundos;
       setContagem(restante);
       const t = setInterval(() => {
-        restante -= 1;
+        restante = Math.max(0, Math.ceil((fim - Date.now()) / 1000));
         setContagem(restante);
         if (restante <= 0 || pararRef.current) {
           clearInterval(t);
@@ -351,7 +356,7 @@ export function EsteirasModule() {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length, item.lead.observacoes);
-        await enviarPeloWhatsApp(item.telefone, texto, anexos);
+        await enviarPeloWhatsApp(item.telefone, texto, anexos, segundoPlano && extensaoAtualizada("1.3.0"));
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
@@ -806,6 +811,22 @@ export function EsteirasModule() {
                   <div>
                     Entre um lead e outro: <b>2 a 3 minutos</b> (aleatório)
                   </div>
+                  <label className="flex items-center gap-2 my-1 cursor-pointer select-none w-fit">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      disabled={rodando}
+                      checked={segundoPlano}
+                      onChange={(e) => {
+                        setSegundoPlano(e.target.checked);
+                        setSegundoPlanoState(e.target.checked);
+                      }}
+                    />
+                    <span>
+                      <b>Rodar em segundo plano</b> — o WhatsApp abre numa janelinha no canto, sem tirar sua tela; pode trocar de aba, só não feche esta.
+                      {segundoPlano && !extensaoAtualizada("1.3.0") && <span className="text-amber-700"> (atualize o Inmovya Scale para 1.3.0)</span>}
+                    </span>
+                  </label>
                   <div className="flex flex-wrap items-center gap-1 my-1">
                     <span>Entre as mensagens do mesmo lead:</span>
                     <input

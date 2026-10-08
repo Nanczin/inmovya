@@ -42,14 +42,36 @@ async function waitForTabComplete(tabId, timeoutMs = 30000) {
   });
 }
 
+// Segundo plano: cada envio abre numa janela pequena, sem foco, no canto da tela,
+// para você continuar usando o computador (o Inmovya pode ficar em outra aba).
+async function abrirJanelaDeEnvio(url) {
+  let left = 0;
+  let top = 0;
+  try {
+    const atual = await chrome.windows.getLastFocused();
+    left = Math.max(0, (atual.left || 0) + (atual.width || 1280) - 480);
+    top = Math.max(0, (atual.top || 0) + (atual.height || 800) - 640);
+  } catch (_) { /* usa o canto padrão */ }
+  const win = await chrome.windows.create({ url, focused: false, type: 'normal', width: 470, height: 630, left, top });
+  const tab = win.tabs && win.tabs[0];
+  return { tab, windowId: win.id };
+}
+
 async function sendCampaignMessage(request, returnTabId = null) {
   const phone = String(request.phone || '').replace(/\D/g, '');
   if (!phone) throw new Error('Telefone inválido.');
-  const tab = await chrome.tabs.create({
-    url: `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`,
-    active: true
-  });
-  if (!tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
+  const url = `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`;
+  const segundoPlano = !!request.background;
+  let tab;
+  let sendWindowId = null;
+  if (segundoPlano) {
+    const aberto = await abrirJanelaDeEnvio(url);
+    tab = aberto.tab;
+    sendWindowId = aberto.windowId;
+  } else {
+    tab = await chrome.tabs.create({ url, active: true });
+  }
+  if (!tab || !tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
 
   try {
     await waitForTabComplete(tab.id);
@@ -81,9 +103,13 @@ async function sendCampaignMessage(request, returnTabId = null) {
     throw lastError || new Error('A extensão não conseguiu concluir o envio.');
   } finally {
     await new Promise(resolve => setTimeout(resolve, 1500));
-    await chrome.tabs.remove(tab.id).catch(() => {});
-    if (returnTabId && returnTabId !== tab.id) {
-      await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+    if (sendWindowId != null) {
+      await chrome.windows.remove(sendWindowId).catch(() => {});
+    } else {
+      await chrome.tabs.remove(tab.id).catch(() => {});
+      if (returnTabId && returnTabId !== tab.id) {
+        await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+      }
     }
   }
 }

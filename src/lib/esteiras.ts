@@ -346,7 +346,24 @@ export const setIntervaloMensagens = (min: number, max: number) => {
   }
 };
 
-export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any[] = []) =>
+// Envio em segundo plano: a extensão abre o WhatsApp numa janela pequena, sem tirar o foco
+const SEGUNDO_PLANO_KEY = "inmovya_esteira_segundo_plano";
+export const getSegundoPlano = () => {
+  try {
+    return localStorage.getItem(SEGUNDO_PLANO_KEY) !== "0";
+  } catch {
+    return true;
+  }
+};
+export const setSegundoPlano = (v: boolean) => {
+  try {
+    localStorage.setItem(SEGUNDO_PLANO_KEY, v ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+};
+
+export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any[] = [], background = false) =>
   new Promise<void>((resolve, reject) => {
     const token = crypto.randomUUID();
     const timeout = window.setTimeout(() => {
@@ -368,6 +385,7 @@ export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any
           attachments,
           gapMinMs: getIntervaloMensagens().min * 1000,
           gapMaxMs: getIntervaloMensagens().max * 1000,
+          background,
         },
       }));
   });
