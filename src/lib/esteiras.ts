@@ -221,17 +221,39 @@ export const EMPREENDIMENTO_PADRAO = "imóveis";
  * Aceita "Empreendimento: X" em qualquer linha; senão usa a primeira linha preenchida.
  * Textos automáticos (ex.: "Lead criado automaticamente...") não contam como empreendimento.
  */
-export const empreendimentoDoLead = (observacoes?: string | null) => {
+const semAcentoEmp = (s: string) =>
+  String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").toLowerCase().trim();
+
+/**
+ * Nome do projeto que o lead procura, lido da descrição (observações) do lead.
+ * - "Empreendimento: X" em qualquer linha -> X
+ * - Cadastro do Bitrix ("692363: Nome do Lead | Nurban Vila Buarque | Bitrix #692363") -> só o projeto
+ * - Senão, a primeira linha preenchida.
+ * Textos automáticos (ex.: "Lead criado automaticamente...") não contam como empreendimento.
+ */
+export const empreendimentoDoLead = (observacoes?: string | null, leadNome = "") => {
   const linhas = String(observacoes || "")
     .split(/\r?\n/)
     .map((l) => l.replace(/\s+/g, " ").trim())
     .filter(Boolean);
   for (const l of linhas) {
-    const m = l.match(/^(?:empreendimento|empreendimentos|im[óo]vel|interesse)\s*[:\-–]\s*(.+)$/i);
+    const m = l.match(/^(?:empreendimento|empreendimentos|projeto|im[óo]vel|interesse)\s*[:\-–]\s*(.+)$/i);
     if (m && m[1].trim()) return m[1].trim();
   }
   const primeira = linhas[0] || "";
   if (!primeira || /^lead criado automaticamente/i.test(primeira)) return "";
+  if (primeira.includes("|")) {
+    const nome = semAcentoEmp(leadNome);
+    const partes = primeira
+      .split("|")
+      .map((p) => p.trim().replace(/[.;,]+$/, "").trim())
+      .filter(Boolean)
+      .filter((p) => !/^\d+\s*:/.test(p)) // "692363: Nome do lead"
+      .filter((p) => !/\bbitrix\b/i.test(p) && !/#\s*\d+/.test(p)) // "Bitrix #692363"
+      .filter((p) => !/^\d+$/.test(p))
+      .filter((p) => !nome || semAcentoEmp(p) !== nome);
+    return partes[0] || "";
+  }
   return primeira.replace(/[.;,]+$/, "");
 };
 
@@ -239,7 +261,7 @@ export const montarMensagem = (template: string, leadNome: string, observacoes?:
   if (!template) return "";
   const now = new Date();
   return template
-    .replace(/\{\{\s*empreendimento\s*\}\}/gi, empreendimentoDoLead(observacoes) || EMPREENDIMENTO_PADRAO)
+    .replace(/\{\{\s*empreendimento\s*\}\}/gi, empreendimentoDoLead(observacoes, leadNome) || EMPREENDIMENTO_PADRAO)
     .replace(/\{\{\s*(nome|primeiro_nome)\s*\}\}/gi, primeiroNome(leadNome))
     .replace(/\{\{\s*nome_completo\s*\}\}/gi, leadNome || "")
     .replace(/\{\{\s*saudacao\s*\}\}/gi, saudacao(now))
