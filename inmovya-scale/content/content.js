@@ -81,6 +81,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         );
         if (!sent) throw new Error(window.IS.WhatsAppDOM.ultimoErro || 'O WhatsApp não confirmou o envio da campanha.');
 
+        // Espera o WhatsApp terminar de mandar (relógio/upload sumir) antes de a aba ser fechada;
+        // com algo pendente o WhatsApp pede "Sair do site?" e a esteira travava.
+        const pendentes = () =>
+          document.querySelectorAll('#main [data-icon="msg-time"], #main [data-icon="media-cancel"], #main [data-icon="msg-time-light"]').length;
+        const limite = Date.now() + 120000;
+        let livres = 0;
+        while (Date.now() < limite && livres < 3) {
+          await window.IS.WhatsAppDOM.delay(700);
+          livres = pendentes() ? 0 : livres + 1;
+        }
+
         sendResponse({ ok: true });
       } catch (error) {
         window.IS.error('Falha no disparo da campanha', error);
