@@ -79,6 +79,11 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; ao_concluir_etapa?: string | null }[]>([]);
   const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string; etapa?: string | null }[]>([]);
   const [bulkEsteira, setBulkEsteira] = useState<string>("");
+  const [bulkPasso, setBulkPasso] = useState<string>("0"); // índice do passo da esteira (D1 = 0)
+  const passosBulk = useMemo(
+    () => passosLista.filter((p) => p.esteira_id === bulkEsteira).sort((a, b) => a.ordem - b.ordem),
+    [passosLista, bulkEsteira]
+  );
 
   // Esteiras ligadas às etapas (para mostrar no quadro)
   useEffect(() => {
@@ -146,9 +151,12 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     setBulkMoving(true);
     try {
       const ids = Array.from(selectedIds);
-      await colocarNaEsteira(ids, bulkEsteira);
+      const indice = Math.min(Math.max(parseInt(bulkPasso) || 0, 0), Math.max(passosBulk.length - 1, 0));
+      if (indice > 0) await moverParaPasso(ids, bulkEsteira, indice, passosBulk as any);
+      else await colocarNaEsteira(ids, bulkEsteira);
       const nome = esteirasLista.find((e) => e.id === bulkEsteira)?.nome || "esteira";
-      toast({ title: "Leads na esteira", description: `${ids.length} lead(s) em ${nome}, começando no D1. Envie pela aba Esteiras.` });
+      const passo = passosBulk[indice]?.titulo || `Passo ${indice + 1}`;
+      toast({ title: "Leads na esteira", description: `${ids.length} lead(s) em ${nome} · ${passo} (envio hoje). Envie pela aba Esteiras.` });
       await refreshLeads();
       exitSelectMode();
     } catch (err: any) {
@@ -157,6 +165,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       setBulkMoving(false);
     }
   };
+
   const [newDeal, setNewDeal] = useState({
     nome: "",
     telefone: "",
@@ -762,7 +771,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             </div>
             {esteirasLista.length > 0 && (
               <div className="flex flex-1 gap-2 min-w-0">
-                <Select value={bulkEsteira} onValueChange={setBulkEsteira}>
+                <Select value={bulkEsteira} onValueChange={(v) => { setBulkEsteira(v); setBulkPasso("0"); }}>
                   <SelectTrigger className="h-10 flex-1 min-w-0">
                     <SelectValue placeholder="Pôr na esteira..." />
                   </SelectTrigger>
@@ -774,6 +783,20 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                     ))}
                   </SelectContent>
                 </Select>
+                {bulkEsteira && passosBulk.length > 0 && (
+                  <Select value={bulkPasso} onValueChange={setBulkPasso}>
+                    <SelectTrigger className="h-10 w-[130px] sm:w-[160px] shrink-0" title="Etapa da esteira">
+                      <SelectValue placeholder="Etapa..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[50vh]">
+                      {passosBulk.map((p, i) => (
+                        <SelectItem key={p.id} value={String(i)}>
+                          {p.titulo || `Passo ${i + 1}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Button
                   variant="outline"
                   className="h-10 shrink-0"
