@@ -67,7 +67,11 @@ export const lerRelatorio = (): RelatorioAgente[] => {
   return relatorioCache!;
 };
 const salvarRelatorio = (r: RelatorioAgente) => {
-  relatorioCache = [r, ...lerRelatorio()].slice(0, 300);
+  // "ainda sem resposta" é um estado: guarda só o mais recente de cada lead
+  const anteriores = lerRelatorio().filter(
+    (x) => !(x.leadId === r.leadId && x.classificacao === "sem_resposta" && x.momento !== "fim da esteira")
+  );
+  relatorioCache = [r, ...anteriores].slice(0, 300);
   try {
     localStorage.setItem(REL_KEY, JSON.stringify(relatorioCache));
   } catch {
@@ -357,8 +361,11 @@ export async function rodarAgente(lead: LeadAgente, esteiraInfo: EsteiraAgente, 
     if (!respostas.length) {
       rel.classificacao = "sem_resposta";
       if (momento !== "fim da esteira") {
-        rel.resumo = "Não respondeu desde o último envio — segue a esteira.";
-        return rel; // não entra no relatório (nada a fazer)
+        const ultimaSua = [...conversa].reverse().find((m) => m.dir === "out");
+        rel.resumo = "Ainda não respondeu — segue na esteira.";
+        rel.sugestao = ultimaSua ? `Última mensagem sua: ${ultimaSua.data || ""} ${ultimaSua.hora || ""}`.trim() : "";
+        if (momento === "verificação") salvarRelatorio(rel); // aparece no relatório (sem duplicar)
+        return rel;
       }
       rel.resumo = "Terminou a esteira sem responder.";
       rel.sugestao = "Lead vai para a lista de disparo.";
@@ -428,8 +435,10 @@ export async function rodarAgente(lead: LeadAgente, esteiraInfo: EsteiraAgente, 
   return rel;
 }
 
-export const rotulo = (c: Classificacao) =>
-  ({ sem_resposta: "Sem resposta → disparo", positiva: "Positiva → 50%", negativa: "Negativa", neutra: "Neutra" })[c];
+export const rotulo = (c: Classificacao, momento?: RelatorioAgente["momento"]) =>
+  c === "sem_resposta" && momento && momento !== "fim da esteira"
+    ? "Sem resposta (segue na esteira)"
+    : ({ sem_resposta: "Sem resposta → disparo", positiva: "Positiva → 50%", negativa: "Negativa", neutra: "Neutra" })[c];
 
 // ---------- Verificação (roda sozinho enquanto o Inmovya está aberto, e no botão "Rodar agora") ----------
 // Confere TODOS os leads que já receberam mensagem da esteira:
@@ -514,16 +523,24 @@ export async function leadsNoFimDaEsteira() {
  * Confere as conversas. forcar=true (botão) confere todo mundo; no automático pula quem foi
  * conferido nas últimas 2 horas (o fim da esteira é sempre conferido).
  */
+export const agenteRodando = () => rodandoFim;
+
 export async function rodarFimDasEsteiras(forcar = false): Promise<RelatorioAgente[]> {
-  if (rodandoFim || !getAgenteAtivo()) return [];
+  if (rodandoFim) {
+    if (forcar) throw new Error("O agente já está conferindo as conversas — acompanhe o progresso na aba Agente.");
+    return [];
+  }
+  if (!getAgenteAtivo()) return [];
   if (!(await checarExtensao()) || !agenteDisponivel()) throw new Error("Inmovya Scale 1.4.0 não encontrado neste Chrome.");
   rodandoFim = true;
   const feitos: RelatorioAgente[] = [];
   const resumo: ResumoVerificacao = { em: new Date().toISOString(), conferidos: 0, responderam: 0, fim: 0, semResposta: [], erros: [] };
+  let teveFila = false;
   try {
     const conferidos = lerConferidos();
     const todos = await leadsParaVerificar();
     const fila = todos.filter((x) => forcar || x.noFim || !conferidos[x.lead.id] || Date.now() - conferidos[x.lead.id] > 2 * 3600_000);
+    teveFila = fila.length > 0 || forcar;
     for (let i = 0; i < fila.length; i++) {
       const { lead, esteira, noFim } = fila[i];
       if (!getAgenteAtivo()) break;
@@ -552,10 +569,13 @@ export async function rodarFimDasEsteiras(forcar = false): Promise<RelatorioAgen
     rodandoFim = false;
     progresso = null;
     ultimaRodada = new Date().toISOString();
-    try {
-      localStorage.setItem(RESUMO_KEY, JSON.stringify(resumo));
-    } catch {
-      /* ignore */
+    // rodada automática que só pulou gente já conferida não apaga o resumo anterior
+    if (teveFila) {
+      try {
+        localStorage.setItem(RESUMO_KEY, JSON.stringify(resumo));
+      } catch {
+        /* ignore */
+      }
     }
     ouvintes.forEach((f) => f());
   }

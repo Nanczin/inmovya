@@ -109,12 +109,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const dom = window.IS.WhatsAppDOM;
         const input = await dom.waitForMessageInput(30000);
         if (!input) throw new Error('A conversa do WhatsApp não abriu (número sem WhatsApp?).');
-        await dom.delay(1500);
         const main = document.querySelector('#main');
         const painel = main.querySelector('[data-testid="conversation-panel-messages"]') || main;
-        // sobe um pouco para carregar mais histórico
-        const rolavel = painel.closest('[tabindex]') || painel.parentElement;
-        for (let i = 0; i < 3 && rolavel; i++) { rolavel.scrollTop = 0; await dom.delay(700); }
+        const contar = () => main.querySelectorAll('[data-testid^="conv-msg-"]').length;
+        // as mensagens aparecem aos poucos: espera a contagem parar de crescer
+        const esperarEstabilizar = async (maxMs = 12000) => {
+          let ultimo = -1, iguais = 0;
+          const fim = Date.now() + maxMs;
+          while (Date.now() < fim) {
+            const n = contar();
+            iguais = n === ultimo ? iguais + 1 : 0;
+            ultimo = n;
+            if (n > 0 && iguais >= 4) break; // ~2s sem mudar
+            await dom.delay(500);
+          }
+        };
+        await esperarEstabilizar();
+        // sobe a conversa para carregar o histórico (até ~60 mensagens)
+        const acharRolagem = () => {
+          let el = main.querySelector('[data-testid^="conv-msg-"]');
+          while (el && el !== document.body) {
+            const st = getComputedStyle(el);
+            if (/(auto|scroll)/.test(st.overflowY) && el.scrollHeight > el.clientHeight + 20) return el;
+            el = el.parentElement;
+          }
+          return null;
+        };
+        for (let i = 0; i < 4; i++) {
+          const rolagem = acharRolagem();
+          if (!rolagem || contar() >= 60) break;
+          const antes = contar();
+          rolagem.scrollTop = 0;
+          await dom.delay(1200);
+          await esperarEstabilizar(4000);
+          if (contar() === antes) break;
+        }
         const pr = painel.getBoundingClientRect();
         const msgs = [];
         let ultimaData = null;

@@ -232,7 +232,7 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="font-semibold">{r.nome}</span>
                 <span className="text-xs text-muted-foreground">{r.telefone}</span>
-                <span className={`text-[11px] rounded-full border px-2 py-0.5 ${cor[r.classificacao]}`}>{rotulo(r.classificacao)}</span>
+                <span className={`text-[11px] rounded-full border px-2 py-0.5 ${cor[r.classificacao]}`}>{rotulo(r.classificacao, r.momento)}</span>
                 <span className="text-[11px] text-muted-foreground">
                   {r.esteira} · {r.momento} · {new Date(r.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {r.via}
                 </span>
