@@ -200,7 +200,7 @@ export async function testarChaveGemini(chave: string) {
   return r.ok;
 }
 
-const MODELOS_GEMINI = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
+const MODELOS_GEMINI = ["gemini-2.5-flash", "gemini-flash-latest"];
 
 async function perguntarGemini(chave: string, prompt: string) {
   let ultimoErro = "";
@@ -216,9 +216,10 @@ async function perguntarGemini(chave: string, prompt: string) {
         }),
       }
     );
-    if (resp.status === 404) {
-      ultimoErro = `modelo ${modelo} indisponível`;
-      continue; // tenta o próximo modelo
+    if (resp.status === 404 || resp.status >= 500) {
+      // modelo desativado ou sobrecarregado ("high demand"): tenta o próximo
+      ultimoErro = resp.status === 404 ? `modelo ${modelo} indisponível` : "Gemini sobrecarregado no momento";
+      continue;
     }
     if (!resp.ok) throw new Error(resp.status === 429 ? "limite grátis do Gemini atingido por agora" : `Gemini indisponível (${resp.status})`);
     const json = await resp.json();
