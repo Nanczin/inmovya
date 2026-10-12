@@ -4,7 +4,7 @@
 //   • positiva → sobe para 50% (Inmovya e WhatsApp) e sai da esteira
 //   • negativa / neutra → sai da esteira e avisa (você decide o resto)
 import { supabase } from "@/integrations/supabase/client";
-import { carregarConfiguracoes } from "@/lib/supabase";
+import { carregarConfiguracoes, salvarConfiguracoes } from "@/lib/supabase";
 import { getStageForStatus } from "@/lib/negociosStages";
 import { checarExtensao, etiquetasDaEsteira, extensaoAtualizada, telefoneWhatsApp } from "@/lib/esteiras";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
@@ -167,6 +167,37 @@ async function chavesIA(): Promise<ChavesIA> {
   }
   chavesEm = Date.now();
   return (chavesCache = { gemini: okGemini(ia?.gemini_key), openai: okOpenAI(ia?.openai_key) });
+}
+
+/** Lê a chave do Gemini salva (para mostrar na tela do agente). */
+export async function lerChaveGemini(): Promise<string> {
+  const c = await chavesIA();
+  return c.gemini || "";
+}
+
+/** Salva a chave do Gemini neste navegador e nas Configurações do Inmovya (banco). */
+export async function salvarChaveGemini(chave: string) {
+  const k = chave.trim();
+  try {
+    const atual = JSON.parse(localStorage.getItem("inmovya_config") || "{}");
+    localStorage.setItem("inmovya_config", JSON.stringify({ ...atual, ia: { ...(atual.ia || {}), gemini_key: k } }));
+  } catch {
+    /* ignore */
+  }
+  chavesCache = undefined;
+  try {
+    const r: any = await carregarConfiguracoes();
+    const cfg = r?.data || {};
+    await salvarConfiguracoes({ ...cfg, ia: { ...(cfg.ia || {}), gemini_key: k } } as any);
+  } catch {
+    /* fica salvo neste navegador */
+  }
+}
+
+/** Testa a chave no Google. */
+export async function testarChaveGemini(chave: string) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(chave.trim())}`);
+  return r.ok;
 }
 
 const MODELOS_GEMINI = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"];

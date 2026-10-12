@@ -56,6 +56,10 @@ const menuItems = [{
   id: "relatorios",
   label: "Relatórios",
   icon: BarChart3
+}, {
+  id: "settings",
+  label: "Configurações",
+  icon: Settings
 }];
 export function AppSidebar({
   activeModule,

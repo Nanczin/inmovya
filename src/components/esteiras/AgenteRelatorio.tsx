@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Loader2, MessageCircle, Play, Trash2 } from "lucide-react";
+import { Bot, CheckCircle2, KeyRound, Loader2, MessageCircle, Play, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
   agenteDisponivel,
   assinarRelatorio,
   getAgenteAtivo,
   leadsNoFimDaEsteira,
+  lerChaveGemini,
+  salvarChaveGemini,
+  testarChaveGemini,
   lerRelatorio,
   limparRelatorio,
   rodarFimDasEsteiras,
@@ -39,6 +43,34 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
   const [filtro, setFiltro] = useState<(typeof FILTROS)[number]["id"]>("todos");
   const [rodando, setRodando] = useState(statusFim().rodando);
   const [pendentes, setPendentes] = useState<number | null>(null);
+  const [chave, setChave] = useState("");
+  const [chaveSalva, setChaveSalva] = useState(false);
+  const [salvandoChave, setSalvandoChave] = useState(false);
+  const [editandoChave, setEditandoChave] = useState(false);
+  useEffect(() => {
+    lerChaveGemini().then((k) => {
+      setChave(k);
+      setChaveSalva(!!k);
+    });
+  }, []);
+
+  const salvarChave = async () => {
+    if (!chave.trim()) return;
+    setSalvandoChave(true);
+    try {
+      const ok = await testarChaveGemini(chave).catch(() => false);
+      if (!ok) {
+        toast({ title: "Chave do Google inválida", description: "Confira a chave criada em aistudio.google.com/apikey.", variant: "destructive" });
+        return;
+      }
+      await salvarChaveGemini(chave);
+      setChaveSalva(true);
+      setEditandoChave(false);
+      toast({ title: "Gemini conectado", description: "O agente vai usar a IA do Google (grátis) para analisar as respostas." });
+    } finally {
+      setSalvandoChave(false);
+    }
+  };
 
   useEffect(
     () =>
@@ -99,6 +131,37 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
             {ativo ? "Ligado" : "Desligado"}
           </label>
         </div>
+      </div>
+
+      <div className="rounded-lg border bg-white p-3 flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+        <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
+        {chaveSalva && !editandoChave ? (
+          <>
+            <span className="flex-1 flex items-center gap-1 text-green-700">
+              <CheckCircle2 className="w-4 h-4" /> IA do Google (Gemini, grátis) conectada
+            </span>
+            <button type="button" className="text-xs underline text-muted-foreground" onClick={() => setEditandoChave(true)}>
+              trocar chave
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="shrink-0">Chave do Google Gemini:</span>
+            <Input
+              type="password"
+              value={chave}
+              onChange={(e) => setChave(e.target.value)}
+              placeholder="Cole aqui a chave (começa com AIza...)"
+              className="h-9 flex-1"
+            />
+            <Button size="sm" onClick={salvarChave} disabled={salvandoChave || !chave.trim()}>
+              {salvandoChave ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </Button>
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-xs underline text-blue-700 shrink-0">
+              criar chave grátis
+            </a>
+          </>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
