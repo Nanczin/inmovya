@@ -1,5 +1,5 @@
 
-import { anexosDoTemplate, juntarAnexos } from "@/lib/templateAnexos";
+import { anexosDoTemplate, juntarAnexos, escolherArquivosTemplate, arquivosArrastados, anexosLocaisSuportados, ehLocal } from "@/lib/templateAnexos";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -300,56 +300,26 @@ export function TemplatesModule() {
         }));
     };
 
-    // Sobe um ou vários arquivos (imagem, PDF, vídeo, áudio, documentos...) e acrescenta ao template
-    const extensaoPadrao = (file: File) => {
-        let ext = file.name.includes('.') ? file.name.split('.').pop() || '' : '';
-        if (!ext) {
-            if (file.type.includes('audio')) ext = 'mp3';
-            else if (file.type.includes('video')) ext = 'mp4';
-            else if (file.type === 'image/gif') ext = 'gif';
-            else if (file.type.includes('image')) ext = 'png';
-            else if (file.type.includes('pdf')) ext = 'pdf';
-            else ext = 'bin';
-        }
-        return ext;
+    // Arquivos do template ficam NO COMPUTADOR (não ocupam o Supabase): guardamos só o atalho neste Chrome
+    const acrescentarArquivos = (novos: { url: string; name: string }[]) => {
+        if (!novos.length) return;
+        setFormData(prev => ({ ...prev, ...juntarAnexos([...anexosDoTemplate(prev), ...novos]) }));
+        toast({ title: novos.length === 1 ? "Arquivo anexado!" : `${novos.length} arquivos anexados!` });
     };
 
-    const uploadArquivos = async (files: File[]) => {
-        if (!files.length) return;
+    const escolherArquivos = async () => {
+        if (!anexosLocaisSuportados()) {
+            toast({ title: "Use o Google Chrome no computador", description: "Os arquivos são lidos do seu computador na hora do envio.", variant: "destructive" });
+            return;
+        }
         setIsUploading(true);
-        const novos: { url: string; name: string }[] = [];
         try {
-            for (const file of files) {
-                const filePath = `template_files/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${extensaoPadrao(file)}`;
-                const { error: uploadError } = await supabase.storage
-                    .from('empreendimentos')
-                    .upload(filePath, file, { contentType: file.type || undefined });
-                if (uploadError) {
-                    console.error("Erro upload bucket:", uploadError);
-                    toast({ title: "Erro no upload", description: `${file.name}: ${uploadError.message}`, variant: "destructive" });
-                    continue;
-                }
-                const { data: { publicUrl } } = supabase.storage
-                    .from('empreendimentos')
-                    .getPublicUrl(filePath);
-                novos.push({ url: publicUrl, name: file.name || filePath.split('/').pop()! });
-            }
-            if (novos.length) {
-                setFormData(prev => ({ ...prev, ...juntarAnexos([...anexosDoTemplate(prev), ...novos]) }));
-                toast({ title: novos.length === 1 ? "Arquivo anexado!" : `${novos.length} arquivos anexados!` });
-            }
-        } catch (error) {
-            console.error("Upload error:", error);
-            toast({ title: "Erro ao fazer upload", variant: "destructive" });
+            acrescentarArquivos(await escolherArquivosTemplate());
+        } catch (error: any) {
+            toast({ title: "Não foi possível anexar", description: error?.message, variant: "destructive" });
         } finally {
             setIsUploading(false);
         }
-    };
-
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
-        e.target.value = '';
-        await uploadArquivos(files);
     };
 
     const removeFile = (url: string) => {
@@ -392,26 +362,24 @@ export function TemplatesModule() {
         // @ts-ignore
         const clipboardData = e.clipboardData || (window as any).clipboardData;
         if (!clipboardData) return;
-        let files: File[] = Array.from(clipboardData.files || []);
-        if (!files.length && clipboardData.items) {
-            for (let i = 0; i < clipboardData.items.length; i++) {
-                const item = clipboardData.items[i];
-                if (item.kind === 'file') {
-                    const f = item.getAsFile();
-                    if (f) files.push(f);
-                }
-            }
-        }
-        if (files.length) {
+        const temArquivo = (clipboardData.files && clipboardData.files.length > 0) ||
+            Array.from(clipboardData.items || []).some((i: any) => i.kind === 'file');
+        if (temArquivo) {
             e.preventDefault();
-            await uploadArquivos(files);
+            toast({ title: "Arquivo colado não é guardado", description: "Para não ocupar espaço, use \"Selecionar arquivos\" ou arraste o arquivo da pasta." });
         }
     };
 
     const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        await uploadArquivos(Array.from(e.dataTransfer.files || []));
+        try {
+            const novos = await arquivosArrastados(e.dataTransfer);
+            if (novos.length) acrescentarArquivos(novos);
+            else if (e.dataTransfer.files?.length) toast({ title: "Use \"Selecionar arquivos\"", description: "Este navegador não deixa guardar o arquivo arrastado." });
+        } catch (err: any) {
+            toast({ title: "Não foi possível anexar", description: err?.message, variant: "destructive" });
+        }
     };
 
     return (
@@ -653,7 +621,9 @@ export function TemplatesModule() {
                                 {anexosDoTemplate(formData).map(a => (
                                     <div key={a.url} className="flex items-center gap-2 bg-muted px-2 py-1.5 rounded-md">
                                         <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
-                                        <a href={a.url} target="_blank" rel="noreferrer" className="text-sm truncate flex-1 hover:underline" title={a.name}>{a.name}</a>
+                                        {ehLocal(a)
+                                            ? <span className="text-sm truncate flex-1" title={`${a.name} (no computador)`}>{a.name} <span className="text-[10px] text-muted-foreground">· no computador</span></span>
+                                            : <a href={a.url} target="_blank" rel="noreferrer" className="text-sm truncate flex-1 hover:underline" title={a.name}>{a.name}</a>}
                                         <Button variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive" onClick={() => removeFile(a.url)} aria-label={`Remover ${a.name}`}>
                                             <X className="h-4 w-4" />
                                         </Button>
@@ -661,14 +631,11 @@ export function TemplatesModule() {
                                 ))}
                             </div>
                         )}
-                        <div>
-                            <Label htmlFor="file-upload" className="cursor-pointer inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 w-full text-center">
-                                {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : <><Upload className="mr-2 h-4 w-4" /> {anexosDoTemplate(formData).length ? "Adicionar mais arquivos" : "Selecionar arquivos (imagem, PDF, vídeo, áudio, documentos)"}</>}
-                            </Label>
-                            <Input id="file-upload" type="file" multiple className="hidden" onChange={handleFileUpload} disabled={isUploading} />
-                        </div>
+                        <Button type="button" variant="outline" className="w-full" onClick={escolherArquivos} disabled={isUploading}>
+                            {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Abrindo...</> : <><Upload className="mr-2 h-4 w-4" /> {anexosDoTemplate(formData).length ? "Adicionar mais arquivos" : "Selecionar arquivos do computador (imagem, PDF, vídeo, áudio, documentos)"}</>}
+                        </Button>
                         <p className="text-xs text-muted-foreground">
-                            Pode anexar vários. No disparo automático da Oferta Ativa os arquivos vão <strong>como arquivo</strong> no WhatsApp, depois do texto. Também dá para <strong>colar (Ctrl+V)</strong> ou <strong>arrastar</strong> arquivos aqui.
+                            Os arquivos <strong>ficam no seu computador</strong> (não ocupam espaço no Inmovya) e são lidos na hora do envio — não mova nem apague da pasta. No disparo automático vão <strong>como arquivo</strong> no WhatsApp, depois do texto. Também dá para <strong>arrastar</strong> da pasta para cá.
                         </p>
                     </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useSyncExternalStore } from "react";
 import { Switch } from "@/components/ui/switch";
-import { anexosDoTemplate } from "@/lib/templateAnexos";
+import { anexosDoTemplate, anexosComLink, ehLocal, liberarAnexosTemplate } from "@/lib/templateAnexos";
 import {
   CLASSIFICACOES_DISPARO,
   assinarFila,
@@ -258,6 +258,15 @@ export function LigacoesModule() {
     setConfigDisparo(c);
   };
   const filaDisparo = useSyncExternalStore(assinarFila, estadoFila);
+  // arquivos do template ficam no computador: o Chrome pede permissão de leitura (precisa de um clique)
+  const liberarArquivosDisparo = async (templateId: string, avisarOk = false) => {
+    const tpl = templatesDisponiveis.find(t => t.id === templateId);
+    const locais = anexosDoTemplate(tpl).filter(ehLocal);
+    if (!locais.length) return;
+    const faltando = await liberarAnexosTemplate(locais).catch(() => locais.map(a => a.name));
+    if (faltando.length) toast({ title: "Arquivo não liberado", description: `${faltando.join(", ")}. Anexe de novo no template ou clique em Liberar arquivos.`, variant: "destructive" });
+    else if (avisarOk) toast({ title: "Arquivos liberados", description: "O disparo já pode ler os arquivos do computador." });
+  };
   const [agora, setAgora] = useState(Date.now());
   useEffect(() => {
     if (!filaDisparo.proximoEm) return;
@@ -447,7 +456,7 @@ export function LigacoesModule() {
 
     // Se tiver anexo, adicionar link no final da mensagem SOMENTE SE solicitado
     if (includeAttachmentLink && template.arquivo_url) {
-      msg += anexosDoTemplate(template).map(a => `\n\n📄 ${a.name}: ${a.url}`).join('');
+      msg += anexosComLink(anexosDoTemplate(template)).map(a => `\n\n📄 ${a.name}: ${a.url}`).join('');
     }
 
     return encodeURIComponent(msg);
@@ -812,6 +821,7 @@ export function LigacoesModule() {
         } else {
           const dadosDisparo = extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada));
           const texto = decodeURIComponent(getProcessedMessage(template.id, contatoSelecionado, false));
+          liberarAnexosTemplate(anexosDoTemplate(template)).catch(() => {});
           const aviso = await enfileirarDisparo(dadosDisparo.nome || contatoSelecionado.nome, dadosDisparo.telefone || contatoSelecionado.telefone, texto, anexosDoTemplate(template));
           if (aviso) toast({ title: "Disparo não enviado", description: `${dadosDisparo.nome || "Contato"}: ${aviso}.`, variant: "destructive" });
         }
@@ -1476,7 +1486,7 @@ export function LigacoesModule() {
                             </div>
                             <div className="space-y-1">
                               <Label className="text-xs">Template</Label>
-                              <Select value={disparo.templateId || undefined} onValueChange={(v) => setDisparo({ ...disparo, templateId: v })}>
+                              <Select value={disparo.templateId || undefined} onValueChange={(v) => { setDisparo({ ...disparo, templateId: v }); liberarArquivosDisparo(v); }}>
                                 <SelectTrigger className="h-9 text-xs">
                                   <SelectValue placeholder="Escolha o template" />
                                 </SelectTrigger>
@@ -1506,6 +1516,14 @@ export function LigacoesModule() {
                                 </label>
                               ))}
                             </div>
+                            {anexosDoTemplate(tpl).some(ehLocal) && (
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-muted-foreground">{anexosDoTemplate(tpl).length} arquivo(s) do computador</span>
+                                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => liberarArquivosDisparo(disparo.templateId, true)}>
+                                  Liberar arquivos
+                                </Button>
+                              </div>
+                            )}
                             {(filaDisparo.pendentes > 0 || filaDisparo.enviados > 0 || filaDisparo.erros > 0) && (
                               <div className="border-t pt-2 space-y-1">
                                 <div>
@@ -1524,7 +1542,7 @@ export function LigacoesModule() {
                         </Popover>
                         <Switch
                           checked={disparo.ativo}
-                          onCheckedChange={(v) => setDisparo({ ...disparo, ativo: v })}
+                          onCheckedChange={(v) => { setDisparo({ ...disparo, ativo: v }); if (v) liberarArquivosDisparo(disparo.templateId); }}
                           aria-label="Ligar ou desligar o disparo automático"
                         />
                       </div>
@@ -1550,7 +1568,7 @@ export function LigacoesModule() {
                             const template = templatesDisponiveis.find(t => t.id === templateWhatsappId);
 
                             // Se tiver anexo, verificar se é imagem/GIF para copiar (o 1º arquivo)
-                            const arquivosTpl = anexosDoTemplate(template);
+                            const arquivosTpl = anexosComLink(anexosDoTemplate(template));
                             if (arquivosTpl.length) {
                               const primeiroUrl = arquivosTpl[0].url;
                               const isGif = primeiroUrl.match(/\.gif$/i) != null;
@@ -1708,7 +1726,7 @@ export function LigacoesModule() {
                                     gmail_account_id: fromAccount.id,
                                     status: 'pending',
                                     created_at: new Date().toISOString(),
-                                    attachments: anexosDoTemplate(template).map(a => ({
+                                    attachments: anexosComLink(anexosDoTemplate(template)).map(a => ({
                                       filename: a.name || 'anexo',
                                       path: a.url
                                     }))

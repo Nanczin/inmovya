@@ -103,6 +103,26 @@ export async function escolherArquivosDoComputador(): Promise<EsteiraAnexo[]> {
   return out;
 }
 
+/** Guarda o atalho de um arquivo já escolhido (ex.: arrastado para a tela) e devolve o id. */
+export async function guardarAtalhoDeArquivo(handle: any) {
+  const local_id = crypto.randomUUID();
+  await idb("readwrite", (st) => st.put(handle, local_id));
+  return local_id;
+}
+
+/** Lê do computador um arquivo guardado pelo atalho (precisa da permissão de leitura do Chrome). */
+export async function lerArquivoLocal(local_id: string, nome = "arquivo"): Promise<File> {
+  const h: any = await idb("readonly", (st) => st.get(local_id)).catch(() => null);
+  if (!h) throw new Error(`O arquivo ${nome} não está neste computador. Anexe de novo no template.`);
+  const p = await h.queryPermission?.({ mode: "read" });
+  if (p && p !== "granted") throw new Error(`Sem permissão para ler ${nome}. Clique em "Liberar arquivos" no disparo automático.`);
+  try {
+    return await h.getFile();
+  } catch {
+    throw new Error(`Não consegui abrir ${nome} (foi movido, apagado ou sem permissão).`);
+  }
+}
+
 export async function esquecerArquivoLocal(local_id: string) {
   await idb("readwrite", (st) => st.delete(local_id)).catch(() => {});
 }
