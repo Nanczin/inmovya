@@ -8,6 +8,9 @@ import {
   estadoFila,
   getConfigDisparo,
   limparConcluidos,
+  pausarFila,
+  removerDaFila,
+  tentarDeNovo,
   setConfigDisparo,
   type ConfigDisparo,
 } from "@/lib/disparoOfertaAtiva";
@@ -49,7 +52,8 @@ import {
   Target,
   Edit,
   Zap,
-  Settings2
+  Settings2,
+  X
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -1473,17 +1477,26 @@ export function LigacoesModule() {
                                 className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] hover:opacity-80 ${filaDisparo.erros > 0 ? "bg-red-100 text-red-800" : filaDisparo.pendentes > 0 ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-700"}`}
                                 aria-label="Ver a fila do disparo"
                               >
-                                {filaDisparo.pendentes > 0
+                                {filaDisparo.pausado && filaDisparo.pendentes > 0
+                                  ? `Pausado: ${filaDisparo.pendentes}`
+                                  : filaDisparo.pendentes > 0
                                   ? `Fila: ${filaDisparo.pendentes}${seg ? ` · ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}` : ""}`
                                   : `${filaDisparo.enviados} enviado(s)${filaDisparo.erros ? ` · ${filaDisparo.erros} erro(s)` : ""}`}
                               </button>
                             </PopoverTrigger>
                             <PopoverContent align="end" className="w-80 p-0 text-xs">
                               <div className="flex items-center justify-between px-3 py-2 border-b">
-                                <span className="font-semibold text-sm">Fila do disparo</span>
-                                <span className="text-muted-foreground">
-                                  {filaDisparo.pendentes} na fila · {filaDisparo.enviados} enviado(s){filaDisparo.erros ? ` · ${filaDisparo.erros} erro(s)` : ""}
-                                </span>
+                                <div>
+                                  <div className="font-semibold text-sm">Fila do disparo</div>
+                                  <div className="text-muted-foreground">
+                                    {filaDisparo.pendentes} na fila · {filaDisparo.enviados} enviado(s){filaDisparo.erros ? ` · ${filaDisparo.erros} erro(s)` : ""}
+                                  </div>
+                                </div>
+                                {filaDisparo.pendentes > 0 && (
+                                  <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => pausarFila(!filaDisparo.pausado)}>
+                                    {filaDisparo.pausado ? <><Play className="w-3 h-3 mr-1" /> Retomar</> : <><Pause className="w-3 h-3 mr-1" /> Pausar</>}
+                                  </Button>
+                                )}
                               </div>
                               <div className="max-h-72 overflow-y-auto divide-y">
                                 {[...filaDisparo.itens].reverse().map(i => (
@@ -1492,7 +1505,7 @@ export function LigacoesModule() {
                                       {i.status === "enviado" ? "✅" : i.status === "erro" ? "⚠️" : i.status === "enviando" ? "📤" : "⏳"}
                                     </span>
                                     <div className="flex-1 min-w-0">
-                                      <div className="font-medium truncate">{i.nome || i.telefone}</div>
+                                      <div className="font-medium truncate" title={i.texto}>{i.nome || i.telefone}</div>
                                       <div className="text-muted-foreground">
                                         {i.status === "enviado" && i.em
                                           ? `enviado às ${new Date(i.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
@@ -1500,14 +1513,30 @@ export function LigacoesModule() {
                                             ? "enviando agora..."
                                             : i.status === "erro"
                                               ? <span className="text-red-700">{i.erro}</span>
-                                              : "aguardando a vez"}
+                                                      : filaDisparo.pausado ? "pausado" : "aguardando a vez"}
                                         {i.anexos.length > 0 && ` · ${i.anexos.length} arquivo(s)`}
                                       </div>
                                     </div>
+                                    {i.status === "erro" && (
+                                      <button type="button" className="shrink-0 text-[11px] underline text-blue-700" onClick={() => tentarDeNovo(i.id)}>
+                                        tentar de novo
+                                      </button>
+                                    )}
+                                    {i.status !== "enviando" && (
+                                      <button
+                                        type="button"
+                                        className="shrink-0 p-0.5 rounded text-muted-foreground hover:text-red-700 hover:bg-red-50"
+                                        onClick={() => removerDaFila(i.id)}
+                                        aria-label={i.status === "na fila" ? `Tirar ${i.nome} da fila` : `Apagar ${i.nome} do histórico`}
+                                        title={i.status === "na fila" ? "Tirar da fila (não envia)" : "Apagar do histórico"}
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 ))}
                               </div>
-                              {seg > 0 && (
+                              {seg > 0 && !filaDisparo.pausado && (
                                 <div className="px-3 py-2 border-t text-muted-foreground">
                                   Próximo envio em {Math.floor(seg / 60)}:{String(seg % 60).padStart(2, "0")} (mín. 2 min entre envios)
                                 </div>

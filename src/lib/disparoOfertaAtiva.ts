@@ -68,6 +68,7 @@ let fila: ItemDisparo[] = [];
 let rodando = false;
 let ultimoEnvio = 0;
 let proximoEm = 0;
+let pausado = false;
 const ouvintes = new Set<() => void>();
 const montarEstado = () => ({
   itens: [...fila],
@@ -75,6 +76,7 @@ const montarEstado = () => ({
   enviados: fila.filter((i) => i.status === "enviado").length,
   erros: fila.filter((i) => i.status === "erro").length,
   proximoEm,
+  pausado,
 });
 let snapshot = montarEstado();
 const avisar = () => {
@@ -96,26 +98,48 @@ export const limparConcluidos = () => {
   avisar();
 };
 
-const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
-// espera pelo relógio (o Chrome atrasa timers de abas escondidas)
-const esperarAte = async (quando: number) => {
-  while (Date.now() < quando) await dormir(Math.min(1000, quando - Date.now()));
+/** Tira da fila quem ainda não foi enviado (ou apaga do histórico). */
+export const removerDaFila = (id: string) => {
+  fila = fila.filter((i) => i.id !== id || i.status === "enviando");
+  avisar();
 };
+
+/** Volta para a fila uma mensagem que deu erro. */
+export const tentarDeNovo = (id: string) => {
+  const item = fila.find((i) => i.id === id);
+  if (!item || item.status !== "erro") return;
+  item.status = "na fila";
+  item.erro = undefined;
+  avisar();
+  processar();
+};
+
+/** Pausa/retoma os envios (quem está na fila continua esperando). */
+export const pausarFila = (v: boolean) => {
+  pausado = v;
+  avisar();
+  if (!v) processar();
+};
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const processar = async () => {
   if (rodando) return;
   rodando = true;
   try {
     while (true) {
-      const item = fila.find((i) => i.status === "na fila");
-      if (!item) break;
+      if (pausado || !fila.some((i) => i.status === "na fila")) break;
       // intervalo mínimo desde o último envio
       const espera = ultimoEnvio ? ultimoEnvio + (INTERVALO_MIN_S + Math.random() * (INTERVALO_MAX_S - INTERVALO_MIN_S)) * 1000 : 0;
       proximoEm = Math.max(espera, Date.now());
       avisar();
-      await esperarAte(proximoEm);
+      while (Date.now() < proximoEm && !pausado) await dormir(1000); // pelo relógio (aba escondida atrasa timers)
+      if (pausado) break;
       // a esteira (ou a leitura das etiquetas) tem prioridade: espera ela terminar
       while (isWhatsAppOcupado()) await dormir(2000);
+      // pega o primeiro da fila AGORA (pode ter sido removido durante a espera)
+      const item = fila.find((i) => i.status === "na fila");
+      if (!item || pausado) break;
       setWhatsAppOcupado(true);
       item.status = "enviando";
       avisar();
