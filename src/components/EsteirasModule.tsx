@@ -60,7 +60,7 @@ import {
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { AgenteRelatorio } from "@/components/esteiras/AgenteRelatorio";
-import { agenteDisponivel, getAgenteAtivo, rodarAgente, rodarFimDasEsteiras, lerRelatorio, assinarRelatorio, rotulo } from "@/lib/agenteEsteira";
+import { agenteDisponivel, getAgenteAtivo, verificarAntesDoEnvio, rodarFimDasEsteiras, lerRelatorio, assinarRelatorio, rotulo } from "@/lib/agenteEsteira";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
 import {
@@ -352,6 +352,17 @@ export function EsteirasModule() {
     // se a leitura das etiquetas do WhatsApp estiver rodando, espera terminar
     while (isWhatsAppOcupado()) await new Promise((r) => setTimeout(r, 1000));
     setWhatsAppOcupado(true); // a leitura das etiquetas do WhatsApp espera a esteira
+    // Agente: confere de uma vez (uma janela do WhatsApp) quem já respondeu antes de enviar
+    let responderam = new Map<string, any>();
+    if (getAgenteAtivo() && agenteDisponivel()) {
+      try {
+        toast({ title: "Agente", description: "Conferindo quem respondeu antes de enviar..." });
+        responderam = await verificarAntesDoEnvio(lista.map((i) => ({ lead: i.lead as any, esteira: i.esteira })));
+        if (responderam.size) toast({ title: "Agente", description: `${responderam.size} lead(s) responderam e não vão receber — veja a aba Agente.` });
+      } catch (e) {
+        console.error("Agente antes do envio:", e);
+      }
+    }
     let enviados = 0;
     const prontosParaSegunda: string[] = [];
     for (let i = 0; i < lista.length; i++) {
@@ -361,13 +372,11 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
-        // Agente: antes de enviar o próximo passo, confere se o lead respondeu
-        if (getAgenteAtivo() && agenteDisponivel() && item.lead.esteira_ultimo_envio && (item.lead.esteira_passo || 0) > 0) {
-          const rel = await rodarAgente(item.lead as any, item.esteira, "antes do envio");
-          if (!rel.erro && rel.classificacao !== "sem_resposta") {
-            setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: `Respondeu: ${rotulo(rel.classificacao)} — veja a aba Agente` } }));
-            continue; // não envia, nem espera o intervalo
-          }
+        // Agente: quem respondeu (conferido antes do envio, em lote) não recebe
+        const respondeu = responderam.get(item.lead.id);
+        if (respondeu) {
+          setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: `Respondeu: ${rotulo(respondeu.classificacao)} — veja a aba Agente` } }));
+          continue; // não envia, nem espera o intervalo
         }
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length, item.lead.observacoes);
         await enviarPeloWhatsApp(item.telefone, texto, anexos, segundoPlano && extensaoAtualizada("1.3.0"));

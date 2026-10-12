@@ -113,7 +113,7 @@ const pedirExtensao = (detail: Record<string, any>, timeoutMs = 120000) =>
     window.dispatchEvent(new CustomEvent("INMOVYA_AGENT", { detail: { ...detail, token, background: true } }));
   });
 
-export const agenteDisponivel = () => extensaoAtualizada("1.4.0");
+export const agenteDisponivel = () => extensaoAtualizada("1.5.0");
 
 export async function lerConversa(telefone: string): Promise<MensagemWA[]> {
   const r = await pedirExtensao({ op: "read", phone: telefoneWhatsApp(telefone) });
@@ -440,6 +440,218 @@ export const rotulo = (c: Classificacao, momento?: RelatorioAgente["momento"]) =
     ? "Sem resposta (segue na esteira)"
     : ({ sem_resposta: "Sem resposta → disparo", positiva: "Positiva → 50%", negativa: "Negativa", neutra: "Neutra" })[c];
 
+// ---------- Modo rápido (lote): uma janela do WhatsApp, busca por número, lê a lista de conversas ----------
+export interface InfoConversa {
+  nome: string;
+  ultimaMensagem: string;
+  ultimaSua: boolean; // a última mensagem da conversa é sua (tem tique)
+  quando: string; // "19:09", "ontem", "sexta-feira", "12/10/2026"
+  naoLidas: number;
+  etiquetas: string[];
+}
+type ItemLote = { id: string; op: "scan" | "labels"; phone: string; add?: string[]; remove?: string[] };
+
+async function lote(itens: ItemLote[]): Promise<Record<string, any>> {
+  if (!itens.length) return {};
+  const r = await pedirExtensao({ op: "batch", itens }, 90_000 + itens.length * 25_000);
+  const out: Record<string, any> = {};
+  (r.resultados || []).forEach((x: any) => (out[x.id] = x));
+  return out;
+}
+
+/** Data aproximada do "quando" da lista de conversas (hora de hoje, ontem, dia da semana ou data). */
+function dataDoQuando(q: string): Date | null {
+  const t = String(q || "").trim().toLowerCase();
+  const hoje = new Date();
+  let m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), +m[1], +m[2]);
+  if (t === "ontem") return new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1, 23, 59);
+  const dias = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+  const i = dias.indexOf(t);
+  if (i >= 0) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59);
+    let volta = (hoje.getDay() - i + 7) % 7 || 7;
+    d.setDate(d.getDate() - volta);
+    return d;
+  }
+  m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) return new Date(+(m[3].length === 2 ? "20" + m[3] : m[3]), +m[2] - 1, +m[1], 23, 59);
+  return null;
+}
+
+/** Sua última mensagem foi depois do último envio da esteira? (= você está conversando com o lead) */
+function voceConversando(info: InfoConversa, ultimoEnvio?: string | null) {
+  if (!info.ultimaSua || !ultimoEnvio) return false;
+  const q = dataDoQuando(info.quando);
+  if (!q) return false;
+  const envio = new Date(ultimoEnvio);
+  const soDia = /^\d{1,2}:\d{2}$/.test(String(info.quando).trim()) ? false : true;
+  if (soDia) return new Date(q.getFullYear(), q.getMonth(), q.getDate()) > new Date(envio.getFullYear(), envio.getMonth(), envio.getDate());
+  return q.getTime() > envio.getTime() + 10 * 60_000;
+}
+
+interface EntradaLote {
+  lead: LeadAgente;
+  esteira: EsteiraAgente;
+  noFim: boolean;
+  momento: RelatorioAgente["momento"];
+}
+
+/**
+ * Confere vários leads de uma vez (rápido): 1) lê a lista de conversas de todos numa janela só;
+ * 2) a IA analisa quem respondeu; 3) aplica as regras no Inmovya; 4) troca as etiquetas no WhatsApp numa janela só.
+ */
+export async function processarLote(
+  entradas: EntradaLote[],
+  aoProgredir?: (atual: number, total: number, nome: string) => void
+): Promise<RelatorioAgente[]> {
+  const rels: RelatorioAgente[] = [];
+  const etiquetasPorLead: Record<string, { add: string[]; remove: string[]; rel: RelatorioAgente }> = {};
+  const TAM = 6;
+  for (let i = 0; i < entradas.length; i += TAM) {
+    const pedaco = entradas.slice(i, i + TAM);
+    aoProgredir?.(Math.min(i + pedaco.length, entradas.length), entradas.length, pedaco.map((e) => e.lead.nome).join(", "));
+    let res: Record<string, any> = {};
+    try {
+      res = await lote(pedaco.map((e) => ({ id: e.lead.id, op: "scan" as const, phone: telefoneWhatsApp(e.lead.telefone) })));
+    } catch (e: any) {
+      pedaco.forEach((x) => (res[x.lead.id] = { ok: false, error: e?.message || "Falha no WhatsApp" }));
+    }
+    for (const { lead, esteira, noFim, momento } of pedaco) {
+      const r = res[lead.id] || {};
+      const rel: RelatorioAgente = {
+        id: crypto.randomUUID(),
+        em: new Date().toISOString(),
+        leadId: lead.id,
+        nome: lead.nome,
+        telefone: lead.telefone,
+        esteira: esteira.nome,
+        momento: noFim ? "fim da esteira" : momento,
+        classificacao: "sem_resposta",
+        resumo: "",
+        sugestao: "",
+        respostas: [],
+        acoes: [],
+        via: "regras",
+      };
+      try {
+        if (!r.ok) throw new Error(r.error || "Falha ao ler o WhatsApp");
+        if (!r.encontrado) throw new Error("Conversa não encontrada no WhatsApp (confira o número).");
+        const info = r.info as InfoConversa;
+        if (info.ultimaSua) {
+          if (voceConversando(info, lead.esteira_ultimo_envio)) {
+            // você mandou mensagem depois da esteira: conversa ativa, a esteira para
+            rel.classificacao = "neutra";
+            rel.resumo = "Você está conversando com o lead (sua mensagem é mais recente que a da esteira).";
+            rel.sugestao = "Siga a conversa manualmente.";
+            const { error } = await supabase.from("leads").update({ esteira_id: null, esteira_passo: 0, esteira_proximo: null } as any).eq("id", lead.id);
+            if (error) throw error;
+            rel.acoes.push("Inmovya: saiu da esteira");
+          } else if (!noFim) {
+            rel.resumo = "Ainda não respondeu — segue na esteira.";
+            rel.sugestao = info.quando ? `Última mensagem sua: ${info.quando}` : "";
+            rels.push(rel);
+            salvarRelatorio(rel);
+            continue;
+          } else {
+            // fim da esteira sem resposta
+            rel.resumo = "Terminou a esteira sem responder.";
+            rel.sugestao = "Lead vai para a lista de disparo.";
+            const tagsFim = etiquetasDaEsteira(esteira);
+            const novasTags = tagsFim.length ? tagsFim : ["disparo"];
+            const tags = Array.from(new Set([...(lead.tags || []), ...novasTags]));
+            const etapaFim = (esteira.ao_concluir_etapa || "").trim() || null;
+            let { error } = await supabase.from("leads").update({ tags, status: etapaFim, esteira_id: null, esteira_passo: 0, esteira_proximo: null } as any).eq("id", lead.id);
+            if (error) ({ error } = await supabase.from("leads").update({ tags, esteira_id: null, esteira_passo: 0, esteira_proximo: null } as any).eq("id", lead.id));
+            if (error) throw error;
+            rel.acoes.push(`Inmovya: tag ${novasTags.join(", ")}, ${etapaFim ? `foi para ${etapaFim}` : "saiu do funil"} e da esteira`);
+            etiquetasPorLead[lead.id] = { add: ["Lead"], remove: ETIQUETAS_FUNIL, rel };
+          }
+        } else {
+          // a última mensagem é do lead: respondeu
+          rel.respostas = [info.ultimaMensagem || "[mídia]"];
+          const conversa: MensagemWA[] = [{ dir: "in", data: null, hora: info.quando, texto: info.ultimaMensagem, tipo: info.ultimaMensagem ? "texto" : "mídia" }];
+          const chaves = await chavesIA();
+          let analise;
+          if (chaves.gemini || chaves.openai) {
+            try {
+              analise = await analisarComIA(chaves, lead, esteira.nome, conversa, conversa);
+              rel.via = chaves.gemini ? "IA (Gemini)" : "IA (OpenAI)";
+            } catch (e: any) {
+              analise = analisarPorRegras(rel.respostas);
+              rel.erro = `${e?.message || "IA falhou"} — usei regras por palavras`;
+            }
+          } else analise = analisarPorRegras(rel.respostas);
+          Object.assign(rel, analise);
+          if (info.naoLidas > 1) rel.resumo = `${rel.resumo} (${info.naoLidas} mensagens não lidas — abra a conversa)`.trim();
+          if (rel.classificacao === "positiva") {
+            const atual = getStageForStatus(lead.status)?.id;
+            const sobe = !atual || atual === "20" || ["validacao", "primeiro-impacto", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "respondeu", "lista-fria"].includes(atual);
+            const update: Record<string, any> = { esteira_id: null, esteira_passo: 0, esteira_proximo: null };
+            if (sobe) update.status = "50%";
+            const { error } = await supabase.from("leads").update(update as any).eq("id", lead.id);
+            if (error) throw error;
+            rel.acoes.push(sobe ? "Inmovya: subiu para 50% e saiu da esteira" : "Inmovya: saiu da esteira (já estava em 50% ou mais)");
+            if (sobe) etiquetasPorLead[lead.id] = { add: ["50%"], remove: ["Bitrix", "20%", "Lead"], rel };
+          } else {
+            const { error } = await supabase.from("leads").update({ esteira_id: null, esteira_passo: 0, esteira_proximo: null } as any).eq("id", lead.id);
+            if (error) throw error;
+            rel.acoes.push("Inmovya: saiu da esteira (não recebe mais mensagens automáticas)");
+          }
+        }
+        await supabase.from("lead_timeline").insert({
+          lead_id: lead.id,
+          type: "note",
+          title: `Agente da esteira — ${rotulo(rel.classificacao, rel.momento)}`,
+          description: [rel.resumo, rel.sugestao && `Sugestão: ${rel.sugestao}`, rel.respostas.length && `Lead: ${rel.respostas.join(" / ")}`, rel.acoes.join("\n")]
+            .filter(Boolean)
+            .join("\n"),
+          author: "Agente",
+        } as any);
+      } catch (e: any) {
+        rel.erro = e?.message || "Falha no agente";
+      }
+      rels.push(rel);
+      salvarRelatorio(rel);
+    }
+  }
+
+  // etiquetas do WhatsApp de todos de uma vez (uma janela)
+  const ids = Object.keys(etiquetasPorLead);
+  if (ids.length) {
+    aoProgredir?.(entradas.length, entradas.length, "trocando etiquetas no WhatsApp");
+    const porId = Object.fromEntries(entradas.map((e) => [e.lead.id, e.lead]));
+    let res: Record<string, any> = {};
+    try {
+      res = await lote(ids.map((id) => ({ id, op: "labels" as const, phone: telefoneWhatsApp(porId[id].telefone), add: etiquetasPorLead[id].add, remove: etiquetasPorLead[id].remove })));
+    } catch (e: any) {
+      ids.forEach((id) => (res[id] = { ok: false, error: e?.message }));
+    }
+    ids.forEach((id) => {
+      const { rel } = etiquetasPorLead[id];
+      const r = res[id] || {};
+      rel.acoes.push(r.ok ? `WhatsApp: ${(r.alteracoes || []).length ? r.alteracoes.join(", ") : "etiquetas já estavam certas"}` : `WhatsApp: não troquei a etiqueta (${r.error || "erro"})`);
+      salvarRelatorio(rel);
+    });
+  }
+  return rels;
+}
+
+/** Antes de rodar a esteira: confere de uma vez quem respondeu. Devolve os ids que NÃO devem receber. */
+export async function verificarAntesDoEnvio(
+  itens: { lead: LeadAgente & { esteira_passo?: number | null }; esteira: EsteiraAgente }[],
+  aoProgredir?: (atual: number, total: number, nome: string) => void
+): Promise<Map<string, RelatorioAgente>> {
+  const alvo = itens.filter((i) => (i.lead.esteira_passo || 0) > 0 && i.lead.esteira_ultimo_envio);
+  const out = new Map<string, RelatorioAgente>();
+  if (!alvo.length || !getAgenteAtivo() || !agenteDisponivel()) return out;
+  const rels = await processarLote(alvo.map((i) => ({ lead: i.lead, esteira: i.esteira, noFim: false, momento: "antes do envio" as const })), aoProgredir);
+  rels.forEach((r) => {
+    if (!r.erro && r.classificacao !== "sem_resposta") out.set(r.leadId, r);
+  });
+  return out;
+}
+
 // ---------- Verificação (roda sozinho enquanto o Inmovya está aberto, e no botão "Rodar agora") ----------
 // Confere TODOS os leads que já receberam mensagem da esteira:
 //   • quem respondeu → analisa e aplica as regras
@@ -531,7 +743,7 @@ export async function rodarFimDasEsteiras(forcar = false): Promise<RelatorioAgen
     return [];
   }
   if (!getAgenteAtivo()) return [];
-  if (!(await checarExtensao()) || !agenteDisponivel()) throw new Error("Inmovya Scale 1.4.0 não encontrado neste Chrome.");
+  if (!(await checarExtensao()) || !agenteDisponivel()) throw new Error("Atualize o Inmovya Scale para a versão 1.5.0 (chrome://extensions → ↻) e recarregue esta página.");
   rodandoFim = true;
   const feitos: RelatorioAgente[] = [];
   const resumo: ResumoVerificacao = { em: new Date().toISOString(), conferidos: 0, responderam: 0, fim: 0, semResposta: [], erros: [] };
@@ -541,29 +753,30 @@ export async function rodarFimDasEsteiras(forcar = false): Promise<RelatorioAgen
     const todos = await leadsParaVerificar();
     const fila = todos.filter((x) => forcar || x.noFim || !conferidos[x.lead.id] || Date.now() - conferidos[x.lead.id] > 2 * 3600_000);
     teveFila = fila.length > 0 || forcar;
-    for (let i = 0; i < fila.length; i++) {
-      const { lead, esteira, noFim } = fila[i];
-      if (!getAgenteAtivo()) break;
-      progresso = { atual: i + 1, total: fila.length, nome: lead.nome };
-      ouvintes.forEach((f) => f());
-      while (isWhatsAppOcupado()) await new Promise((r) => setTimeout(r, 3000));
-      setWhatsAppOcupado(true);
-      try {
-        const rel = await rodarAgente(lead, esteira, noFim ? "fim da esteira" : "verificação");
+    while (isWhatsAppOcupado()) await new Promise((r) => setTimeout(r, 3000));
+    setWhatsAppOcupado(true);
+    try {
+      const rels = await processarLote(
+        fila.map((x) => ({ ...x, momento: "verificação" as const })),
+        (atual, total, nome) => {
+          progresso = { atual, total, nome };
+          ouvintes.forEach((f) => f());
+        }
+      );
+      rels.forEach((rel) => {
         resumo.conferidos++;
-        marcarConferido(lead.id);
-        if (rel.erro && !rel.classificacao) resumo.erros.push(`${lead.nome}: ${rel.erro}`);
-        else if (rel.erro && rel.classificacao === "sem_resposta" && !noFim) resumo.erros.push(`${lead.nome}: ${rel.erro}`);
-        else if (rel.classificacao === "sem_resposta" && !noFim) resumo.semResposta.push(lead.nome);
+        marcarConferido(rel.leadId);
+        const noFim = rel.momento === "fim da esteira";
+        if (rel.erro && rel.classificacao === "sem_resposta") resumo.erros.push(`${rel.nome}: ${rel.erro}`);
+        else if (rel.classificacao === "sem_resposta" && !noFim) resumo.semResposta.push(rel.nome);
         else {
           if (noFim && rel.classificacao === "sem_resposta") resumo.fim++;
           else resumo.responderam++;
           feitos.push(rel);
         }
-      } finally {
-        setWhatsAppOcupado(false);
-      }
-      await new Promise((r) => setTimeout(r, 3000));
+      });
+    } finally {
+      setWhatsAppOcupado(false);
     }
   } finally {
     rodandoFim = false;

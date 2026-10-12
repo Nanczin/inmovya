@@ -179,35 +179,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const input = await dom.waitForMessageInput(30000);
         if (!input) throw new Error('A conversa do WhatsApp não abriu.');
         await dom.delay(1200);
-        const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-        const botao = document.querySelector('#main [data-testid="label-chat-header-button"]')
-          || Array.from(document.querySelectorAll('#main header button')).find(b => /lista|etiqueta|label/i.test(b.getAttribute('aria-label') || ''));
-        if (!botao) return sendResponse({ ok: false, final: true, error: 'Não achei o botão de etiquetas no WhatsApp.' });
-        botao.click();
-        await dom.delay(900);
-        const aviso = Array.from(document.querySelectorAll('[data-testid="confirm-popup"] button')).find(b => /continuar|continue|ok/i.test(b.innerText));
-        if (aviso) { aviso.click(); await dom.delay(900); }
-        const lista = () => document.querySelector('[data-testid="label-chat-header-dropdown-items"]');
-        if (!lista()) return sendResponse({ ok: false, error: 'A lista de etiquetas não abriu.' });
-        const itens = () => Array.from(lista().querySelectorAll('li[data-testid^="label_item_"], li'));
-        const marcada = li => !!li.querySelector('input[type="checkbox"]')?.checked;
-        const adicionar = (request.add || []).map(norm);
-        const remover = (request.remove || []).map(norm);
-        const feitas = [];
-        for (const nome of [...adicionar, ...remover]) {
-          const li = itens().find(l => norm(l.innerText) === nome);
-          if (!li) { if (adicionar.includes(nome)) feitas.push(`etiqueta "${nome}" não existe`); continue; }
-          const querMarcada = adicionar.includes(nome);
-          if (marcada(li) !== querMarcada) {
-            li.click();
-            await dom.delay(900);
-            feitas.push(`${querMarcada ? '+' : '-'}${li.innerText.trim()}`);
-          }
-        }
-        const final = itens().filter(marcada).map(l => l.innerText.trim());
-        botao.click(); // fecha a lista
-        await dom.delay(400);
-        sendResponse({ ok: true, alteracoes: feitas, etiquetas: final });
+        sendResponse(await agenteTrocarEtiquetas(request.add, request.remove));
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // Lote do agente: numa única janela do WhatsApp, procura cada contato pela busca (sem recarregar).
+  //  op "scan":   lê na lista de conversas se a última mensagem é sua (tique) ou do lead, e o texto dela
+  //  op "labels": abre a conversa e troca as etiquetas
+  if (request.action === 'agent_batch_item') {
+    (async () => {
+      try {
+        sendResponse(await agenteItemDoLote(request));
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }
@@ -223,3 +209,114 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+// ---------- Agente: funções do lote ----------
+const agenteDelay = ms => new Promise(r => setTimeout(r, ms));
+const agenteNorm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+async function agenteTrocarEtiquetas(add = [], remove = []) {
+  const botao = document.querySelector('#main [data-testid="label-chat-header-button"]')
+    || Array.from(document.querySelectorAll('#main header button')).find(b => /lista|etiqueta|label/i.test(b.getAttribute('aria-label') || ''));
+  if (!botao) return { ok: false, final: true, error: 'Não achei o botão de etiquetas no WhatsApp.' };
+  botao.click();
+  await agenteDelay(900);
+  const aviso = Array.from(document.querySelectorAll('[data-testid="confirm-popup"] button')).find(b => /continuar|continue|ok/i.test(b.innerText));
+  if (aviso) { aviso.click(); await agenteDelay(900); }
+  const lista = () => document.querySelector('[data-testid="label-chat-header-dropdown-items"]');
+  if (!lista()) return { ok: false, error: 'A lista de etiquetas não abriu.' };
+  const itens = () => Array.from(lista().querySelectorAll('li[data-testid^="label_item_"], li'));
+  const marcada = li => !!li.querySelector('input[type="checkbox"]')?.checked;
+  const adicionar = (add || []).map(agenteNorm);
+  const remover = (remove || []).map(agenteNorm);
+  const feitas = [];
+  for (const nome of [...adicionar, ...remover]) {
+    const li = itens().find(l => agenteNorm(l.innerText) === nome);
+    if (!li) { if (adicionar.includes(nome)) feitas.push(`etiqueta "${nome}" não existe`); continue; }
+    const querMarcada = adicionar.includes(nome);
+    if (marcada(li) !== querMarcada) {
+      li.click();
+      await agenteDelay(800);
+      feitas.push(`${querMarcada ? '+' : '-'}${li.innerText.trim()}`);
+    }
+  }
+  const final = itens().filter(marcada).map(l => l.innerText.trim());
+  botao.click(); // fecha a lista
+  await agenteDelay(300);
+  return { ok: true, alteracoes: feitas, etiquetas: final };
+}
+
+const agenteLinhasVisiveis = () => Array.from(document.querySelectorAll('[role="row"]'))
+  .filter(r => !r.closest('#main') && !r.closest('#inmovya-scale-root') && r.querySelector('[role="gridcell"]') && r.querySelector('span[title]'))
+  .filter(r => { const b = r.getBoundingClientRect(); return b.height > 40 && b.top >= 0 && b.top < window.innerHeight; });
+
+async function agenteBuscar(phone) {
+  const campo = document.querySelector('input[role="textbox"][data-tab="3"]')
+    || Array.from(document.querySelectorAll('input, [contenteditable="true"]')).find(e => /pesquisar|search/i.test(e.getAttribute('aria-label') || e.getAttribute('placeholder') || ''));
+  if (!campo) throw new Error('Não achei a busca do WhatsApp.');
+  // busca pelos 8 últimos dígitos: acha o contato com ou sem o 9 e com qualquer formatação
+  const digitos = String(phone || '').replace(/\D/g, '');
+  const primeiraAntes = () => (agenteLinhasVisiveis()[0]?.querySelector('span[title]')?.getAttribute('title') || '');
+  const antes = primeiraAntes();
+  campo.focus();
+  if (campo.select) campo.select(); else document.execCommand('selectAll');
+  document.execCommand('insertText', false, digitos.slice(-8));
+  // espera a lista filtrar: a 1ª linha muda (ou some), mínimo 1,2 s e no máximo 5 s
+  const inicio = Date.now();
+  while (Date.now() - inicio < 5000) {
+    await agenteDelay(300);
+    if (Date.now() - inicio < 1200) continue;
+    const agora = primeiraAntes();
+    if (agora !== antes || Date.now() - inicio > 3000) break;
+  }
+  await agenteDelay(300);
+  return agenteLinhasVisiveis();
+}
+
+function agenteLerLinha(linha) {
+  const titulos = Array.from(linha.querySelectorAll('span[title]')).map(s => s.getAttribute('title'));
+  const status = linha.querySelector('[data-testid="last-msg-status"]');
+  const icone = status?.querySelector('svg title')?.textContent || status?.querySelector('[data-icon]')?.getAttribute('data-icon') || '';
+  // tique (enviada/entregue/lida/relógio) = a última mensagem é SUA
+  const ultimaSua = /read|deliver|sent|check|pending|clock|time|ack/i.test(icone);
+  const quando = (linha.querySelector('[data-testid="cell-frame-primary-detail"]')?.innerText || '').trim();
+  const naoLidas = parseInt((Array.from(linha.querySelectorAll('[aria-label]')).map(e => e.getAttribute('aria-label')).find(a => /n[aã]o lida|unread/i.test(a)) || '').replace(/\D/g, ''), 10) || 0;
+  const etiquetas = (linha.querySelector('[data-testid="chatlist-tertiary-pills-row"]')?.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+  return { nome: titulos[0] || '', ultimaMensagem: (titulos[1] || '').replace(/[\u202a\u202c]/g, ''), ultimaSua, icone, quando, naoLidas, etiquetas };
+}
+
+async function agenteAbrirLinha(linha) {
+  const alvo = linha.querySelector('span[title]') || linha;
+  const r = alvo.getBoundingClientRect();
+  const o = { bubbles: true, cancelable: true, view: window, clientX: r.left + 10, clientY: r.top + 8, button: 0 };
+  alvo.dispatchEvent(new PointerEvent('pointerdown', o));
+  alvo.dispatchEvent(new MouseEvent('mousedown', o));
+  alvo.dispatchEvent(new PointerEvent('pointerup', o));
+  alvo.dispatchEvent(new MouseEvent('mouseup', o));
+  alvo.dispatchEvent(new MouseEvent('click', o));
+  // espera abrir ESTA conversa (o cabeçalho mostra o mesmo nome da linha)
+  const nome = agenteNorm(linha.querySelector('span[title]')?.getAttribute('title'));
+  const aberta = () => {
+    const h = agenteNorm(document.querySelector('#main [data-testid="conversation-info-header-chat-title"]')?.innerText
+      || document.querySelector('#main header span[dir="auto"]')?.innerText);
+    return !!document.querySelector('#main footer') && (!nome || h === nome || h.includes(nome) || nome.includes(h));
+  };
+  for (let i = 0; i < 30 && !aberta(); i++) await agenteDelay(200);
+  return aberta();
+}
+
+async function agenteItemDoLote(request) {
+  // espera o WhatsApp carregar (1ª vez)
+  for (let i = 0; i < 90 && !document.querySelector('#pane-side'); i++) await agenteDelay(500);
+  if (!document.querySelector('#pane-side')) return { ok: false, error: 'O WhatsApp Web não carregou.' };
+  const linhas = await agenteBuscar(request.phone);
+  if (!linhas.length) return { ok: true, encontrado: false };
+  const linha = linhas[0];
+  const info = agenteLerLinha(linha);
+  if (request.op === 'labels') {
+    if (!(await agenteAbrirLinha(linha))) return { ok: false, final: true, error: 'Não consegui abrir a conversa.' };
+    await agenteDelay(800);
+    const r = await agenteTrocarEtiquetas(request.add, request.remove);
+    return { ...r, encontrado: true, info };
+  }
+  return { ok: true, encontrado: true, info };
+}

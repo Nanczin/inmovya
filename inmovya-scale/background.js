@@ -156,6 +156,46 @@ async function agenteNaConversa(request, acaoConteudo, returnTabId = null) {
   }
 }
 
+// Lote do agente: abre UMA janela do WhatsApp e processa todos os contatos pela busca (muito mais rápido).
+async function agenteEmLote(request, returnTabId = null) {
+  const itens = Array.isArray(request.itens) ? request.itens : [];
+  const url = 'https://web.whatsapp.com/?inmovya_auto=1';
+  let tab;
+  let windowId = null;
+  if (request.background !== false) {
+    const aberto = await abrirJanelaDeEnvio(url);
+    tab = aberto.tab;
+    windowId = aberto.windowId;
+  } else {
+    tab = await chrome.tabs.create({ url, active: true });
+  }
+  if (!tab || !tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
+  const resultados = [];
+  try {
+    await waitForTabComplete(tab.id, 60000);
+    for (const item of itens) {
+      let resposta = null;
+      for (let tentativa = 0; tentativa < 20; tentativa++) {
+        try {
+          resposta = await chrome.tabs.sendMessage(tab.id, { ...item, action: 'agent_batch_item' });
+          if (resposta) break;
+        } catch (error) {
+          resposta = { ok: false, error: error.message };
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      resultados.push({ id: item.id, ...(resposta || { ok: false, error: 'Sem resposta do WhatsApp.' }) });
+    }
+  } finally {
+    if (windowId != null) await chrome.windows.remove(windowId).catch(() => {});
+    else {
+      await chrome.tabs.remove(tab.id).catch(() => {});
+      if (returnTabId && returnTabId !== tab.id) await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+    }
+  }
+  return { resultados };
+}
+
 // Leitura das etiquetas (WhatsApp -> Inmovya): usa a aba do WhatsApp Web já aberta.
 // A aba vem para a frente durante a leitura (o Chrome deixa abas escondidas muito lentas)
 // e depois o foco volta para o Inmovya. Nada é alterado no WhatsApp.
@@ -291,6 +331,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request?.action === 'campaign_send') {
     sendCampaignMessage(request, sender.tab?.id || null)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (request?.action === 'agent_batch') {
+    agenteEmLote(request, sender.tab?.id || null)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;

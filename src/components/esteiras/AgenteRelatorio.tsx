@@ -95,7 +95,7 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
 
   const rodarAgora = async () => {
     if (!agenteDisponivel()) {
-      toast({ title: "Atualize o Inmovya Scale", description: "O agente precisa da versão 1.4.0 (chrome://extensions → ↻).", variant: "destructive" });
+      toast({ title: "Atualize o Inmovya Scale", description: "O agente precisa da versão 1.5.0 (chrome://extensions → ↻).", variant: "destructive" });
       return;
     }
     setRodando(true);
@@ -127,7 +127,7 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
             Resposta positiva → <b>50%</b>. Negativa ou neutra → sai da esteira e aparece aqui para você decidir.
             {pendentes ? <> · <b>{pendentes}</b> terminaram a esteira e aguardam o agente.</> : null}
           </div>
-          {!agenteDisponivel() && <div className="text-xs text-amber-700 mt-1">Atualize o Inmovya Scale para 1.4.0 para o agente funcionar.</div>}
+          {!agenteDisponivel() && <div className="text-xs text-amber-700 mt-1">Atualize o Inmovya Scale para 1.5.0 para o agente funcionar.</div>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={rodarAgora} disabled={rodando || !ativo}>
@@ -150,7 +150,7 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
       {rodando && progresso && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin text-blue-700" />
-          Conferindo {progresso.atual}/{progresso.total}: <b>{progresso.nome}</b> — a janelinha do WhatsApp abre no canto da tela.
+          Conferindo {progresso.atual}/{progresso.total}: <span className="truncate">{progresso.nome}</span> — o WhatsApp fica aberto numa janelinha no canto até terminar.
         </div>
       )}
 
