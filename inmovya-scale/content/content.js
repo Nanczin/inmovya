@@ -101,6 +101,91 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   
+  // ---------- Agente da esteira ----------
+  // Lê as mensagens carregadas da conversa aberta: direção (in = o lead, out = você), data/hora e texto.
+  if (request.action === 'agent_read_chat_tab') {
+    (async () => {
+      try {
+        const dom = window.IS.WhatsAppDOM;
+        const input = await dom.waitForMessageInput(30000);
+        if (!input) throw new Error('A conversa do WhatsApp não abriu (número sem WhatsApp?).');
+        await dom.delay(1500);
+        const main = document.querySelector('#main');
+        const painel = main.querySelector('[data-testid="conversation-panel-messages"]') || main;
+        // sobe um pouco para carregar mais histórico
+        const rolavel = painel.closest('[tabindex]') || painel.parentElement;
+        for (let i = 0; i < 3 && rolavel; i++) { rolavel.scrollTop = 0; await dom.delay(700); }
+        const pr = painel.getBoundingClientRect();
+        const msgs = [];
+        let ultimaData = null;
+        main.querySelectorAll('[data-testid^="conv-msg-"]').forEach(m => {
+          const caixa = m.querySelector('[data-testid="msg-container"]') || m;
+          const r = caixa.getBoundingClientRect();
+          let dir;
+          if (m.querySelector('[data-testid="tail-in"],[data-icon="tail-in"]')) dir = 'in';
+          else if (m.querySelector('[data-testid="tail-out"],[data-icon="tail-out"]')) dir = 'out';
+          else dir = (r.left - pr.left) > (pr.right - r.right) ? 'out' : 'in';
+          const pre = m.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || '';
+          const quando = (pre.match(/^\[([^\]]+)\]/) || [])[1] || null; // "16:23, 11/10/2026"
+          if (quando) ultimaData = quando.split(',')[1]?.trim() || ultimaData;
+          const hora = quando ? quando.split(',')[0].trim() : ((m.querySelector('[data-testid="msg-meta"]')?.innerText || '').match(/\d{1,2}:\d{2}/) || [])[0] || null;
+          const texto = Array.from(m.querySelectorAll('.selectable-text')).map(e => e.innerText).join('\n').trim();
+          const tipo = texto ? 'texto' : (m.querySelector('[data-testid*="audio" i],[data-icon*="audio" i],[data-icon*="ptt" i]') ? 'áudio'
+            : m.querySelector('[data-testid*="video" i]') ? 'vídeo' : m.querySelector('img') ? 'imagem/figurinha' : 'mídia');
+          msgs.push({ dir, data: quando ? ultimaData : ultimaData, hora, texto: texto.slice(0, 1500), tipo });
+        });
+        sendResponse({ ok: true, mensagens: msgs.slice(-40) });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
+  // Marca/desmarca etiquetas (listas) da conversa aberta pelo botão do cabeçalho.
+  if (request.action === 'agent_set_labels_tab') {
+    (async () => {
+      try {
+        const dom = window.IS.WhatsAppDOM;
+        const input = await dom.waitForMessageInput(30000);
+        if (!input) throw new Error('A conversa do WhatsApp não abriu.');
+        await dom.delay(1200);
+        const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+        const botao = document.querySelector('#main [data-testid="label-chat-header-button"]')
+          || Array.from(document.querySelectorAll('#main header button')).find(b => /lista|etiqueta|label/i.test(b.getAttribute('aria-label') || ''));
+        if (!botao) return sendResponse({ ok: false, final: true, error: 'Não achei o botão de etiquetas no WhatsApp.' });
+        botao.click();
+        await dom.delay(900);
+        const aviso = Array.from(document.querySelectorAll('[data-testid="confirm-popup"] button')).find(b => /continuar|continue|ok/i.test(b.innerText));
+        if (aviso) { aviso.click(); await dom.delay(900); }
+        const lista = () => document.querySelector('[data-testid="label-chat-header-dropdown-items"]');
+        if (!lista()) return sendResponse({ ok: false, error: 'A lista de etiquetas não abriu.' });
+        const itens = () => Array.from(lista().querySelectorAll('li[data-testid^="label_item_"], li'));
+        const marcada = li => !!li.querySelector('input[type="checkbox"]')?.checked;
+        const adicionar = (request.add || []).map(norm);
+        const remover = (request.remove || []).map(norm);
+        const feitas = [];
+        for (const nome of [...adicionar, ...remover]) {
+          const li = itens().find(l => norm(l.innerText) === nome);
+          if (!li) { if (adicionar.includes(nome)) feitas.push(`etiqueta "${nome}" não existe`); continue; }
+          const querMarcada = adicionar.includes(nome);
+          if (marcada(li) !== querMarcada) {
+            li.click();
+            await dom.delay(900);
+            feitas.push(`${querMarcada ? '+' : '-'}${li.innerText.trim()}`);
+          }
+        }
+        const final = itens().filter(marcada).map(l => l.innerText.trim());
+        botao.click(); // fecha a lista
+        await dom.delay(400);
+        sendResponse({ ok: true, alteracoes: feitas, etiquetas: final });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   if (request.action === 'start_scraper') {
     (async () => {
       const data = await window.IS.Scraper.run();

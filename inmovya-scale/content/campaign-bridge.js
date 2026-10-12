@@ -16,6 +16,17 @@
     });
   });
 
+  // Agente da esteira: ler conversa / trocar etiquetas de um contato
+  window.addEventListener('INMOVYA_AGENT', event => {
+    const detail = event.detail || {};
+    chrome.runtime.sendMessage({ ...detail, action: detail.op === 'labels' ? 'agent_set_labels' : 'agent_read_chat' }, response => {
+      const error = chrome.runtime.lastError?.message;
+      window.dispatchEvent(new CustomEvent('INMOVYA_AGENT_RESULT', {
+        detail: { ...(response || {}), token: detail.token, ok: !!response?.ok && !error, error: error || response?.error || '' }
+      }));
+    });
+  });
+
   // Leitura das etiquetas do WhatsApp (o WhatsApp é a referência do Inmovya)
   window.addEventListener('INMOVYA_READ_WA_LABELS', event => {
     const detail = event.detail || {};

@@ -59,6 +59,8 @@ import {
   moverParaPasso,
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
+import { AgenteRelatorio } from "@/components/esteiras/AgenteRelatorio";
+import { agenteDisponivel, getAgenteAtivo, rodarAgente, rodarFimDasEsteiras, lerRelatorio, assinarRelatorio, rotulo } from "@/lib/agenteEsteira";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
 import {
@@ -134,6 +136,8 @@ export function EsteirasModule() {
   const [semTabelas, setSemTabelas] = useState(false);
   const [extensaoOk, setExtensaoOk] = useState<boolean | null>(null);
   const [aba, setAba] = useState("hoje");
+  const [relatorioAgente, setRelatorioAgente] = useState(lerRelatorio());
+  useEffect(() => assinarRelatorio(() => setRelatorioAgente([...lerRelatorio()])), []);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -155,7 +159,9 @@ export function EsteirasModule() {
   useEffect(() => {
     carregar();
     checarExtensao().then(setExtensaoOk);
-    finalizarEsteirasVencidas().then((n) => n > 0 && refreshLeads());
+    // o fim da esteira agora passa pelo agente (lê o WhatsApp antes de colocar a tag disparo)
+    if (getAgenteAtivo()) rodarFimDasEsteiras().then((r) => r.length > 0 && refreshLeads());
+    else finalizarEsteirasVencidas().then((n) => n > 0 && refreshLeads());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregar]);
 
@@ -355,6 +361,14 @@ export function EsteirasModule() {
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
+        // Agente: antes de enviar o próximo passo, confere se o lead respondeu
+        if (getAgenteAtivo() && agenteDisponivel() && item.lead.esteira_ultimo_envio && (item.lead.esteira_passo || 0) > 0) {
+          const rel = await rodarAgente(item.lead as any, item.esteira, "antes do envio");
+          if (!rel.erro && rel.classificacao !== "sem_resposta") {
+            setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: `Respondeu: ${rotulo(rel.classificacao)} — veja a aba Agente` } }));
+            continue; // não envia, nem espera o intervalo
+          }
+        }
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length, item.lead.observacoes);
         await enviarPeloWhatsApp(item.telefone, texto, anexos, segundoPlano && extensaoAtualizada("1.3.0"));
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
@@ -795,6 +809,7 @@ export function EsteirasModule() {
         <TabsList className="w-full sm:w-auto grid grid-cols-3 sm:inline-flex">
           <TabsTrigger value="hoje">Hoje ({fila.length})</TabsTrigger>
           <TabsTrigger value="esteiras">Esteiras ({esteiras.length})</TabsTrigger>
+          <TabsTrigger value="agente">Agente{relatorioAgente.length ? ` (${relatorioAgente.length})` : ""}</TabsTrigger>
           <TabsTrigger value="importar">Backup e importação</TabsTrigger>
         </TabsList>
 
@@ -1040,7 +1055,7 @@ export function EsteirasModule() {
                                   <AlertTriangle className="w-3.5 h-3.5" /> {estado[item.lead.id]?.erro}
                                 </span>
                               )}
-                              {st === "pulado" && <span className="text-xs text-muted-foreground">adiado para amanhã</span>}
+                              {st === "pulado" && <span className="text-xs text-muted-foreground">{estado[item.lead.id]?.erro || "adiado para amanhã"}</span>}
                               <button
                                 type="button"
                                 disabled={rodando || st === "enviado"}
@@ -1504,6 +1519,10 @@ export function EsteirasModule() {
         </TabsContent>
 
         {/* IMPORTAR */}
+        <TabsContent value="agente" className="mt-4">
+          <AgenteRelatorio onRodou={refreshLeads} />
+        </TabsContent>
+
         <TabsContent value="importar" className="mt-4 space-y-4">
           <div className="rounded-lg border bg-white p-4 space-y-3 max-w-2xl">
             <h3 className="font-semibold">Backup das esteiras</h3>

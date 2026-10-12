@@ -114,6 +114,48 @@ async function sendCampaignMessage(request, returnTabId = null) {
   }
 }
 
+// ---------- Agente da esteira: ler a conversa e trocar etiquetas de um contato ----------
+// Abre a conversa (na janelinha do canto quando background=true), executa a ação no WhatsApp e fecha.
+async function agenteNaConversa(request, acaoConteudo, returnTabId = null) {
+  const phone = String(request.phone || '').replace(/\D/g, '');
+  if (!phone) throw new Error('Telefone inválido.');
+  const url = `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`;
+  let tab;
+  let windowId = null;
+  if (request.background) {
+    const aberto = await abrirJanelaDeEnvio(url);
+    tab = aberto.tab;
+    windowId = aberto.windowId;
+  } else {
+    tab = await chrome.tabs.create({ url, active: true });
+  }
+  if (!tab || !tab.id) throw new Error('Não foi possível abrir o WhatsApp.');
+  try {
+    await waitForTabComplete(tab.id);
+    let lastError;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      try {
+        const response = await chrome.tabs.sendMessage(tab.id, { ...request, action: acaoConteudo });
+        if (response?.ok) return response;
+        lastError = new Error(response?.error || 'O WhatsApp não respondeu.');
+        if (response?.final) break;
+      } catch (error) {
+        lastError = error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    throw lastError || new Error('A extensão não conseguiu concluir.');
+  } finally {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    if (windowId != null) {
+      await chrome.windows.remove(windowId).catch(() => {});
+    } else {
+      await chrome.tabs.remove(tab.id).catch(() => {});
+      if (returnTabId && returnTabId !== tab.id) await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+    }
+  }
+}
+
 // Leitura das etiquetas (WhatsApp -> Inmovya): usa a aba do WhatsApp Web já aberta.
 // A aba vem para a frente durante a leitura (o Chrome deixa abas escondidas muito lentas)
 // e depois o foco volta para o Inmovya. Nada é alterado no WhatsApp.
@@ -249,6 +291,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request?.action === 'campaign_send') {
     sendCampaignMessage(request, sender.tab?.id || null)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (request?.action === 'agent_read_chat' || request?.action === 'agent_set_labels') {
+    agenteNaConversa(request, request.action === 'agent_read_chat' ? 'agent_read_chat_tab' : 'agent_set_labels_tab', sender.tab?.id || null)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;

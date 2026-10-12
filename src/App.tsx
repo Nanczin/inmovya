@@ -13,6 +13,7 @@ import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
 import { TaskNotificationPoller } from "./components/TaskNotificationPoller";
 import { NewLeadNotifier } from "./components/NewLeadNotifier";
+import { AgenteEsteiraRunner } from "./components/AgenteEsteiraRunner";
 
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
               <Sonner />
               <TaskNotificationPoller />
               <NewLeadNotifier />
+              <AgenteEsteiraRunner />
               <BrowserRouter>
                 <Routes>
                   <Route path="/" element={<Index />} />
