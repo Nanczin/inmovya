@@ -1,4 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
+import { Switch } from "@/components/ui/switch";
+import {
+  CLASSIFICACOES_DISPARO,
+  assinarFila,
+  enfileirarDisparo,
+  estadoFila,
+  getConfigDisparo,
+  limparConcluidos,
+  setConfigDisparo,
+  type ConfigDisparo,
+} from "@/lib/disparoOfertaAtiva";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -236,6 +247,19 @@ export function LigacoesModule() {
   const [templatesDisponiveis, setTemplatesDisponiveis] = useState<any[]>([]);
   const [templateWhatsappId, setTemplateWhatsappId] = useState<string>("");
   const [templateEmailId, setTemplateEmailId] = useState<string>("");
+  // Disparo automático de WhatsApp após classificar (em segundo plano)
+  const [disparo, setDisparoState] = useState<ConfigDisparo>(getConfigDisparo());
+  const setDisparo = (c: ConfigDisparo) => {
+    setDisparoState(c);
+    setConfigDisparo(c);
+  };
+  const filaDisparo = useSyncExternalStore(assinarFila, estadoFila);
+  const [agora, setAgora] = useState(Date.now());
+  useEffect(() => {
+    if (!filaDisparo.proximoEm) return;
+    const t = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [filaDisparo.proximoEm]);
 
   // Email Accounts
   const [gmailAccounts, setGmailAccounts] = useState<any[]>([]);
@@ -774,6 +798,19 @@ export function LigacoesModule() {
         setLigacoesHoje(prev => prev + 1);
       } catch (err) {
         console.error("Erro ao registrar estatística de ligação:", err);
+      }
+
+      // Disparo automático: manda o template no WhatsApp em segundo plano
+      if (disparo.ativo && finalClassificacao && disparo.classificacoes.includes(finalClassificacao)) {
+        const template = templatesDisponiveis.find(t => t.id === disparo.templateId);
+        if (!template) {
+          toast({ title: "Disparo não enviado", description: "Escolha o template do disparo automático.", variant: "destructive" });
+        } else {
+          const dadosDisparo = extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada));
+          const texto = decodeURIComponent(getProcessedMessage(template.id, contatoSelecionado, true));
+          const aviso = await enfileirarDisparo(dadosDisparo.nome || contatoSelecionado.nome, dadosDisparo.telefone || contatoSelecionado.telefone, texto);
+          if (aviso) toast({ title: "Disparo não enviado", description: `${dadosDisparo.nome || "Contato"}: ${aviso}.`, variant: "destructive" });
+        }
       }
 
       // Se cliente tem interesse, cadastrar como lead
@@ -1392,6 +1429,71 @@ export function LigacoesModule() {
                         {listas.find(l => l.id === listaSelecionada)?.nome || 'N/A'}
                       </span>
                     </div>
+                  </div>
+
+                  {/* Disparo automático (segundo plano) */}
+                  <div className="flex flex-col gap-2 p-3 rounded-md border border-green-200 bg-green-50/40">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wider text-green-800">Disparo automático no WhatsApp</div>
+                        <div className="text-[11px] text-muted-foreground">Ao classificar, envia o template em segundo plano (mín. 2 min entre envios).</div>
+                      </div>
+                      <Switch
+                        checked={disparo.ativo}
+                        onCheckedChange={(v) => setDisparo({ ...disparo, ativo: v })}
+                        aria-label="Ligar ou desligar o disparo automático"
+                      />
+                    </div>
+                    {disparo.ativo && (
+                      <>
+                        <Select value={disparo.templateId || undefined} onValueChange={(v) => setDisparo({ ...disparo, templateId: v })}>
+                          <SelectTrigger className="h-9 text-xs bg-white">
+                            <SelectValue placeholder="Escolha o template do disparo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {templatesDisponiveis.filter(t => t.tipo === 'whatsapp').map(t => (
+                              <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                          <span className="text-muted-foreground">Enviar quando:</span>
+                          {CLASSIFICACOES_DISPARO.map(c => (
+                            <label key={c} className="flex items-center gap-1.5 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                className="h-3.5 w-3.5"
+                                checked={disparo.classificacoes.includes(c)}
+                                onChange={(e) => setDisparo({
+                                  ...disparo,
+                                  classificacoes: e.target.checked
+                                    ? [...disparo.classificacoes, c]
+                                    : disparo.classificacoes.filter(x => x !== c),
+                                })}
+                              />
+                              {c === "Caixa Postal/Cliente Não Atendeu" ? "Não atendeu / Caixa postal" : c}
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {(filaDisparo.pendentes > 0 || filaDisparo.enviados > 0 || filaDisparo.erros > 0) && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                        <span>Na fila: <b>{filaDisparo.pendentes}</b></span>
+                        <span>Enviados: <b>{filaDisparo.enviados}</b></span>
+                        {filaDisparo.erros > 0 && (
+                          <span className="text-red-700" title={filaDisparo.itens.filter(i => i.status === "erro").map(i => `${i.nome}: ${i.erro}`).join("\n")}>
+                            Erros: <b>{filaDisparo.erros}</b>
+                          </span>
+                        )}
+                        {filaDisparo.proximoEm > agora && (
+                          <span className="text-muted-foreground">próximo em {Math.ceil((filaDisparo.proximoEm - agora) / 1000)}s</span>
+                        )}
+                        {filaDisparo.pendentes === 0 && (
+                          <button type="button" className="underline text-muted-foreground" onClick={limparConcluidos}>limpar</button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Quick Actions with Templates */}
