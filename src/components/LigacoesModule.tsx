@@ -1465,13 +1465,60 @@ export function LigacoesModule() {
                                 : `${tpl!.nome} · ${disparo.classificacoes.map(curto).join(", ")}`}
                           </span>
                         </div>
-                        {(filaDisparo.pendentes > 0 || filaDisparo.erros > 0) && (
-                          <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${filaDisparo.erros > 0 ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}
-                            title={`Enviados: ${filaDisparo.enviados}${filaDisparo.erros ? ` · Erros: ${filaDisparo.erros}` : ""}`}
-                          >
-                            {filaDisparo.pendentes > 0 ? `${filaDisparo.pendentes} na fila${seg ? ` · ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}` : ""}` : `${filaDisparo.erros} erro(s)`}
-                          </span>
+                        {filaDisparo.itens.length > 0 && (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button
+                                type="button"
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] hover:opacity-80 ${filaDisparo.erros > 0 ? "bg-red-100 text-red-800" : filaDisparo.pendentes > 0 ? "bg-green-100 text-green-800" : "bg-slate-100 text-slate-700"}`}
+                                aria-label="Ver a fila do disparo"
+                              >
+                                {filaDisparo.pendentes > 0
+                                  ? `Fila: ${filaDisparo.pendentes}${seg ? ` · ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}` : ""}`
+                                  : `${filaDisparo.enviados} enviado(s)${filaDisparo.erros ? ` · ${filaDisparo.erros} erro(s)` : ""}`}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent align="end" className="w-80 p-0 text-xs">
+                              <div className="flex items-center justify-between px-3 py-2 border-b">
+                                <span className="font-semibold text-sm">Fila do disparo</span>
+                                <span className="text-muted-foreground">
+                                  {filaDisparo.pendentes} na fila · {filaDisparo.enviados} enviado(s){filaDisparo.erros ? ` · ${filaDisparo.erros} erro(s)` : ""}
+                                </span>
+                              </div>
+                              <div className="max-h-72 overflow-y-auto divide-y">
+                                {[...filaDisparo.itens].reverse().map(i => (
+                                  <div key={i.id} className="px-3 py-2 flex items-start gap-2">
+                                    <span className="mt-0.5">
+                                      {i.status === "enviado" ? "✅" : i.status === "erro" ? "⚠️" : i.status === "enviando" ? "📤" : "⏳"}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-medium truncate">{i.nome || i.telefone}</div>
+                                      <div className="text-muted-foreground">
+                                        {i.status === "enviado" && i.em
+                                          ? `enviado às ${new Date(i.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+                                          : i.status === "enviando"
+                                            ? "enviando agora..."
+                                            : i.status === "erro"
+                                              ? <span className="text-red-700">{i.erro}</span>
+                                              : "aguardando a vez"}
+                                        {i.anexos.length > 0 && ` · ${i.anexos.length} arquivo(s)`}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              {seg > 0 && (
+                                <div className="px-3 py-2 border-t text-muted-foreground">
+                                  Próximo envio em {Math.floor(seg / 60)}:{String(seg % 60).padStart(2, "0")} (mín. 2 min entre envios)
+                                </div>
+                              )}
+                              {filaDisparo.pendentes === 0 && (
+                                <div className="px-3 py-2 border-t">
+                                  <button type="button" className="underline text-muted-foreground" onClick={limparConcluidos}>Limpar histórico</button>
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
                         )}
                         <Popover>
                           <PopoverTrigger asChild>
