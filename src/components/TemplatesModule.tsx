@@ -1,4 +1,5 @@
 
+import { anexosDoTemplate, juntarAnexos } from "@/lib/templateAnexos";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -299,39 +300,44 @@ export function TemplatesModule() {
         }));
     };
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+    // Sobe um ou vários arquivos (imagem, PDF, vídeo, áudio, documentos...) e acrescenta ao template
+    const extensaoPadrao = (file: File) => {
+        let ext = file.name.includes('.') ? file.name.split('.').pop() || '' : '';
+        if (!ext) {
+            if (file.type.includes('audio')) ext = 'mp3';
+            else if (file.type.includes('video')) ext = 'mp4';
+            else if (file.type === 'image/gif') ext = 'gif';
+            else if (file.type.includes('image')) ext = 'png';
+            else if (file.type.includes('pdf')) ext = 'pdf';
+            else ext = 'bin';
+        }
+        return ext;
+    };
 
+    const uploadArquivos = async (files: File[]) => {
+        if (!files.length) return;
         setIsUploading(true);
+        const novos: { url: string; name: string }[] = [];
         try {
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Date.now()}.${fileExt}`;
-            // Upload para o bucket 'empreendimentos' (padronizado com email marketing)
-            const filePath = `template_files/${fileName}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('empreendimentos')
-                .upload(filePath, file);
-
-            if (uploadError) {
-                console.error("Erro upload bucket:", uploadError);
-                toast({ title: "Erro no upload", description: "Verifique as permissões do bucket 'empreendimentos'.", variant: "destructive" });
-                return;
+            for (const file of files) {
+                const filePath = `template_files/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${extensaoPadrao(file)}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('empreendimentos')
+                    .upload(filePath, file, { contentType: file.type || undefined });
+                if (uploadError) {
+                    console.error("Erro upload bucket:", uploadError);
+                    toast({ title: "Erro no upload", description: `${file.name}: ${uploadError.message}`, variant: "destructive" });
+                    continue;
+                }
+                const { data: { publicUrl } } = supabase.storage
+                    .from('empreendimentos')
+                    .getPublicUrl(filePath);
+                novos.push({ url: publicUrl, name: file.name || filePath.split('/').pop()! });
             }
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('empreendimentos')
-                .getPublicUrl(filePath);
-
-            setFormData(prev => ({
-                ...prev,
-                arquivo_url: publicUrl,
-                arquivo_nome: file.name
-            }));
-
-            toast({ title: "Arquivo anexado com sucesso!" });
-
+            if (novos.length) {
+                setFormData(prev => ({ ...prev, ...juntarAnexos([...anexosDoTemplate(prev), ...novos]) }));
+                toast({ title: novos.length === 1 ? "Arquivo anexado!" : `${novos.length} arquivos anexados!` });
+            }
         } catch (error) {
             console.error("Upload error:", error);
             toast({ title: "Erro ao fazer upload", variant: "destructive" });
@@ -340,12 +346,14 @@ export function TemplatesModule() {
         }
     };
 
-    const removeFile = () => {
-        setFormData(prev => ({
-            ...prev,
-            arquivo_url: '',
-            arquivo_nome: ''
-        }));
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
+        await uploadArquivos(files);
+    };
+
+    const removeFile = (url: string) => {
+        setFormData(prev => ({ ...prev, ...juntarAnexos(anexosDoTemplate(prev).filter(a => a.url !== url)) }));
     };
 
     // Global Paste Listener when Dialog is Open
@@ -381,117 +389,29 @@ export function TemplatesModule() {
     }, [isDialogOpen, formData]); // formData dependency ensuring closure freshness if needed (state setters used)
 
     const handlePasteSync = async (e: ClipboardEvent | React.ClipboardEvent) => {
-        // Try to get file from files array or items list
-        let file: File | null = null;
         // @ts-ignore
         const clipboardData = e.clipboardData || (window as any).clipboardData;
-
         if (!clipboardData) return;
-
-        if (clipboardData.files.length > 0) {
-            file = clipboardData.files[0];
-        } else if (clipboardData.items.length > 0) {
+        let files: File[] = Array.from(clipboardData.files || []);
+        if (!files.length && clipboardData.items) {
             for (let i = 0; i < clipboardData.items.length; i++) {
                 const item = clipboardData.items[i];
                 if (item.kind === 'file') {
-                    file = item.getAsFile();
-                    break;
+                    const f = item.getAsFile();
+                    if (f) files.push(f);
                 }
             }
         }
-
-        if (file) {
-            e.preventDefault(); // Prevent default paste behavior
-            // ... upload logic ...
-            setIsUploading(true);
-            try {
-                // If pasted file has generic 'image.png' name or similar, we might want to keep extension
-                // but some pasted files (like raw audio) might lose name.
-                // We use type to guess extension if name is generic "image.png" or empty
-                let fileExt = file.name.split('.').pop() || '';
-                if (!fileExt || fileExt === file.name) {
-                    // Very basic mime mapping fallback
-                    if (file.type.includes('audio')) fileExt = 'mp3';
-                    else if (file.type.includes('video')) fileExt = 'mp4';
-                    else if (file.type === 'image/gif') fileExt = 'gif'; // Preservar GIF
-                    else if (file.type.includes('image')) fileExt = 'png';
-                    else if (file.type.includes('pdf')) fileExt = 'pdf';
-                    else fileExt = 'bin';
-                }
-
-                const fileName = `${Date.now()}.${fileExt}`;
-                const filePath = `template_files/${fileName}`;
-
-                const { error: uploadError } = await supabase.storage
-                    .from('empreendimentos')
-                    .upload(filePath, file);
-
-                if (uploadError) {
-                    console.error("Erro upload bucket:", uploadError);
-                    toast({ title: "Erro no upload", description: "Verifique as permissões do bucket.", variant: "destructive" });
-                    return;
-                }
-
-                const { data: { publicUrl } } = supabase.storage
-                    .from('empreendimentos')
-                    .getPublicUrl(filePath);
-
-                setFormData(prev => ({
-                    ...prev,
-                    arquivo_url: publicUrl,
-                    arquivo_nome: file?.name || fileName
-                }));
-
-                toast({ title: "Arquivo colado e anexado!" });
-
-            } catch (error) {
-                console.error("Paste upload error:", error);
-                toast({ title: "Erro ao colar arquivo", variant: "destructive" });
-            } finally {
-                setIsUploading(false);
-            }
+        if (files.length) {
+            e.preventDefault();
+            await uploadArquivos(files);
         }
     };
 
     const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
-
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            const file = e.dataTransfer.files[0];
-            setIsUploading(true);
-            // Reusing upload logic (copy-paste for safety/simplicity in this context or extract)
-            try {
-                const fileExt = file.name.split('.').pop() || 'bin';
-                const fileName = `${Date.now()}.${fileExt}`;
-                const filePath = `template_files/${fileName}`;
-
-                const { error: uploadError } = await supabase.storage
-                    .from('empreendimentos')
-                    .upload(filePath, file);
-
-                if (uploadError) {
-                    console.error("Drop upload error:", uploadError);
-                    toast({ title: "Erro no upload", description: "Erro ao enviar arquivo arrastado.", variant: "destructive" });
-                    return;
-                }
-
-                const { data: { publicUrl } } = supabase.storage
-                    .from('empreendimentos')
-                    .getPublicUrl(filePath);
-
-                setFormData(prev => ({
-                    ...prev,
-                    arquivo_url: publicUrl,
-                    arquivo_nome: file.name
-                }));
-                toast({ title: "Arquivo anexado!" });
-            } catch (err) {
-                console.error(err);
-            } finally {
-                setIsUploading(false);
-            }
-        }
+        await uploadArquivos(Array.from(e.dataTransfer.files || []));
     };
 
     return (
@@ -575,7 +495,9 @@ export function TemplatesModule() {
                                         <div className="mt-2 flex items-center gap-2 overflow-hidden">
                                             <div className="flex-1 flex items-center text-xs text-blue-600 bg-blue-50 p-1.5 rounded px-2 border border-blue-100 truncate">
                                                 <Paperclip className="h-3 w-3 mr-2 shrink-0" />
-                                                <span className="truncate" title={template.arquivo_nome}>{template.arquivo_nome}</span>
+                                                <span className="truncate" title={anexosDoTemplate(template).map(a => a.name).join("\n")}>
+                                                    {anexosDoTemplate(template).length > 1 ? `${anexosDoTemplate(template).length} arquivos` : anexosDoTemplate(template)[0]?.name}
+                                                </span>
                                             </div>
                                         </div>
                                     )}
@@ -725,28 +647,28 @@ export function TemplatesModule() {
                     </div>
 
                     <div className="space-y-2">
-                        <Label>Anexo (Opcional)</Label>
-                        <div className="flex items-center gap-4">
-                            {!formData.arquivo_url ? (
-                                <div className="flex-1">
-                                    <Label htmlFor="file-upload" className="cursor-pointer inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 w-full text-center">
-                                        <Upload className="mr-2 h-4 w-4" />
-                                        {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : "Selecionar Arquivo (Imagem, GIF, Vídeo, Áudio)"}
-                                    </Label>
-                                    <Input id="file-upload" type="file" accept="image/*,video/*,audio/*,application/pdf" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-2 bg-muted p-2 rounded-md flex-1">
-                                    <Paperclip className="h-4 w-4 text-muted-foreground" />
-                                    <span className="text-sm truncate flex-1">{formData.arquivo_nome}</span>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive" onClick={removeFile}>
-                                        <X className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                            )}
+                        <Label>Arquivos (opcional)</Label>
+                        {anexosDoTemplate(formData).length > 0 && (
+                            <div className="space-y-1">
+                                {anexosDoTemplate(formData).map(a => (
+                                    <div key={a.url} className="flex items-center gap-2 bg-muted px-2 py-1.5 rounded-md">
+                                        <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+                                        <a href={a.url} target="_blank" rel="noreferrer" className="text-sm truncate flex-1 hover:underline" title={a.name}>{a.name}</a>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 hover:text-destructive" onClick={() => removeFile(a.url)} aria-label={`Remover ${a.name}`}>
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div>
+                            <Label htmlFor="file-upload" className="cursor-pointer inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 w-full text-center">
+                                {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enviando...</> : <><Upload className="mr-2 h-4 w-4" /> {anexosDoTemplate(formData).length ? "Adicionar mais arquivos" : "Selecionar arquivos (imagem, PDF, vídeo, áudio, documentos)"}</>}
+                            </Label>
+                            <Input id="file-upload" type="file" multiple className="hidden" onChange={handleFileUpload} disabled={isUploading} />
                         </div>
                         <p className="text-xs text-muted-foreground">
-                            O link do arquivo será anexado à mensagem. Você também pode <strong>colar (Ctrl+V)</strong> ou <strong>arrastar</strong> um arquivo aqui. GIFs animados são suportados!
+                            Pode anexar vários. No disparo automático da Oferta Ativa os arquivos vão <strong>como arquivo</strong> no WhatsApp, depois do texto. Também dá para <strong>colar (Ctrl+V)</strong> ou <strong>arrastar</strong> arquivos aqui.
                         </p>
                     </div>
 

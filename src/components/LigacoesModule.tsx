@@ -1,5 +1,6 @@
 import { useState, useEffect, useSyncExternalStore } from "react";
 import { Switch } from "@/components/ui/switch";
+import { anexosDoTemplate } from "@/lib/templateAnexos";
 import {
   CLASSIFICACOES_DISPARO,
   assinarFila,
@@ -446,7 +447,7 @@ export function LigacoesModule() {
 
     // Se tiver anexo, adicionar link no final da mensagem SOMENTE SE solicitado
     if (includeAttachmentLink && template.arquivo_url) {
-      msg += `\n\n📄 Anexo: ${template.arquivo_url}`;
+      msg += anexosDoTemplate(template).map(a => `\n\n📄 ${a.name}: ${a.url}`).join('');
     }
 
     return encodeURIComponent(msg);
@@ -810,8 +811,8 @@ export function LigacoesModule() {
           toast({ title: "Disparo não enviado", description: "Escolha o template do disparo automático.", variant: "destructive" });
         } else {
           const dadosDisparo = extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada));
-          const texto = decodeURIComponent(getProcessedMessage(template.id, contatoSelecionado, true));
-          const aviso = await enfileirarDisparo(dadosDisparo.nome || contatoSelecionado.nome, dadosDisparo.telefone || contatoSelecionado.telefone, texto);
+          const texto = decodeURIComponent(getProcessedMessage(template.id, contatoSelecionado, false));
+          const aviso = await enfileirarDisparo(dadosDisparo.nome || contatoSelecionado.nome, dadosDisparo.telefone || contatoSelecionado.telefone, texto, anexosDoTemplate(template));
           if (aviso) toast({ title: "Disparo não enviado", description: `${dadosDisparo.nome || "Contato"}: ${aviso}.`, variant: "destructive" });
         }
       }
@@ -1548,10 +1549,12 @@ export function LigacoesModule() {
                             let rawMsg = decodeURIComponent(getProcessedMessage(templateWhatsappId, contatoSelecionado, false));
                             const template = templatesDisponiveis.find(t => t.id === templateWhatsappId);
 
-                            // Se tiver anexo, verificar se é imagem/GIF para copiar
-                            if (template?.arquivo_url) {
-                              const isGif = template.arquivo_url.match(/\.gif$/i) != null;
-                              const isImage = template.arquivo_url.match(/\.(jpeg|jpg|png|webp)$/i) != null;
+                            // Se tiver anexo, verificar se é imagem/GIF para copiar (o 1º arquivo)
+                            const arquivosTpl = anexosDoTemplate(template);
+                            if (arquivosTpl.length) {
+                              const primeiroUrl = arquivosTpl[0].url;
+                              const isGif = primeiroUrl.match(/\.gif$/i) != null;
+                              const isImage = primeiroUrl.match(/\.(jpeg|jpg|png|webp)$/i) != null;
 
                               if (isGif) {
                                 // GIFs não podem ser copiados via Clipboard API (limitação do navegador)
@@ -1566,7 +1569,7 @@ export function LigacoesModule() {
                                 // Copiar imagem estática para clipboard
                                 try {
                                   toast({ title: "Preparando imagem...", description: "Baixando imagem para área de transferência..." });
-                                  const response = await fetch(template.arquivo_url);
+                                  const response = await fetch(primeiroUrl);
                                   const blob = await response.blob();
 
                                   // Verificar se o tipo é suportado
@@ -1597,9 +1600,7 @@ export function LigacoesModule() {
 
                               // Adicionar link no texto (backup)
                               if (rawMsg) rawMsg += "\n\n";
-                              rawMsg += `📄 Anexo: ${template.arquivo_url}`;
-                            } else if (!rawMsg && template?.arquivo_url) {
-                              rawMsg = `📄 Anexo: ${template.arquivo_url}`;
+                              rawMsg += arquivosTpl.map(a => `📄 ${a.name}: ${a.url}`).join("\n");
                             }
 
                             // Copiar mensagem de texto para clipboard
@@ -1707,10 +1708,10 @@ export function LigacoesModule() {
                                     gmail_account_id: fromAccount.id,
                                     status: 'pending',
                                     created_at: new Date().toISOString(),
-                                    attachments: template.arquivo_url ? [{
-                                      filename: template.arquivo_nome || 'anexo',
-                                      path: template.arquivo_url
-                                    }] : []
+                                    attachments: anexosDoTemplate(template).map(a => ({
+                                      filename: a.name || 'anexo',
+                                      path: a.url
+                                    }))
                                   });
 
                                 if (queueError) {

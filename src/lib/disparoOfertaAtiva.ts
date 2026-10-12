@@ -9,6 +9,7 @@ import {
   telefoneWhatsApp,
 } from "@/lib/esteiras";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
+import { anexosParaEnvio, type AnexoTemplate } from "@/lib/templateAnexos";
 
 export interface ConfigDisparo {
   ativo: boolean;
@@ -54,6 +55,7 @@ export interface ItemDisparo {
   nome: string;
   telefone: string; // 55 + DDD + número
   texto: string;
+  anexos: AnexoTemplate[]; // arquivos do template (vão como arquivo, depois do texto)
   status: "na fila" | "enviando" | "enviado" | "erro";
   erro?: string;
   em?: string;
@@ -118,7 +120,9 @@ const processar = async () => {
       item.status = "enviando";
       avisar();
       try {
-        await enviarPeloWhatsApp(item.telefone, item.texto, [], extensaoAtualizada("1.3.0"));
+        // baixa os arquivos só na hora de enviar (não ocupa memória enquanto está na fila)
+        const arquivos = item.anexos.length ? await anexosParaEnvio(item.anexos) : [];
+        await enviarPeloWhatsApp(item.telefone, item.texto, arquivos, extensaoAtualizada("1.3.0"));
         item.status = "enviado";
         item.em = new Date().toISOString();
       } catch (e: any) {
@@ -139,14 +143,14 @@ const processar = async () => {
 };
 
 /** Coloca a mensagem na fila. Devolve um aviso se não der para enfileirar. */
-export async function enfileirarDisparo(nome: string, telefone: string, texto: string): Promise<string | null> {
+export async function enfileirarDisparo(nome: string, telefone: string, texto: string, anexos: AnexoTemplate[] = []): Promise<string | null> {
   const tel = telefoneWhatsApp(telefone);
   if (!tel) return "telefone inválido";
-  if (!texto.trim()) return "mensagem vazia";
+  if (!texto.trim() && !anexos.length) return "mensagem vazia";
   if (fila.some((i) => i.telefone === tel && (i.status === "na fila" || i.status === "enviando"))) return null;
   const ok = await checarExtensao();
   if (!ok) return "Inmovya Scale não encontrado neste Chrome";
-  fila.push({ id: crypto.randomUUID(), nome, telefone: tel, texto, status: "na fila" });
+  fila.push({ id: crypto.randomUUID(), nome, telefone: tel, texto, anexos, status: "na fila" });
   avisar();
   processar();
   return null;
