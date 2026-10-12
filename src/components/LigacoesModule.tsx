@@ -46,8 +46,11 @@ import {
   Loader2,
   RotateCcw,
   Target,
-  Edit
+  Edit,
+  Zap,
+  Settings2
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface Lista {
   id: string;
@@ -1431,70 +1434,101 @@ export function LigacoesModule() {
                     </div>
                   </div>
 
-                  {/* Disparo automático (segundo plano) */}
-                  <div className="flex flex-col gap-2 p-3 rounded-md border border-green-200 bg-green-50/40">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <div className="text-xs font-semibold uppercase tracking-wider text-green-800">Disparo automático no WhatsApp</div>
-                        <div className="text-[11px] text-muted-foreground">Ao classificar, envia o template em segundo plano (mín. 2 min entre envios).</div>
-                      </div>
-                      <Switch
-                        checked={disparo.ativo}
-                        onCheckedChange={(v) => setDisparo({ ...disparo, ativo: v })}
-                        aria-label="Ligar ou desligar o disparo automático"
-                      />
-                    </div>
-                    {disparo.ativo && (
-                      <>
-                        <Select value={disparo.templateId || undefined} onValueChange={(v) => setDisparo({ ...disparo, templateId: v })}>
-                          <SelectTrigger className="h-9 text-xs bg-white">
-                            <SelectValue placeholder="Escolha o template do disparo" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {templatesDisponiveis.filter(t => t.tipo === 'whatsapp').map(t => (
-                              <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                          <span className="text-muted-foreground">Enviar quando:</span>
-                          {CLASSIFICACOES_DISPARO.map(c => (
-                            <label key={c} className="flex items-center gap-1.5 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                className="h-3.5 w-3.5"
-                                checked={disparo.classificacoes.includes(c)}
-                                onChange={(e) => setDisparo({
-                                  ...disparo,
-                                  classificacoes: e.target.checked
-                                    ? [...disparo.classificacoes, c]
-                                    : disparo.classificacoes.filter(x => x !== c),
-                                })}
-                              />
-                              {c === "Caixa Postal/Cliente Não Atendeu" ? "Não atendeu / Caixa postal" : c}
-                            </label>
-                          ))}
+                  {/* Disparo automático (segundo plano) — uma linha; ajustes no ⚙ */}
+                  {(() => {
+                    const tpl = templatesDisponiveis.find(t => t.id === disparo.templateId);
+                    const curto = (c: string) => (c === "Caixa Postal/Cliente Não Atendeu" ? "Não atendeu" : "Interessado");
+                    const faltaConfig = disparo.ativo && (!tpl || disparo.classificacoes.length === 0);
+                    const seg = filaDisparo.proximoEm > agora ? Math.ceil((filaDisparo.proximoEm - agora) / 1000) : 0;
+                    return (
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-md border text-xs ${disparo.ativo ? "border-green-200 bg-green-50/50" : "border-border/50 bg-muted/10"}`}>
+                        <Zap className={`w-4 h-4 shrink-0 ${disparo.ativo ? "text-green-700" : "text-muted-foreground"}`} />
+                        <div className="flex-1 min-w-0 truncate">
+                          <span className="font-medium">Disparo automático</span>
+                          <span className="text-muted-foreground">
+                            {" · "}
+                            {!disparo.ativo
+                              ? "desligado"
+                              : faltaConfig
+                                ? <span className="text-amber-700">configure no ⚙</span>
+                                : `${tpl!.nome} · ${disparo.classificacoes.map(curto).join(", ")}`}
+                          </span>
                         </div>
-                      </>
-                    )}
-                    {(filaDisparo.pendentes > 0 || filaDisparo.enviados > 0 || filaDisparo.erros > 0) && (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-                        <span>Na fila: <b>{filaDisparo.pendentes}</b></span>
-                        <span>Enviados: <b>{filaDisparo.enviados}</b></span>
-                        {filaDisparo.erros > 0 && (
-                          <span className="text-red-700" title={filaDisparo.itens.filter(i => i.status === "erro").map(i => `${i.nome}: ${i.erro}`).join("\n")}>
-                            Erros: <b>{filaDisparo.erros}</b>
+                        {(filaDisparo.pendentes > 0 || filaDisparo.erros > 0) && (
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${filaDisparo.erros > 0 ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}
+                            title={`Enviados: ${filaDisparo.enviados}${filaDisparo.erros ? ` · Erros: ${filaDisparo.erros}` : ""}`}
+                          >
+                            {filaDisparo.pendentes > 0 ? `${filaDisparo.pendentes} na fila${seg ? ` · ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}` : ""}` : `${filaDisparo.erros} erro(s)`}
                           </span>
                         )}
-                        {filaDisparo.proximoEm > agora && (
-                          <span className="text-muted-foreground">próximo em {Math.ceil((filaDisparo.proximoEm - agora) / 1000)}s</span>
-                        )}
-                        {filaDisparo.pendentes === 0 && (
-                          <button type="button" className="underline text-muted-foreground" onClick={limparConcluidos}>limpar</button>
-                        )}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button type="button" className="shrink-0 p-1 rounded hover:bg-black/5" aria-label="Ajustes do disparo automático">
+                              <Settings2 className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent align="end" className="w-80 space-y-3 text-xs">
+                            <div>
+                              <div className="font-semibold text-sm">Disparo automático no WhatsApp</div>
+                              <div className="text-muted-foreground">Ao classificar, envia o template em segundo plano (2 a 3 min entre envios).</div>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Template</Label>
+                              <Select value={disparo.templateId || undefined} onValueChange={(v) => setDisparo({ ...disparo, templateId: v })}>
+                                <SelectTrigger className="h-9 text-xs">
+                                  <SelectValue placeholder="Escolha o template" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {templatesDisponiveis.filter(t => t.tipo === 'whatsapp').map(t => (
+                                    <SelectItem key={t.id} value={t.id}>{t.nome}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs">Enviar quando</Label>
+                              {CLASSIFICACOES_DISPARO.map(c => (
+                                <label key={c} className="flex items-center gap-2 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    className="h-3.5 w-3.5"
+                                    checked={disparo.classificacoes.includes(c)}
+                                    onChange={(e) => setDisparo({
+                                      ...disparo,
+                                      classificacoes: e.target.checked
+                                        ? [...disparo.classificacoes, c]
+                                        : disparo.classificacoes.filter(x => x !== c),
+                                    })}
+                                  />
+                                  {c === "Caixa Postal/Cliente Não Atendeu" ? "Não atendeu / Caixa postal" : c}
+                                </label>
+                              ))}
+                            </div>
+                            {(filaDisparo.pendentes > 0 || filaDisparo.enviados > 0 || filaDisparo.erros > 0) && (
+                              <div className="border-t pt-2 space-y-1">
+                                <div>
+                                  Na fila: <b>{filaDisparo.pendentes}</b> · Enviados: <b>{filaDisparo.enviados}</b>
+                                  {filaDisparo.erros > 0 && <> · <span className="text-red-700">Erros: <b>{filaDisparo.erros}</b></span></>}
+                                </div>
+                                {filaDisparo.itens.filter(i => i.status === "erro").slice(-5).map(i => (
+                                  <div key={i.id} className="text-red-700 truncate" title={i.erro}>{i.nome}: {i.erro}</div>
+                                ))}
+                                {filaDisparo.pendentes === 0 && (
+                                  <button type="button" className="underline text-muted-foreground" onClick={limparConcluidos}>Limpar histórico</button>
+                                )}
+                              </div>
+                            )}
+                          </PopoverContent>
+                        </Popover>
+                        <Switch
+                          checked={disparo.ativo}
+                          onCheckedChange={(v) => setDisparo({ ...disparo, ativo: v })}
+                          aria-label="Ligar ou desligar o disparo automático"
+                        />
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   {/* Quick Actions with Templates */}
                   <div className="flex flex-col gap-3 justify-center md:justify-start mt-2 p-3 bg-muted/10 rounded-md border border-border/50">
