@@ -15,6 +15,7 @@ import {
 
 interface IAConfig {
   openai_key: string;
+  gemini_key?: string; // Google AI Studio (plano gratuito) — usado pelo agente da esteira
   modelo_gpt: string;
   temperatura: number;
   max_tokens: number;
@@ -29,7 +30,28 @@ export function IAConfigSection({ config, onConfigChange }: IAConfigSectionProps
   const [isTestingOpenAI, setIsTestingOpenAI] = useState(false);
   const [testResults, setTestResults] = useState<{
     openai?: boolean;
+    gemini?: boolean;
   }>({});
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+
+  const testGemini = async () => {
+    if (!config.gemini_key) return;
+    setIsTestingGemini(true);
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(config.gemini_key)}`);
+      setTestResults(prev => ({ ...prev, gemini: r.ok }));
+      toast({
+        title: r.ok ? "Gemini conectado" : "Chave do Gemini inválida",
+        description: r.ok ? "O agente da esteira vai usar o Gemini (grátis). Lembre de salvar as configurações." : "Confira a chave criada no Google AI Studio.",
+        variant: r.ok ? "default" : "destructive",
+      });
+    } catch {
+      setTestResults(prev => ({ ...prev, gemini: false }));
+      toast({ title: "Não foi possível testar o Gemini", variant: "destructive" });
+    } finally {
+      setIsTestingGemini(false);
+    }
+  };
   const { toast } = useToast();
 
   const handleInputChange = (field: keyof IAConfig, value: string | number) => {
@@ -134,6 +156,35 @@ export function IAConfigSection({ config, onConfigChange }: IAConfigSectionProps
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Label htmlFor="gemini-key">Google Gemini API Key (grátis)</Label>
+            {testResults.gemini !== undefined && (
+              <CheckCircle className={`w-4 h-4 ${testResults.gemini ? 'text-success' : 'text-destructive'}`} />
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Input
+              id="gemini-key"
+              value={config.gemini_key || ''}
+              onChange={(e) => handleInputChange('gemini_key', e.target.value.trim())}
+              type="password"
+              className="flex-1"
+              placeholder="AIza..."
+            />
+            <Button variant="outline" size="sm" onClick={testGemini} disabled={isTestingGemini || !config.gemini_key}>
+              {isTestingGemini ? <Loader2 className="w-4 h-4 animate-spin" /> : <TestTube className="w-4 h-4" />}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Usado pelo agente da esteira para analisar as respostas dos leads. Crie grátis em{" "}
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="underline">aistudio.google.com/apikey</a>.
+            Tem prioridade sobre a OpenAI.
+          </p>
+        </div>
+
+        <Separator />
+
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Label htmlFor="openai-key">OpenAI API Key</Label>

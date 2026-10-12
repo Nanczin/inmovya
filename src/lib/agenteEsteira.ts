@@ -33,7 +33,7 @@ export interface RelatorioAgente {
   respostas: string[]; // o que o lead escreveu
   acoes: string[];
   erro?: string;
-  via: "IA" | "regras";
+  via: string; // "IA (Gemini)", "IA (OpenAI)" ou "regras"
 }
 
 // ---------- Configuração ----------
@@ -143,24 +143,74 @@ export function respostasDepois(mensagens: MensagemWA[], desdeIso?: string | nul
 }
 
 // ---------- Análise (LLM) ----------
-let chaveCache: string | null | undefined;
-async function chaveOpenAI(): Promise<string | null> {
-  if (chaveCache !== undefined) return chaveCache;
-  const valida = (k?: string) => (k && k.startsWith("sk-") && !k.includes("...") ? k : null);
+// Prioridade: Google Gemini (plano gratuito) → OpenAI → regras por palavras.
+type ChavesIA = { gemini: string | null; openai: string | null };
+let chavesCache: ChavesIA | undefined;
+let chavesEm = 0;
+async function chavesIA(): Promise<ChavesIA> {
+  if (chavesCache && Date.now() - chavesEm < 5 * 60_000) return chavesCache;
+  const okOpenAI = (k?: string) => (k && k.startsWith("sk-") && !k.includes("...") ? k : null);
+  const okGemini = (k?: string) => (k && k.trim().length > 20 ? k.trim() : null);
+  let ia: any = null;
   try {
-    const local = JSON.parse(localStorage.getItem("inmovya_config") || "null");
-    const k = valida(local?.ia?.openai_key);
-    if (k) return (chaveCache = k);
+    ia = JSON.parse(localStorage.getItem("inmovya_config") || "null")?.ia || null;
   } catch {
     /* ignore */
   }
-  try {
-    const r: any = await carregarConfiguracoes();
-    const cfg = r?.data || r;
-    return (chaveCache = valida(cfg?.ia?.openai_key) || null);
-  } catch {
-    return (chaveCache = null);
+  if (!okGemini(ia?.gemini_key) && !okOpenAI(ia?.openai_key)) {
+    try {
+      const r: any = await carregarConfiguracoes();
+      ia = (r?.data || r)?.ia || ia;
+    } catch {
+      /* ignore */
+    }
   }
+  chavesEm = Date.now();
+  return (chavesCache = { gemini: okGemini(ia?.gemini_key), openai: okOpenAI(ia?.openai_key) });
+}
+
+const MODELOS_GEMINI = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
+
+async function perguntarGemini(chave: string, prompt: string) {
+  let ultimoErro = "";
+  for (const modelo of MODELOS_GEMINI) {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(chave)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0, responseMimeType: "application/json" },
+        }),
+      }
+    );
+    if (resp.status === 404) {
+      ultimoErro = `modelo ${modelo} indisponível`;
+      continue; // tenta o próximo modelo
+    }
+    if (!resp.ok) throw new Error(resp.status === 429 ? "limite grátis do Gemini atingido por agora" : `Gemini indisponível (${resp.status})`);
+    const json = await resp.json();
+    const texto = (json.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || "").join("");
+    return JSON.parse(texto.replace(/^```(?:json)?\s*|\s*```$/g, "") || "{}");
+  }
+  throw new Error(ultimoErro || "Gemini indisponível");
+}
+
+async function perguntarOpenAI(chave: string, prompt: string) {
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${chave}` },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!resp.ok) throw new Error(`OpenAI indisponível (${resp.status})`);
+  const json = await resp.json();
+  return JSON.parse(json.choices?.[0]?.message?.content || "{}");
 }
 
 const NEG = /(n[aã]o\s+(tenho|tenho mais)\s+interesse|sem interesse|n[aã]o quero|n[aã]o me (mande|envie|chame)|pare de|para de|remov|descadastr|tira(r)? meu n[uú]mero|j[aá] comprei|n[aã]o (estou|to|tô) procurando|n[aã]o obrigad|bloque|engano|n[uú]mero errado|n[aã]o sou)/i;
@@ -174,7 +224,7 @@ function analisarPorRegras(textos: string[]): { classificacao: Classificacao; re
 }
 
 async function analisarComIA(
-  chave: string,
+  chaves: ChavesIA,
   lead: { nome: string; observacoes?: string | null },
   esteira: string,
   conversa: MensagemWA[],
@@ -196,19 +246,7 @@ ${historico}
 
 RESPOSTAS DO LEAD A CLASSIFICAR:
 ${respostas.map((m) => `- ${m.texto || `[${m.tipo}]`}`).join("\n")}`;
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${chave}` },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!resp.ok) throw new Error(`IA indisponível (${resp.status})`);
-  const json = await resp.json();
-  const out = JSON.parse(json.choices?.[0]?.message?.content || "{}");
+  const out = chaves.gemini ? await perguntarGemini(chaves.gemini, prompt) : await perguntarOpenAI(chaves.openai!, prompt);
   const c = String(out.classificacao || "").toLowerCase();
   return {
     classificacao: (["positiva", "negativa", "neutra"].includes(c) ? c : "neutra") as Classificacao,
@@ -287,12 +325,12 @@ export async function rodarAgente(lead: LeadAgente, esteiraInfo: EsteiraAgente, 
       const wa = await trocarEtiquetas(lead.telefone, ["Lead"], ETIQUETAS_FUNIL);
       rel.acoes.push(`WhatsApp: ${wa.alteracoes.length ? wa.alteracoes.join(", ") : "etiquetas já estavam certas"}`);
     } else {
-      const chave = await chaveOpenAI();
+      const chaves = await chavesIA();
       let analise;
-      if (chave) {
+      if (chaves.gemini || chaves.openai) {
         try {
-          analise = await analisarComIA(chave, lead, esteiraNome, conversa, respostas);
-          rel.via = "IA";
+          analise = await analisarComIA(chaves, lead, esteiraNome, conversa, respostas);
+          rel.via = chaves.gemini ? "IA (Gemini)" : "IA (OpenAI)";
         } catch (e: any) {
           analise = analisarPorRegras(rel.respostas);
           rel.erro = `${e?.message || "IA falhou"} — usei regras por palavras`;
