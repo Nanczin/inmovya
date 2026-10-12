@@ -26,7 +26,7 @@ export interface RelatorioAgente {
   nome: string;
   telefone: string;
   esteira: string;
-  momento: "antes do envio" | "fim da esteira";
+  momento: "antes do envio" | "fim da esteira" | "verificação";
   classificacao: Classificacao;
   resumo: string;
   sugestao: string;
@@ -311,6 +311,25 @@ export interface EsteiraAgente {
   ao_concluir_etapa?: string | null;
 }
 
+/** Quando o lead começou esta esteira (1º envio registrado no histórico, últimos 60 dias). */
+async function inicioDaEsteira(leadId: string, esteiraNome: string, fallback?: string | null) {
+  try {
+    const desde = new Date(Date.now() - 60 * 86400_000).toISOString();
+    const { data } = await supabase
+      .from("lead_timeline")
+      .select("created_at")
+      .eq("lead_id", leadId)
+      .eq("author", "Esteira")
+      .like("title", `Esteira ${esteiraNome} —%`)
+      .gte("created_at", desde)
+      .order("created_at", { ascending: true })
+      .limit(1);
+    return (data as any)?.[0]?.created_at || fallback || null;
+  } catch {
+    return fallback || null;
+  }
+}
+
 export async function rodarAgente(lead: LeadAgente, esteiraInfo: EsteiraAgente, momento: RelatorioAgente["momento"]): Promise<RelatorioAgente> {
   const esteiraNome = esteiraInfo.nome;
   const rel: RelatorioAgente = {
@@ -330,12 +349,14 @@ export async function rodarAgente(lead: LeadAgente, esteiraInfo: EsteiraAgente, 
   };
   try {
     const conversa = await lerConversa(lead.telefone);
-    const respostas = respostasDepois(conversa, lead.esteira_ultimo_envio);
+    // respostas desde o 1º envio desta esteira (pega também quem respondeu antes do agente existir)
+    const desde = await inicioDaEsteira(lead.id, esteiraNome, lead.esteira_ultimo_envio);
+    const respostas = respostasDepois(conversa, desde);
     rel.respostas = respostas.map((m) => m.texto || `[${m.tipo}]`).slice(-10);
 
     if (!respostas.length) {
       rel.classificacao = "sem_resposta";
-      if (momento === "antes do envio") {
+      if (momento !== "fim da esteira") {
         rel.resumo = "Não respondeu desde o último envio — segue a esteira.";
         return rel; // não entra no relatório (nada a fazer)
       }
@@ -410,20 +431,59 @@ export async function rodarAgente(lead: LeadAgente, esteiraInfo: EsteiraAgente, 
 export const rotulo = (c: Classificacao) =>
   ({ sem_resposta: "Sem resposta → disparo", positiva: "Positiva → 50%", negativa: "Negativa", neutra: "Neutra" })[c];
 
-// ---------- Fim da esteira (roda sozinho enquanto o Inmovya está aberto) ----------
+// ---------- Verificação (roda sozinho enquanto o Inmovya está aberto, e no botão "Rodar agora") ----------
+// Confere TODOS os leads que já receberam mensagem da esteira:
+//   • quem respondeu → analisa e aplica as regras
+//   • quem terminou a esteira e o prazo venceu sem resposta → disparo + Lead
+//   • quem ainda não respondeu e está no meio → segue a esteira (só aparece no resumo)
+
+export interface ResumoVerificacao {
+  em: string;
+  conferidos: number;
+  responderam: number;
+  fim: number;
+  semResposta: string[]; // nomes que seguem na esteira
+  erros: string[];
+}
 
 let rodandoFim = false;
 let ultimaRodada: string | null = null;
-export const statusFim = () => ({ rodando: rodandoFim, ultimaRodada });
+let progresso: { atual: number; total: number; nome: string } | null = null;
+const RESUMO_KEY = "inmovya_agente_ultima_verificacao";
+const CONFERIDO_KEY = "inmovya_agente_conferidos"; // leadId -> quando foi conferido (evita reabrir a cada 30 min)
 
-/** Leads que passaram do último passo e cujo prazo sem resposta venceu. */
-export async function leadsNoFimDaEsteira() {
-  const agora = new Date().toISOString();
+export const lerResumo = (): ResumoVerificacao | null => {
+  try {
+    return JSON.parse(localStorage.getItem(RESUMO_KEY) || "null");
+  } catch {
+    return null;
+  }
+};
+export const statusFim = () => ({ rodando: rodandoFim, ultimaRodada, progresso });
+
+const lerConferidos = (): Record<string, number> => {
+  try {
+    return JSON.parse(localStorage.getItem(CONFERIDO_KEY) || "{}");
+  } catch {
+    return {};
+  }
+};
+const marcarConferido = (id: string) => {
+  try {
+    const m = lerConferidos();
+    m[id] = Date.now();
+    localStorage.setItem(CONFERIDO_KEY, JSON.stringify(m));
+  } catch {
+    /* ignore */
+  }
+};
+
+/** Leads em esteira que já receberam pelo menos uma mensagem, com a esteira de cada um. */
+export async function leadsParaVerificar() {
   const { data: leads, error } = await supabase
     .from("leads")
     .select("id, nome, telefone, status, tags, observacoes, esteira_id, esteira_passo, esteira_proximo, esteira_ultimo_envio")
-    .not("esteira_id", "is", null)
-    .lte("esteira_proximo", agora);
+    .not("esteira_id", "is", null);
   if (error || !leads?.length) return [];
   const ids = Array.from(new Set(leads.map((l: any) => l.esteira_id)));
   const [{ data: esteiras }, { data: passos }] = await Promise.all([
@@ -431,32 +491,72 @@ export async function leadsNoFimDaEsteira() {
     supabase.from("esteira_passos").select("id, esteira_id").in("esteira_id", ids),
   ]);
   const total = (id: string) => (passos || []).filter((p: any) => p.esteira_id === id).length;
+  const agora = Date.now();
   return (leads as any[])
-    .filter((l) => total(l.esteira_id) > 0 && (l.esteira_passo || 0) >= total(l.esteira_id) && l.telefone)
-    .map((l) => ({ lead: l as LeadAgente, esteira: ((esteiras || []).find((e: any) => e.id === l.esteira_id) || { nome: "Esteira" }) as EsteiraAgente }));
+    .filter((l) => l.telefone && (l.esteira_ultimo_envio || (l.esteira_passo || 0) > 0))
+    .map((l) => {
+      const T = total(l.esteira_id);
+      const noFim = T > 0 && (l.esteira_passo || 0) >= T && l.esteira_proximo && new Date(l.esteira_proximo).getTime() <= agora;
+      return {
+        lead: l as LeadAgente,
+        esteira: ((esteiras || []).find((e: any) => e.id === l.esteira_id) || { nome: "Esteira" }) as EsteiraAgente,
+        noFim: !!noFim,
+      };
+    });
 }
 
-/** Analisa quem terminou a esteira. Devolve os relatórios desta rodada. */
-export async function rodarFimDasEsteiras(): Promise<RelatorioAgente[]> {
+/** Quantos terminaram a esteira e aguardam o agente (para mostrar na tela). */
+export async function leadsNoFimDaEsteira() {
+  return (await leadsParaVerificar()).filter((x) => x.noFim);
+}
+
+/**
+ * Confere as conversas. forcar=true (botão) confere todo mundo; no automático pula quem foi
+ * conferido nas últimas 2 horas (o fim da esteira é sempre conferido).
+ */
+export async function rodarFimDasEsteiras(forcar = false): Promise<RelatorioAgente[]> {
   if (rodandoFim || !getAgenteAtivo()) return [];
-  if (!(await checarExtensao()) || !agenteDisponivel()) return [];
+  if (!(await checarExtensao()) || !agenteDisponivel()) throw new Error("Inmovya Scale 1.4.0 não encontrado neste Chrome.");
   rodandoFim = true;
   const feitos: RelatorioAgente[] = [];
+  const resumo: ResumoVerificacao = { em: new Date().toISOString(), conferidos: 0, responderam: 0, fim: 0, semResposta: [], erros: [] };
   try {
-    const fila = await leadsNoFimDaEsteira();
-    for (const { lead, esteira } of fila) {
+    const conferidos = lerConferidos();
+    const todos = await leadsParaVerificar();
+    const fila = todos.filter((x) => forcar || x.noFim || !conferidos[x.lead.id] || Date.now() - conferidos[x.lead.id] > 2 * 3600_000);
+    for (let i = 0; i < fila.length; i++) {
+      const { lead, esteira, noFim } = fila[i];
+      if (!getAgenteAtivo()) break;
+      progresso = { atual: i + 1, total: fila.length, nome: lead.nome };
+      ouvintes.forEach((f) => f());
       while (isWhatsAppOcupado()) await new Promise((r) => setTimeout(r, 3000));
       setWhatsAppOcupado(true);
       try {
-        feitos.push(await rodarAgente(lead, esteira, "fim da esteira"));
+        const rel = await rodarAgente(lead, esteira, noFim ? "fim da esteira" : "verificação");
+        resumo.conferidos++;
+        marcarConferido(lead.id);
+        if (rel.erro && !rel.classificacao) resumo.erros.push(`${lead.nome}: ${rel.erro}`);
+        else if (rel.erro && rel.classificacao === "sem_resposta" && !noFim) resumo.erros.push(`${lead.nome}: ${rel.erro}`);
+        else if (rel.classificacao === "sem_resposta" && !noFim) resumo.semResposta.push(lead.nome);
+        else {
+          if (noFim && rel.classificacao === "sem_resposta") resumo.fim++;
+          else resumo.responderam++;
+          feitos.push(rel);
+        }
       } finally {
         setWhatsAppOcupado(false);
       }
-      await new Promise((r) => setTimeout(r, 4000));
+      await new Promise((r) => setTimeout(r, 3000));
     }
   } finally {
     rodandoFim = false;
+    progresso = null;
     ultimaRodada = new Date().toISOString();
+    try {
+      localStorage.setItem(RESUMO_KEY, JSON.stringify(resumo));
+    } catch {
+      /* ignore */
+    }
     ouvintes.forEach((f) => f());
   }
   return feitos;

@@ -18,6 +18,7 @@ import {
   rotulo,
   setAgenteAtivo,
   statusFim,
+  lerResumo,
   type Classificacao,
 } from "@/lib/agenteEsteira";
 
@@ -42,6 +43,9 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
   const [ativo, setAtivo] = useState(getAgenteAtivo());
   const [filtro, setFiltro] = useState<(typeof FILTROS)[number]["id"]>("todos");
   const [rodando, setRodando] = useState(statusFim().rodando);
+  const [progresso, setProgresso] = useState(statusFim().progresso);
+  const [resumo, setResumo] = useState(lerResumo());
+  const [verNomes, setVerNomes] = useState(false);
   const [pendentes, setPendentes] = useState<number | null>(null);
   const [chave, setChave] = useState("");
   const [chaveSalva, setChaveSalva] = useState(false);
@@ -77,6 +81,8 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
       assinarRelatorio(() => {
         setItens([...lerRelatorio()]);
         setRodando(statusFim().rodando);
+        setProgresso(statusFim().progresso);
+        setResumo(lerResumo());
       }),
     []
   );
@@ -94,9 +100,17 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
     }
     setRodando(true);
     try {
-      const r = await rodarFimDasEsteiras();
-      toast({ title: "Agente", description: r.length ? `${r.length} lead(s) analisado(s).` : "Ninguém terminou a esteira agora." });
+      const r = await rodarFimDasEsteiras(true);
+      const res = lerResumo();
+      toast({
+        title: "Agente",
+        description: res
+          ? `${res.conferidos} conversa(s) conferida(s): ${res.responderam} responderam, ${res.fim} foram para disparo, ${res.semResposta.length} sem resposta (seguem na esteira).`
+          : `${r.length} lead(s) analisado(s).`,
+      });
       if (r.length) onRodou?.();
+    } catch (e: any) {
+      toast({ title: "Agente não rodou", description: e?.message, variant: "destructive" });
     } finally {
       setRodando(false);
     }
@@ -132,6 +146,30 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
           </label>
         </div>
       </div>
+
+      {rodando && progresso && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-700" />
+          Conferindo {progresso.atual}/{progresso.total}: <b>{progresso.nome}</b> — a janelinha do WhatsApp abre no canto da tela.
+        </div>
+      )}
+
+      {resumo && !rodando && (
+        <div className="rounded-lg border bg-white p-3 text-sm">
+          <div>
+            <b>Última verificação</b> ({new Date(resumo.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}):{" "}
+            {resumo.conferidos} conversa(s) conferida(s) · <b>{resumo.responderam}</b> responderam · <b>{resumo.fim}</b> foram para disparo ·{" "}
+            <button type="button" className="underline" onClick={() => setVerNomes((v) => !v)}>
+              {resumo.semResposta.length} sem resposta (seguem na esteira)
+            </button>
+            {resumo.erros.length > 0 && <span className="text-red-700"> · {resumo.erros.length} erro(s)</span>}
+          </div>
+          {verNomes && resumo.semResposta.length > 0 && (
+            <div className="mt-1 text-xs text-muted-foreground">{resumo.semResposta.join(", ")}</div>
+          )}
+          {resumo.erros.length > 0 && <div className="mt-1 text-xs text-red-700">{resumo.erros.slice(0, 5).join(" · ")}</div>}
+        </div>
+      )}
 
       <div className="rounded-lg border bg-white p-3 flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
         <KeyRound className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -184,7 +222,8 @@ export function AgenteRelatorio({ onRodou }: { onRodou?: () => void }) {
 
       {visiveis.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Nenhum lead analisado ainda. O agente roda ao abrir as Esteiras, antes de cada envio e a cada 30 minutos.
+          Nenhuma resposta analisada ainda. Clique em <b>Rodar agora</b> para o agente conferir as conversas de quem está nas esteiras
+          (ele também roda sozinho a cada 30 minutos e antes de cada envio). Quem não respondeu aparece no resumo acima.
         </div>
       ) : (
         <div className="space-y-2">

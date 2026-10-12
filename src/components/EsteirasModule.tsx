@@ -160,7 +160,7 @@ export function EsteirasModule() {
     carregar();
     checarExtensao().then(setExtensaoOk);
     // o fim da esteira agora passa pelo agente (lê o WhatsApp antes de colocar a tag disparo)
-    if (getAgenteAtivo()) rodarFimDasEsteiras().then((r) => r.length > 0 && refreshLeads());
+    if (getAgenteAtivo()) rodarFimDasEsteiras().then((r) => r.length > 0 && refreshLeads()).catch(() => {});
     else finalizarEsteirasVencidas().then((n) => n > 0 && refreshLeads());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carregar]);
