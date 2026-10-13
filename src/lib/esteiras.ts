@@ -372,6 +372,8 @@ export const setIntervaloMensagens = (min: number, max: number) => {
 export interface ConfigPausa {
   cada: number;
   minutos: number;
+  gapMin: number; // segundos entre as mensagens do mesmo lead
+  gapMax: number;
 }
 const PAUSA_KEY = "inmovya_esteira_pausa";
 const PAUSA_EST_KEY = "inmovya_esteira_pausa_por_esteira";
@@ -382,10 +384,15 @@ const lerJson = (k: string, padrao: any) => {
     return padrao;
   }
 };
-const limpaPausa = (c: any): ConfigPausa => ({
-  cada: Math.max(0, Math.floor(Number(c?.cada) || 0)),
-  minutos: Math.max(0, Number(c?.minutos) || 0),
-});
+const limpaPausa = (c: any): ConfigPausa => {
+  const gapMin = Math.max(0, Number(c?.gapMin ?? 10) || 0);
+  return {
+    cada: Math.max(0, Math.floor(Number(c?.cada) || 0)),
+    minutos: Math.max(0, Number(c?.minutos) || 0),
+    gapMin,
+    gapMax: Math.max(gapMin, Number(c?.gapMax ?? 20) || 0),
+  };
+};
 export const getPausaGeral = (): ConfigPausa => limpaPausa(lerJson(PAUSA_KEY, { cada: 0, minutos: 15 }));
 export const setPausaGeral = (c: ConfigPausa) => {
   try {
@@ -394,8 +401,10 @@ export const setPausaGeral = (c: ConfigPausa) => {
     /* ignore */
   }
 };
-export const getPausaEsteira = (esteiraId: string): ConfigPausa =>
-  limpaPausa((lerJson(PAUSA_EST_KEY, {}) || {})[esteiraId] || { cada: 0, minutos: 15 });
+export const getPausaEsteira = (esteiraId: string): ConfigPausa => {
+  const g = getIntervaloMensagens(); // padrão: o intervalo que já estava configurado
+  return limpaPausa({ cada: 0, minutos: 15, gapMin: g.min, gapMax: g.max, ...((lerJson(PAUSA_EST_KEY, {}) || {})[esteiraId] || {}) });
+};
 export const setPausaEsteira = (esteiraId: string, c: ConfigPausa) => {
   try {
     const m = lerJson(PAUSA_EST_KEY, {}) || {};
@@ -423,13 +432,20 @@ export const setSegundoPlano = (v: boolean) => {
   }
 };
 
-export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any[] = [], background = false) =>
+export const enviarPeloWhatsApp = (
+  phone: string,
+  text: string,
+  attachments: any[] = [],
+  background = false,
+  intervalo?: { min: number; max: number } // segundos entre as mensagens do mesmo lead (da esteira)
+) =>
   new Promise<void>((resolve, reject) => {
     const token = crypto.randomUUID();
+    const gap = intervalo || getIntervaloMensagens();
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
       reject(new Error("Tempo esgotado aguardando a confirmação da extensão."));
-    }, 120000 + attachments.length * 60000 + (text.split("===").length + attachments.length) * getIntervaloMensagens().max * 1000);
+    }, 120000 + attachments.length * 60000 + (text.split("===").length + attachments.length) * gap.max * 1000);
     const onResult = (event: CustomEvent) => {
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);
@@ -443,8 +459,8 @@ export const enviarPeloWhatsApp = (phone: string, text: string, attachments: any
           text,
           token,
           attachments,
-          gapMinMs: getIntervaloMensagens().min * 1000,
-          gapMaxMs: getIntervaloMensagens().max * 1000,
+          gapMinMs: gap.min * 1000,
+          gapMaxMs: Math.max(gap.min, gap.max) * 1000,
           background,
         },
       }));

@@ -48,8 +48,6 @@ import {
   getMeuNome,
   getSegundoPlano,
   setSegundoPlano,
-  getPausaGeral,
-  setPausaGeral,
   getPausaEsteira,
   setPausaEsteira,
   type ConfigPausa,
@@ -295,11 +293,6 @@ export function EsteirasModule() {
 
   // Em segundo plano o Chrome atrasa os timers da aba escondida: a espera usa o relógio, não a contagem de ticks
   const [segundoPlano, setSegundoPlanoState] = useState<boolean>(getSegundoPlano());
-  const [pausaGeral, setPausaGeralState] = useState<ConfigPausa>(getPausaGeral());
-  const mudarPausaGeral = (c: ConfigPausa) => {
-    setPausaGeral(c);
-    setPausaGeralState(getPausaGeral());
-  };
   const [pausaVersao, setPausaVersao] = useState(0); // re-renderiza o editor ao mudar a pausa de uma esteira
   const [emPausa, setEmPausa] = useState(false);
   const esperar = (segundos: number) =>
@@ -360,8 +353,6 @@ export function EsteirasModule() {
     setWhatsAppOcupado(true); // o disparo da Oferta Ativa espera a esteira
     let enviados = 0;
     const porEsteira: Record<string, number> = {};
-    const pg = getPausaGeral();
-    let ultimaPausaGeral = 0;
     const prontosParaSegunda: string[] = [];
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
@@ -371,7 +362,8 @@ export function EsteirasModule() {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
         const texto = textoDo(item);
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length, item.lead.observacoes);
-        await enviarPeloWhatsApp(item.telefone, texto, anexos, segundoPlano && extensaoAtualizada("1.3.0"));
+        const cfgEsteira = getPausaEsteira(item.esteira.id);
+        await enviarPeloWhatsApp(item.telefone, texto, anexos, segundoPlano && extensaoAtualizada("1.3.0"), { min: cfgEsteira.gapMin, max: cfgEsteira.gapMax });
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
@@ -384,14 +376,10 @@ export function EsteirasModule() {
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha" } }));
       }
       if (i < lista.length - 1 && !pararRef.current) {
-        // pausa depois de X envios (geral e/ou desta esteira); senão, o intervalo normal entre leads
+        // pausa depois de X envios desta esteira; senão, o intervalo normal entre leads
         porEsteira[item.esteira.id] = (porEsteira[item.esteira.id] || 0) + 1;
         const pe = getPausaEsteira(item.esteira.id);
         let pausaMin = 0;
-        if (pg.cada > 0 && enviados > 0 && enviados % pg.cada === 0 && enviados !== ultimaPausaGeral) {
-          ultimaPausaGeral = enviados;
-          pausaMin = Math.max(pausaMin, pg.minutos);
-        }
         if (pe.cada > 0 && porEsteira[item.esteira.id] % pe.cada === 0) pausaMin = Math.max(pausaMin, pe.minutos);
         if (pausaMin > 0) {
           setEmPausa(true);
@@ -858,48 +846,7 @@ export function EsteirasModule() {
                       {segundoPlano && !extensaoAtualizada("1.3.0") && <span className="text-amber-700"> (atualize o Inmovya Scale para 1.3.0)</span>}
                     </span>
                   </label>
-                  <div className="flex flex-wrap items-center gap-1 my-1">
-                    <span>Pausa geral: a cada</span>
-                    <input
-                      type="number"
-                      min={0}
-                      disabled={rodando}
-                      value={pausaGeral.cada}
-                      onChange={(e) => mudarPausaGeral({ ...pausaGeral, cada: parseInt(e.target.value) || 0 })}
-                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
-                    />
-                    <span>envios, parar</span>
-                    <input
-                      type="number"
-                      min={1}
-                      disabled={rodando}
-                      value={pausaGeral.minutos}
-                      onChange={(e) => mudarPausaGeral({ ...pausaGeral, minutos: parseFloat(e.target.value) || 0 })}
-                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
-                    />
-                    <span>min {pausaGeral.cada > 0 ? "" : "(0 = sem pausa)"} · cada esteira também tem a sua (aba Esteiras)</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1 my-1">
-                    <span>Entre as mensagens do mesmo lead:</span>
-                    <input
-                      type="number"
-                      min={0}
-                      disabled={rodando}
-                      value={gap.min}
-                      onChange={(e) => mudarGap("min", parseInt(e.target.value))}
-                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
-                    />
-                    <span>a</span>
-                    <input
-                      type="number"
-                      min={0}
-                      disabled={rodando}
-                      value={gap.max}
-                      onChange={(e) => mudarGap("max", parseInt(e.target.value))}
-                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
-                    />
-                    <span>segundos (aleatório)</span>
-                  </div>
+                  <div className="my-1">Pausas e intervalo entre as mensagens de cada lead: configure em cada esteira (aba Esteiras).</div>
                   <button type="button" className="underline text-blue-700 hover:text-blue-900" onClick={() => setVerAgendados((v) => !v)}>
                     {proximosDias} lead(s) agendado(s) para os próximos dias {verAgendados ? "▲" : "▼"}
                   </button>
@@ -1312,7 +1259,7 @@ export function EsteirasModule() {
                     };
                     return (
                       <div className="grid gap-1 sm:col-span-2">
-                        <Label className="text-xs">Pausa desta esteira</Label>
+                        <Label className="text-xs">Pausa e intervalo desta esteira</Label>
                         <div className="flex flex-wrap items-center gap-1 text-sm">
                           <span>A cada</span>
                           <Input type="number" min={0} className="h-9 w-20" value={pe.cada} onChange={(e) => mudar({ ...pe, cada: parseInt(e.target.value) || 0 })} />
@@ -1320,7 +1267,14 @@ export function EsteirasModule() {
                           <Input type="number" min={1} className="h-9 w-20" value={pe.minutos} onChange={(e) => mudar({ ...pe, minutos: parseFloat(e.target.value) || 0 })} />
                           <span>minutos</span>
                         </div>
-                        <span className="text-[11px] text-muted-foreground">0 = sem pausa. Vale junto com a pausa geral da aba Hoje (a maior pausa vence). Salva na hora.</span>
+                        <div className="flex flex-wrap items-center gap-1 text-sm">
+                          <span>Entre as mensagens do mesmo lead:</span>
+                          <Input type="number" min={0} className="h-9 w-20" value={pe.gapMin} onChange={(e) => mudar({ ...pe, gapMin: parseFloat(e.target.value) || 0 })} />
+                          <span>a</span>
+                          <Input type="number" min={0} className="h-9 w-20" value={pe.gapMax} onChange={(e) => mudar({ ...pe, gapMax: parseFloat(e.target.value) || 0 })} />
+                          <span>segundos (aleatório)</span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">Pausa: 0 = sem pausa. Salva na hora.</span>
                       </div>
                     );
                   })()}
