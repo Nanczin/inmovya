@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,6 +64,18 @@ import {
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/whatsappOcupado";
+import {
+  assinarExecucao,
+  lerExecucao,
+  setEstadoEsteira,
+  setRodandoEsteira,
+  setContagemEsteira,
+  setEmPausaEsteira,
+  setProgressoEsteira,
+  pedirParadaEsteira,
+  deveParar,
+  limparParada,
+} from "@/lib/execucaoEsteira";
 import {
   Paperclip,
   X as XIcon,
@@ -213,10 +225,24 @@ export function EsteirasModule() {
   const [verAgendados, setVerAgendados] = useState(false);
 
   const [desmarcados, setDesmarcados] = useState<Set<string>>(new Set());
-  const [estado, setEstado] = useState<Record<string, { s: EstadoItem; erro?: string }>>({});
-  const [rodando, setRodando] = useState(false);
-  const [contagem, setContagem] = useState(0);
-  const pararRef = useRef(false);
+  // a rodada vive fora da tela (lib/execucaoEsteira): trocar de aba não perde o andamento nem o botão Parar
+  const execucao = useSyncExternalStore(assinarExecucao, lerExecucao);
+  const { estado, rodando, contagem, emPausa } = execucao;
+  const setEstado = setEstadoEsteira;
+  const setRodando = setRodandoEsteira;
+  const setContagem = setContagemEsteira;
+  const setEmPausa = setEmPausaEsteira;
+  const pararRef = useMemo(
+    () => ({
+      get current() {
+        return deveParar();
+      },
+      set current(v: boolean) {
+        v ? pedirParadaEsteira() : limparParada();
+      },
+    }),
+    []
+  );
   // {{meu_nome}} vem do login (sem precisar digitar)
   useEffect(() => {
     if (getMeuNome()) return;
@@ -294,7 +320,7 @@ export function EsteirasModule() {
   // Em segundo plano o Chrome atrasa os timers da aba escondida: a espera usa o relógio, não a contagem de ticks
   const [segundoPlano, setSegundoPlanoState] = useState<boolean>(getSegundoPlano());
   const [pausaVersao, setPausaVersao] = useState(0); // re-renderiza o editor ao mudar a pausa de uma esteira
-  const [emPausa, setEmPausa] = useState(false);
+
   const esperar = (segundos: number) =>
     new Promise<void>((resolve) => {
       const fim = Date.now() + segundos * 1000;
@@ -357,6 +383,7 @@ export function EsteirasModule() {
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
+      setProgressoEsteira(i, lista.length, item.lead.nome);
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)

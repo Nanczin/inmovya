@@ -19,6 +19,7 @@ import { AgendaModule } from "@/components/AgendaModule";
 import { FunilModule } from "@/components/FunilModule";
 import { NegociosModule } from "@/components/NegociosModule";
 import { EsteirasModule } from "@/components/EsteirasModule";
+import { EsteiraEmAndamento } from "@/components/esteiras/EsteiraEmAndamento";
 import { WhatsappModule } from "@/components/WhatsappModule";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
 
@@ -142,6 +143,7 @@ const Index = () => {
         </div>
       </div>
     <TaskViewDialog taskId={globalViewTaskId} onClose={() => setGlobalViewTaskId(null)} />
+    {activeModule !== "esteiras" && <EsteiraEmAndamento onAbrir={() => setActiveModule("esteiras")} />}
     </SidebarProvider>
   );
 };
