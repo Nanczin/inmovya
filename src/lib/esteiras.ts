@@ -366,6 +366,46 @@ export const setIntervaloMensagens = (min: number, max: number) => {
   }
 };
 
+// ---------- Pausas ----------
+// Depois de X envios, para Y minutos (evita bloqueio do WhatsApp). Geral (rodada inteira) e por esteira.
+// Fica neste navegador. cada = 0 → sem pausa.
+export interface ConfigPausa {
+  cada: number;
+  minutos: number;
+}
+const PAUSA_KEY = "inmovya_esteira_pausa";
+const PAUSA_EST_KEY = "inmovya_esteira_pausa_por_esteira";
+const lerJson = (k: string, padrao: any) => {
+  try {
+    return JSON.parse(localStorage.getItem(k) || "null") ?? padrao;
+  } catch {
+    return padrao;
+  }
+};
+const limpaPausa = (c: any): ConfigPausa => ({
+  cada: Math.max(0, Math.floor(Number(c?.cada) || 0)),
+  minutos: Math.max(0, Number(c?.minutos) || 0),
+});
+export const getPausaGeral = (): ConfigPausa => limpaPausa(lerJson(PAUSA_KEY, { cada: 0, minutos: 15 }));
+export const setPausaGeral = (c: ConfigPausa) => {
+  try {
+    localStorage.setItem(PAUSA_KEY, JSON.stringify(limpaPausa(c)));
+  } catch {
+    /* ignore */
+  }
+};
+export const getPausaEsteira = (esteiraId: string): ConfigPausa =>
+  limpaPausa((lerJson(PAUSA_EST_KEY, {}) || {})[esteiraId] || { cada: 0, minutos: 15 });
+export const setPausaEsteira = (esteiraId: string, c: ConfigPausa) => {
+  try {
+    const m = lerJson(PAUSA_EST_KEY, {}) || {};
+    m[esteiraId] = limpaPausa(c);
+    localStorage.setItem(PAUSA_EST_KEY, JSON.stringify(m));
+  } catch {
+    /* ignore */
+  }
+};
+
 // Envio em segundo plano: a extensão abre o WhatsApp numa janela pequena, sem tirar o foco
 const SEGUNDO_PLANO_KEY = "inmovya_esteira_segundo_plano";
 export const getSegundoPlano = () => {

@@ -48,6 +48,11 @@ import {
   getMeuNome,
   getSegundoPlano,
   setSegundoPlano,
+  getPausaGeral,
+  setPausaGeral,
+  getPausaEsteira,
+  setPausaEsteira,
+  type ConfigPausa,
   intervaloAleatorio,
   lerDadosDoScale,
   montarMensagem,
@@ -290,6 +295,13 @@ export function EsteirasModule() {
 
   // Em segundo plano o Chrome atrasa os timers da aba escondida: a espera usa o relógio, não a contagem de ticks
   const [segundoPlano, setSegundoPlanoState] = useState<boolean>(getSegundoPlano());
+  const [pausaGeral, setPausaGeralState] = useState<ConfigPausa>(getPausaGeral());
+  const mudarPausaGeral = (c: ConfigPausa) => {
+    setPausaGeral(c);
+    setPausaGeralState(getPausaGeral());
+  };
+  const [pausaVersao, setPausaVersao] = useState(0); // re-renderiza o editor ao mudar a pausa de uma esteira
+  const [emPausa, setEmPausa] = useState(false);
   const esperar = (segundos: number) =>
     new Promise<void>((resolve) => {
       const fim = Date.now() + segundos * 1000;
@@ -347,6 +359,9 @@ export function EsteirasModule() {
     while (isWhatsAppOcupado()) await new Promise((r) => setTimeout(r, 1000));
     setWhatsAppOcupado(true); // o disparo da Oferta Ativa espera a esteira
     let enviados = 0;
+    const porEsteira: Record<string, number> = {};
+    const pg = getPausaGeral();
+    let ultimaPausaGeral = 0;
     const prontosParaSegunda: string[] = [];
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
@@ -368,7 +383,23 @@ export function EsteirasModule() {
         console.error("Falha no envio da esteira:", err);
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha" } }));
       }
-      if (i < lista.length - 1 && !pararRef.current) await esperar(intervaloAleatorio());
+      if (i < lista.length - 1 && !pararRef.current) {
+        // pausa depois de X envios (geral e/ou desta esteira); senão, o intervalo normal entre leads
+        porEsteira[item.esteira.id] = (porEsteira[item.esteira.id] || 0) + 1;
+        const pe = getPausaEsteira(item.esteira.id);
+        let pausaMin = 0;
+        if (pg.cada > 0 && enviados > 0 && enviados % pg.cada === 0 && enviados !== ultimaPausaGeral) {
+          ultimaPausaGeral = enviados;
+          pausaMin = Math.max(pausaMin, pg.minutos);
+        }
+        if (pe.cada > 0 && porEsteira[item.esteira.id] % pe.cada === 0) pausaMin = Math.max(pausaMin, pe.minutos);
+        if (pausaMin > 0) {
+          setEmPausa(true);
+          toast({ title: "Pausa", description: `${enviados} envio(s) feitos. Retomando em ${pausaMin} min.` });
+          await esperar(Math.round(pausaMin * 60));
+          setEmPausa(false);
+        } else await esperar(intervaloAleatorio());
+      }
     }
     setRodando(false);
     setWhatsAppOcupado(false);
@@ -828,6 +859,27 @@ export function EsteirasModule() {
                     </span>
                   </label>
                   <div className="flex flex-wrap items-center gap-1 my-1">
+                    <span>Pausa geral: a cada</span>
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={rodando}
+                      value={pausaGeral.cada}
+                      onChange={(e) => mudarPausaGeral({ ...pausaGeral, cada: parseInt(e.target.value) || 0 })}
+                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
+                    />
+                    <span>envios, parar</span>
+                    <input
+                      type="number"
+                      min={1}
+                      disabled={rodando}
+                      value={pausaGeral.minutos}
+                      onChange={(e) => mudarPausaGeral({ ...pausaGeral, minutos: parseFloat(e.target.value) || 0 })}
+                      className="w-14 h-7 rounded border px-1 text-center text-foreground"
+                    />
+                    <span>min {pausaGeral.cada > 0 ? "" : "(0 = sem pausa)"} · cada esteira também tem a sua (aba Esteiras)</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 my-1">
                     <span>Entre as mensagens do mesmo lead:</span>
                     <input
                       type="number"
@@ -854,7 +906,7 @@ export function EsteirasModule() {
                 </div>
                 {rodando ? (
                   <Button variant="destructive" className="h-10" onClick={() => (pararRef.current = true)}>
-                    <Square className="w-4 h-4 mr-1" /> Parar {contagem > 0 ? `(próximo em ${Math.floor(contagem / 60)}:${String(contagem % 60).padStart(2, "0")})` : ""}
+                    <Square className="w-4 h-4 mr-1" /> Parar {contagem > 0 ? `(${emPausa ? "pausa — retoma" : "próximo"} em ${Math.floor(contagem / 60)}:${String(contagem % 60).padStart(2, "0")})` : ""}
                   </Button>
                 ) : (
                   <>
@@ -1251,6 +1303,27 @@ export function EsteirasModule() {
                       </div>
                     )}
                   </div>
+                  {rascunho.esteira.id && (() => {
+                    void pausaVersao;
+                    const pe = getPausaEsteira(rascunho.esteira.id);
+                    const mudar = (c: ConfigPausa) => {
+                      setPausaEsteira(rascunho.esteira.id, c);
+                      setPausaVersao((v) => v + 1);
+                    };
+                    return (
+                      <div className="grid gap-1 sm:col-span-2">
+                        <Label className="text-xs">Pausa desta esteira</Label>
+                        <div className="flex flex-wrap items-center gap-1 text-sm">
+                          <span>A cada</span>
+                          <Input type="number" min={0} className="h-9 w-20" value={pe.cada} onChange={(e) => mudar({ ...pe, cada: parseInt(e.target.value) || 0 })} />
+                          <span>envios desta esteira, parar</span>
+                          <Input type="number" min={1} className="h-9 w-20" value={pe.minutos} onChange={(e) => mudar({ ...pe, minutos: parseFloat(e.target.value) || 0 })} />
+                          <span>minutos</span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">0 = sem pausa. Vale junto com a pausa geral da aba Hoje (a maior pausa vence). Salva na hora.</span>
+                      </div>
+                    );
+                  })()}
                   <div className="grid gap-1 sm:col-span-2">
                     <Label className="text-xs">Ao terminar sem resposta, mover o card no Negócios para</Label>
                     <Select
