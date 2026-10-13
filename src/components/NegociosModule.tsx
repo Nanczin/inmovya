@@ -6,7 +6,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { SincronizarWhatsAppButton } from "@/components/EtiquetasWhatsAppMenu";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
@@ -657,7 +656,6 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
             <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar negócio..." className="pl-8 h-9 w-full sm:w-56" />
           </div>
-          <SincronizarWhatsAppButton className="h-9" />
           {normalizationTotal > 0 && (
             <Button variant="outline" className="h-9 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setIsNormalizeOpen(true)}>
               <Wand2 className="w-4 h-4 mr-1" /> Padronizar etapas ({normalizationTotal})

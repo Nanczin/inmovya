@@ -8,7 +8,7 @@ import {
   extensaoAtualizada,
   telefoneWhatsApp,
 } from "@/lib/esteiras";
-import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/etiquetasWhatsApp";
+import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/whatsappOcupado";
 import { anexosParaEnvio, type AnexoTemplate } from "@/lib/templateAnexos";
 
 export interface ConfigDisparo {

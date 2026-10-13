@@ -1,7 +1,6 @@
--- AGENTE DA ESTEIRA: dá tempo para o agente do Inmovya ler o WhatsApp antes de o banco finalizar sozinho.
--- O agente (Inmovya aberto no Chrome) confere se o lead respondeu, classifica e aplica as regras.
--- O banco só finaliza sozinho (tag disparo) quem ficou 2 dias além do prazo sem o agente rodar.
--- Clique em Run uma única vez.
+-- REMOVER O AGENTE DA ESTEIRA: volta o fim da esteira ao normal (o banco finaliza assim que o prazo vence).
+-- Só precisa rodar se você chegou a rodar o agente_esteira.sql. Clique em Run uma única vez.
+
 
 create or replace function public.finalizar_esteiras_vencidas()
 returns int
@@ -22,7 +21,7 @@ begin
     from public.leads l
     join public.esteiras e on e.id = l.esteira_id
     where l.esteira_proximo is not null
-      and l.esteira_proximo <= now() - interval '2 days'
+      and l.esteira_proximo <= now()
       and l.esteira_passo >= (select count(*) from public.esteira_passos p where p.esteira_id = e.id)
       and (auth.uid() is null or l.user_id = auth.uid())
   )

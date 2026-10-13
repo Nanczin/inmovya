@@ -6,14 +6,12 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { NotificationsProvider } from "@/hooks/useNotifications";
 import { LeadsProvider } from "@/context/LeadsContext";
-import { EtiquetasWhatsAppProvider } from "@/context/EtiquetasWhatsAppContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
 import { TaskNotificationPoller } from "./components/TaskNotificationPoller";
 import { NewLeadNotifier } from "./components/NewLeadNotifier";
-import { AgenteEsteiraRunner } from "./components/AgenteEsteiraRunner";
 
 
 const queryClient = new QueryClient();
@@ -24,12 +22,10 @@ const App = () => (
       <NotificationsProvider>
         <TooltipProvider>
           <LeadsProvider>
-            <EtiquetasWhatsAppProvider>
               <Toaster />
               <Sonner />
               <TaskNotificationPoller />
               <NewLeadNotifier />
-              <AgenteEsteiraRunner />
               <BrowserRouter>
                 <Routes>
                   <Route path="/" element={<Index />} />
@@ -40,7 +36,6 @@ const App = () => (
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </BrowserRouter>
-            </EtiquetasWhatsAppProvider>
           </LeadsProvider>
         </TooltipProvider>
       </NotificationsProvider>

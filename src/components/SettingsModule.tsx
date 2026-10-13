@@ -592,20 +592,6 @@ export function SettingsModule() {
       {/* Grid de Configurações */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
 
-        {/* IA (agente da esteira: Gemini grátis / OpenAI) */}
-        <div className="md:col-span-2">
-          <IAConfigSection
-            config={configuracoes.ia as any}
-            onConfigChange={(ia) => {
-              setConfiguracoes(prev => ({ ...prev, ia: ia as any }));
-              try {
-                const atual = JSON.parse(localStorage.getItem('inmovya_config') || '{}');
-                localStorage.setItem('inmovya_config', JSON.stringify({ ...atual, ia }));
-              } catch { /* ignore */ }
-            }}
-          />
-        </div>
-
         {/* Usuários */}
         <Card className="shadow-card">
           <CardHeader>
