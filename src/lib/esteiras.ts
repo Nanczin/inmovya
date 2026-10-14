@@ -520,37 +520,18 @@ export function calcularAvanco(
       esteira_ultimo_envio: agora,
       ultimo_contato: agora,
     };
-  } else if ((esteira.ao_concluir_dias || 0) > 0) {
-    // último passo enviado: aguarda X dias sem resposta; depois o Inmovya finaliza sozinho
-    // (move para a coluna escolhida, ex.: Perdido, e põe a etiqueta, ex.: disparo)
+  } else {
+    // ÚLTIMO passo enviado: o lead fica na esteira aguardando resposta. Quem finaliza é o SERVIDOR
+    // (função finalizar_esteiras_vencidas, de hora em hora): passado o prazo sem resposta, move para a
+    // coluna de "Ao terminar sem resposta" (ex.: Lista fria), põe as etiquetas (ex.: disparo) e tira da esteira.
+    // Prazo: "dias sem resposta" da esteira; se 0, o intervalo do último passo; se 0, 1 dia.
+    const dias = (esteira.ao_concluir_dias || 0) > 0 ? esteira.ao_concluir_dias! : Math.max(1, passoEnviado.dias_espera || 0);
     update = {
       ...(etapaDoPasso ? { status: etapaDoPasso } : {}),
       esteira_passo: indice + 1,
-      esteira_proximo: addDias(esteira.ao_concluir_dias || 1),
+      esteira_proximo: addDias(dias),
       esteira_ultimo_envio: agora,
       ultimo_contato: agora,
-    };
-  } else {
-    concluiu = true;
-    const novas = etiquetasDaEsteira(esteira);
-    const tag = novas.join(",");
-    const tags = Array.from(new Set([...(lead.tags || []), ...novas]));
-    update = {
-      esteira_id: null,
-      esteira_passo: 0,
-      esteira_proximo: null,
-      esteira_ultimo_envio: agora,
-      ultimo_contato: agora,
-      tags,
-      // Ao terminar: vai para a coluna escolhida (ex.: Lista fria); sem coluna escolhida,
-      // regra antiga: sai do funil (etapa limpa) e fica com a etiqueta de disparo
-      ...((esteira.ao_concluir_etapa || "").trim()
-        ? { status: (esteira.ao_concluir_etapa || "").trim() }
-        : etapaDoPasso
-        ? { status: etapaDoPasso }
-        : tag
-        ? { status: null }
-        : {}),
     };
   }
   return { update, concluiu, indice };
