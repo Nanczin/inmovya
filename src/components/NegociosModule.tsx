@@ -10,7 +10,7 @@ import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
 import { LeadTimeline } from "@/components/LeadTimeline";
-import { colocarNaEsteira, tirarDaEsteira, moverParaPasso } from "@/lib/esteiras";
+import { colocarNaEsteira, tirarDaEsteira, moverParaPasso, cortarNaEtapaFinal } from "@/lib/esteiras";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -130,7 +130,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     if (!l.esteira_id) return null;
     const est = esteirasLista.find((e) => e.id === l.esteira_id);
     if (!est) return null;
-    const ps = passosLista.filter((p) => p.esteira_id === est.id).sort((a, b) => a.ordem - b.ordem);
+    const ps = cortarNaEtapaFinal(est as any, passosLista.filter((p) => p.esteira_id === est.id).sort((a, b) => a.ordem - b.ordem));
     const idx = Math.min(l.esteira_passo || 0, Math.max(ps.length - 1, 0));
     const prox = l.esteira_proximo ? new Date(l.esteira_proximo) : null;
     const hoje = !prox || prox.getTime() <= new Date().setHours(23, 59, 59, 999);
@@ -470,7 +470,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
               <DropdownMenuSeparator />
               {esteirasLista.map((est) => {
                 const atual = (lead as any).esteira_id === est.id;
-                const ps = passosLista.filter((p) => p.esteira_id === est.id).sort((a, b) => a.ordem - b.ordem);
+                const ps = cortarNaEtapaFinal(est as any, passosLista.filter((p) => p.esteira_id === est.id).sort((a, b) => a.ordem - b.ordem));
                 const passoAtual = atual ? (lead as any).esteira_passo || 0 : -1;
                 return (
                   <DropdownMenuSub key={est.id}>

@@ -28,6 +28,7 @@ import {
   escolherArquivosDoComputador,
   partesDaMensagem,
   etiquetasDaEsteira,
+  cortarNaEtapaFinal,
   finalizarEsteirasVencidas,
   esquecerArquivoLocal,
   liberarArquivosLocais,
@@ -175,9 +176,15 @@ export function EsteirasModule() {
   }, [carregar]);
 
 
-  const passosDe = useCallback(
+  // todos os passos cadastrados (editor / salvar)
+  const todosPassosDe = useCallback(
     (esteiraId: string) => passos.filter((p) => p.esteira_id === esteiraId).sort((a, b) => a.ordem - b.ordem),
     [passos]
+  );
+  // passos que valem para envio: param na "Etapa final" da esteira (se tiver)
+  const passosDe = useCallback(
+    (esteiraId: string) => cortarNaEtapaFinal(esteiras.find((e) => e.id === esteiraId), todosPassosDe(esteiraId)),
+    [esteiras, todosPassosDe]
   );
 
   const leadsEmEsteira = useMemo(
@@ -489,7 +496,7 @@ export function EsteirasModule() {
 
   useEffect(() => {
     const e = esteiras.find((x) => x.id === esteiraSel);
-    setRascunho(e ? { esteira: { ...e }, passos: passosDe(e.id).map((p) => ({ ...p })) } : null);
+    setRascunho(e ? { esteira: { ...e }, passos: todosPassosDe(e.id).map((p) => ({ ...p })) } : null);
   }, [esteiraSel, esteiras, passosDe]);
 
   const novaEsteira = async () => {
@@ -559,11 +566,15 @@ export function EsteirasModule() {
           etapa: esteira.etapa || null,
           ...(esteiras.some((x) => "ao_concluir_etapa" in x) ? { ao_concluir_etapa: esteira.ao_concluir_etapa || null } : {}),
           ...(esteiras.some((x) => "ao_concluir_dias" in x) ? { ao_concluir_dias: Math.max(0, Number(esteira.ao_concluir_dias) || 0) } : {}),
+          ...(esteiras.some((x) => "etapa_final" in x) ? { etapa_final: esteira.etapa_final || null } : {}),
         })
         .eq("id", esteira.id);
       if (error) throw error;
+      if (esteira.etapa_final && !esteiras.some((x) => "etapa_final" in x)) {
+        toast({ title: "Etapa final não foi salva", description: "Rode antes o SQL “esteira_fim_servidor.sql” no Supabase.", variant: "destructive" });
+      }
 
-      const atuais = passosDe(esteira.id);
+      const atuais = todosPassosDe(esteira.id);
       const temColunaAnexos = passos.some((x) => "anexos" in x);
       const temColunaEtapa = passos.some((x) => "etapa" in x);
       const manter = new Set(ps.filter((p) => !p.id.startsWith("novo-")).map((p) => p.id));
@@ -1190,7 +1201,8 @@ export function EsteirasModule() {
                     <div className="font-medium truncate">{e.nome}</div>
                     <div className="text-xs text-muted-foreground">
                       {e.etapa ? `Entra em ${e.etapa} · ` : ""}
-                      {passosDe(e.id).some((p) => p.etapa) ? `Colunas ${passosDe(e.id).filter((p) => p.etapa).map((p) => p.etapa).join(", ")} · ` : ""}
+                      {todosPassosDe(e.id).some((p) => p.etapa) ? `Colunas ${todosPassosDe(e.id).filter((p) => p.etapa).map((p) => p.etapa).join(", ")} · ` : ""}
+                      {e.etapa_final ? `Final ${e.etapa_final} · ` : ""}
                       {passosDe(e.id).length} passo(s) · {qtd} lead(s)
                     </div>
                   </button>
@@ -1305,25 +1317,80 @@ export function EsteirasModule() {
                       </div>
                     );
                   })()}
-                  <div className="grid gap-1 sm:col-span-2">
-                    <Label className="text-xs">Ao terminar sem resposta, mover o card no Negócios para</Label>
-                    <Select
-                      value={rascunho.esteira.ao_concluir_etapa || "nenhuma"}
-                      onValueChange={(v) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, ao_concluir_etapa: v === "nenhuma" ? null : v } })}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[50vh]">
-                        <SelectItem value="nenhuma">Tirar da etapa (só a etiqueta acima)</SelectItem>
-                        {NEGOCIO_STAGES.map((st) => (
-                          <SelectItem key={st.id} value={st.value}>
-                            {st.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {(() => {
+                    const e = rascunho.esteira;
+                    const colunas = Array.from(new Set(rascunho.passos.map((p) => (p.etapa || "").trim()).filter(Boolean)));
+                    const finalValida = !!e.etapa_final && colunas.some((c) => c.toLowerCase() === String(e.etapa_final).trim().toLowerCase());
+                    const passosValem = cortarNaEtapaFinal(e, rascunho.passos);
+                    const ultimo = passosValem[passosValem.length - 1];
+                    const nomeFinal = finalValida ? e.etapa_final : ultimo ? (ultimo.etapa || ultimo.titulo || `Passo ${passosValem.length}`) : "último passo";
+                    const dias = Number(e.ao_concluir_dias) || 0;
+                    const diasEfetivos = dias > 0 ? dias : Math.max(1, Number(ultimo?.dias_espera) || 0);
+                    const tags = etiquetasDaEsteira(e);
+                    const mudar = (c: Partial<Esteira>) => setRascunho({ ...rascunho, esteira: { ...e, ...c } });
+                    return (
+                      <div className="grid gap-2 sm:col-span-2 rounded-md border border-amber-200 bg-amber-50/60 p-2.5">
+                        <Label className="text-xs font-semibold">Fim da esteira (sem resposta)</Label>
+                        <div className="grid sm:grid-cols-3 gap-2">
+                          <div className="grid gap-1">
+                            <span className="text-[11px] text-muted-foreground">Etapa final</span>
+                            <Select value={finalValida ? String(e.etapa_final) : "ultimo"} onValueChange={(v) => mudar({ etapa_final: v === "ultimo" ? null : v })}>
+                              <SelectTrigger className="h-9 bg-white">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[50vh]">
+                                <SelectItem value="ultimo">Último passo</SelectItem>
+                                {colunas.map((c) => (
+                                  <SelectItem key={c} value={c}>
+                                    {c}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-1">
+                            <span className="text-[11px] text-muted-foreground">Dias sem resposta</span>
+                            <Input
+                              type="number"
+                              min={0}
+                              className="h-9 bg-white"
+                              value={dias}
+                              onChange={(ev) => mudar({ ao_concluir_dias: Math.max(0, parseInt(ev.target.value) || 0) })}
+                            />
+                          </div>
+                          <div className="grid gap-1">
+                            <span className="text-[11px] text-muted-foreground">Mover para</span>
+                            <Select value={e.ao_concluir_etapa || "nenhuma"} onValueChange={(v) => mudar({ ao_concluir_etapa: v === "nenhuma" ? null : v })}>
+                              <SelectTrigger className="h-9 bg-white">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[50vh]">
+                                <SelectItem value="nenhuma">Tirar da etapa (só a etiqueta)</SelectItem>
+                                {NEGOCIO_STAGES.map((st) => (
+                                  <SelectItem key={st.id} value={st.value}>
+                                    {st.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <p className="text-xs text-amber-900">
+                          Chegou em <b>{nomeFinal}</b> e ficou <b>{diasEfetivos} dia(s)</b> sem resposta → vai para <b>{e.ao_concluir_etapa || "fora do funil"}</b>
+                          {tags.length ? <> + etiqueta(s) <b>{tags.join(", ")}</b></> : null} e sai da esteira. Quem for para Respondeu não entra nisso.
+                        </p>
+                        {finalValida && passosValem.length < rascunho.passos.length && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Os passos depois de {e.etapa_final} ({rascunho.passos.length - passosValem.length}) ficam guardados, mas não são enviados.
+                          </p>
+                        )}
+                        {!colunas.length && (
+                          <p className="text-[11px] text-muted-foreground">Para escolher uma etapa final, ligue os passos a colunas do Negócios (ex.: P1, P2, P3).</p>
+                        )}
+                        <p className="text-[11px] text-muted-foreground">Dias = 0: usa o intervalo do último passo (mínimo 1 dia). O servidor confere de hora em hora.</p>
+                      </div>
+                    );
+                  })()}
                   <div className="grid gap-1 sm:col-span-2">
                     <Label className="text-xs">Coluna de entrada no Negócios (quem cai nela entra no 1º passo)</Label>
                     <Select

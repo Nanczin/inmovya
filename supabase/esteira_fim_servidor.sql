@@ -5,11 +5,15 @@
 -- 2) De hora em hora o banco finaliza, sozinho, quem passou do prazo depois do ÚLTIMO passo sem responder:
 --    move para "Ao terminar sem resposta, mover para" (ex.: Lista fria), acrescenta as
 --    "Etiquetas ao terminar sem resposta" (ex.: disparo) sem tirar as que já existem e tira da esteira.
---    Prazo = "dias sem resposta" da esteira; se 0, o intervalo do último passo; se 0, 1 dia.
+--    "Etapa final" (esteiras.etapa_final, ex.: P3): a esteira termina no passo dessa coluna; vazio = último passo.
+--    Prazo = "dias sem resposta" da esteira; se 0, o intervalo do passo final; se 0, 1 dia.
 --    "Respondeu" = o card foi para a coluna Respondeu (ou Interessado): esse lead sai da esteira e nunca vai para a Lista fria.
 
 -- pg_cron (agendador do Supabase). Se der erro aqui, ative em Database → Extensions → pg_cron e rode de novo.
 create extension if not exists pg_cron;
+
+-- Etapa final de cada esteira (coluna do passo que encerra; vazio = último passo)
+alter table public.esteiras add column if not exists etapa_final text;
 
 -- ---------------------------------------------------------------------------------------------
 -- 1) Regra ao mudar a coluna (status) do lead no Negócios
@@ -106,15 +110,20 @@ as $$
 declare
   n int;
 begin
-  with tot as (
-    select esteira_id, count(*) as total
-    from public.esteira_passos
-    group by esteira_id
+  with passos_num as (
+    select ep.esteira_id, ep.etapa, coalesce(ep.dias_espera, 0) as dias,
+           row_number() over (partition by ep.esteira_id order by ep.ordem, ep.created_at) as n
+    from public.esteira_passos ep
   ),
-  ultimo as (
-    select distinct on (esteira_id) esteira_id, coalesce(dias_espera, 0) as dias
-    from public.esteira_passos
-    order by esteira_id, ordem desc, created_at desc
+  -- passo que encerra a esteira: o da "Etapa final" (1º com essa coluna); sem ela, o último
+  fim as (
+    select distinct on (pn.esteira_id) pn.esteira_id, pn.n as total, pn.dias
+    from passos_num pn
+    join public.esteiras e on e.id = pn.esteira_id
+    order by pn.esteira_id,
+             (coalesce(trim(e.etapa_final), '') <> '' and lower(trim(coalesce(pn.etapa, ''))) = lower(trim(e.etapa_final))) desc,
+             case when coalesce(trim(e.etapa_final), '') <> '' and lower(trim(coalesce(pn.etapa, ''))) = lower(trim(e.etapa_final))
+                  then pn.n else -pn.n end
   ),
   alvo as (
     select l.id,
@@ -126,15 +135,14 @@ begin
            ) as novas
     from public.leads l
     join public.esteiras e on e.id = l.esteira_id
-    join tot t on t.esteira_id = e.id
-    left join ultimo u on u.esteira_id = e.id
+    join fim t on t.esteira_id = e.id
     where l.esteira_id is not null
-      and coalesce(l.esteira_passo, 0) >= t.total                 -- já recebeu o último passo
+      and coalesce(l.esteira_passo, 0) >= t.total                 -- já recebeu o passo final
       and lower(trim(coalesce(l.status, ''))) not in ('respondeu', 'interessado')  -- não respondeu
       and (
         (l.esteira_ultimo_envio is not null
          and l.esteira_ultimo_envio
-             + make_interval(days => greatest(1, coalesce(nullif(e.ao_concluir_dias, 0), nullif(u.dias, 0), 1))) <= now())
+             + make_interval(days => greatest(1, coalesce(nullif(e.ao_concluir_dias, 0), nullif(t.dias, 0), 1))) <= now())
         or (l.esteira_ultimo_envio is null and l.esteira_proximo is not null and l.esteira_proximo <= now())
       )
       and (auth.uid() is null or l.user_id = auth.uid())

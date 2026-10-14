@@ -10,6 +10,7 @@ export interface Esteira {
   ao_concluir_tag: string | null;
   ao_concluir_etapa?: string | null; // coluna do Negócios para onde o lead vai ao terminar (ex.: "Perdido")
   ao_concluir_dias?: number | null; // dias sem resposta depois do último passo antes de finalizar
+  etapa_final?: string | null; // coluna do passo que encerra a esteira (ex.: "P3"); vazio = o último passo
   etapa?: string | null; // etapa de Negócios ligada (ex.: "20%")
   scale_id?: string | null;
   created_at?: string;
@@ -488,6 +489,17 @@ export const lerDadosDoScale = (timeoutMs = 8000) =>
     window.addEventListener("INMOVYA_SCALE_DATA", onData as EventListener);
     window.dispatchEvent(new CustomEvent("INMOVYA_SCALE_EXPORT", { detail: { token } }));
   });
+
+/**
+ * Passos que valem para a esteira: se ela tem "Etapa final" (ex.: P3), para no passo dessa coluna
+ * (os passos depois dela não são enviados). Sem etapa final: todos os passos.
+ */
+export function cortarNaEtapaFinal<T extends { etapa?: string | null }>(esteira: { etapa_final?: string | null } | null | undefined, passos: T[]): T[] {
+  const alvo = String(esteira?.etapa_final || "").trim().toLowerCase();
+  if (!alvo) return passos;
+  const i = passos.findIndex((p) => String(p.etapa || "").trim().toLowerCase() === alvo);
+  return i >= 0 ? passos.slice(0, i + 1) : passos;
+}
 
 // ---------- Avanço do lead na esteira ----------
 const addDias = (dias: number) => new Date(Date.now() + Math.max(0, dias) * 86400000).toISOString();
