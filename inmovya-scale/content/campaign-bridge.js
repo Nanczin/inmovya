@@ -16,6 +16,17 @@
     });
   });
 
+  // Esteira "Só colar" em lote: cola a mensagem (sem enviar) na conversa de cada lead, uma atrás da outra
+  window.addEventListener('INMOVYA_PASTE_BATCH', event => {
+    const detail = event.detail || {};
+    chrome.runtime.sendMessage({ action: 'paste_batch', items: detail.items || [] }, response => {
+      const error = chrome.runtime.lastError?.message;
+      window.dispatchEvent(new CustomEvent('INMOVYA_PASTE_BATCH_RESULT', {
+        detail: { token: detail.token, ok: !!response?.ok && !error, results: response?.results || [], error: error || response?.error || '' }
+      }));
+    });
+  });
+
   // Agente da esteira: ler conversa / trocar etiquetas de um contato
   window.addEventListener('INMOVYA_AGENT', event => {
     const detail = event.detail || {};
