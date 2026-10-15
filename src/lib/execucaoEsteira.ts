@@ -1,7 +1,7 @@
 // Estado da rodada de envio da esteira FORA da tela: continua valendo ao trocar de aba no Inmovya,
 // para mostrar o andamento em qualquer tela e poder parar o envio.
 export type EstadoItem = "pendente" | "enviando" | "enviado" | "erro" | "pulado";
-export type MapaEstado = Record<string, { s: EstadoItem; erro?: string }>;
+export type MapaEstado = Record<string, { s: EstadoItem; erro?: string; colado?: boolean }>;
 
 interface Execucao {
   rodando: boolean;
