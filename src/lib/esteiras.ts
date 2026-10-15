@@ -474,7 +474,7 @@ export const colarEmLotePeloScale = (items: { id: string; phone: string; name: s
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_PASTE_BATCH_RESULT", onResult as EventListener);
       reject(new Error("Tempo esgotado aguardando o Inmovya Scale."));
-    }, 90000 + items.length * 25000);
+    }, 120000 + items.length * 60000);
     const onResult = (event: CustomEvent) => {
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);

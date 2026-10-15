@@ -33,39 +33,93 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; 
   }
 
-  // Só colar em lote (esteiras do Inmovya): abre cada conversa NESTA aba, cola o texto sem enviar e passa para a próxima.
-  // O WhatsApp guarda o texto como rascunho em cada conversa; você confere e aperta Enter.
-  if (request.action === 'paste_batch_tab') {
+  // Só colar (esteiras do Inmovya): abre a conversa do lead NESTA aba (pelo nome; se não achar, pelo número),
+  // cola o texto sem enviar. O WhatsApp guarda como rascunho; você confere e aperta Enter.
+  if (request.action === 'paste_one_tab') {
     (async () => {
+      const dom = window.IS.WhatsAppDOM;
+      const scraper = window.IS.Scraper;
+      const item = request.item || {};
       try {
-        const dom = window.IS.WhatsAppDOM;
-        const scraper = window.IS.Scraper;
         for (let i = 0; i < 120 && !document.querySelector('#pane-side'); i++) await dom.delay(500);
         if (!document.querySelector('#pane-side')) throw new Error('O WhatsApp Web não carregou.');
-        const results = [];
-        for (const item of request.items || []) {
-          try {
-            let digits = String(item.phone || '').replace(/\D/g, '');
-            const contact = { name: String(item.name || ''), chatId: digits };
-            const atual = () => scraper.isCurrentContact(contact);
-            let aberto = atual() || await scraper.openContactBySearch(contact);
-            for (let k = 0; k < 15 && !atual(); k++) await dom.delay(200);
-            if (!aberto || !atual()) throw new Error('Conversa não encontrada no WhatsApp (use o botão Só colar deste lead).');
-            const input = await dom.waitForMessageInput(8000);
-            if (!input) throw new Error('A caixa de mensagem não abriu.');
-            const ok = await dom.insertMessage(String(item.text || ''));
-            if (!ok) throw new Error('O WhatsApp não aceitou o texto.');
-            await dom.delay(400);
-            results.push({ id: item.id, ok: true });
-          } catch (error) {
-            results.push({ id: item.id, ok: false, error: error.message });
+        let digits = String(item.phone || '').replace(/\D/g, '');
+        const local = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits;
+        const contact = { name: String(item.name || '').trim(), chatId: digits };
+        const tituloAtual = () => String(dom.getCurrentChatName() || document.querySelector('#main header')?.innerText || '').trim();
+
+        const clicar = async (row) => {
+          const alvo = row.querySelector('span[title]') || row;
+          const r = alvo.getBoundingClientRect();
+          const o = { bubbles: true, cancelable: true, view: window, clientX: r.left + 10, clientY: r.top + 8, button: 0 };
+          alvo.dispatchEvent(new PointerEvent('pointerdown', o));
+          alvo.dispatchEvent(new MouseEvent('mousedown', o));
+          alvo.dispatchEvent(new PointerEvent('pointerup', o));
+          alvo.dispatchEvent(new MouseEvent('mouseup', o));
+          alvo.dispatchEvent(new MouseEvent('click', o));
+        };
+        const linhasDaBusca = () => scraper.getChatRows().filter(r => !r.closest('#main'));
+        const buscar = async (texto) => {
+          if (!await scraper.clearContactSearch()) return [];
+          const campo = scraper.findSearchInput();
+          if (!campo || !await scraper.setContactSearchQuery(campo, texto)) return [];
+          await dom.delay(1200);
+          return linhasDaBusca();
+        };
+        const abrir = async (row) => {
+          const antes = tituloAtual();
+          const nomeLinha = scraper.normalizeText(scraper.getContactName(row));
+          await clicar(row);
+          for (let k = 0; k < 25; k++) {
+            await dom.delay(200);
+            const agora = scraper.normalizeText(tituloAtual());
+            if (dom.findMessageInput() && agora && (agora !== scraper.normalizeText(antes) || (nomeLinha && agora.includes(nomeLinha)))) return true;
+          }
+          return !!dom.findMessageInput() && scraper.normalizeText(tituloAtual()).includes(nomeLinha);
+        };
+
+        let aberto = false;
+        // 1) pelo nome (exato)
+        if (contact.name) {
+          const linhas = await buscar(contact.name);
+          const alvo = linhas.find(r => scraper.normalizeText(scraper.getContactName(r)) === scraper.normalizeText(contact.name));
+          if (alvo) aberto = await abrir(alvo);
+        }
+        // 2) pelo número (sem o 55; depois só os 9 últimos dígitos)
+        if (!aberto && local.length >= 8) {
+          for (const q of Array.from(new Set([local, local.slice(-9)]))) {
+            const linhas = await buscar(q);
+            if (linhas.length) { aberto = await abrir(linhas[0]); if (aberto) break; }
           }
         }
         try { await scraper.clearContactSearch(); } catch (_) { /* ignore */ }
-        sendResponse({ ok: true, results });
+        if (!aberto) { sendResponse({ ok: false, naoAchou: true, error: 'Conversa não encontrada pela busca.' }); return; }
+        const input = await dom.waitForMessageInput(8000);
+        if (!input) throw new Error('A caixa de mensagem não abriu.');
+        const ok = await dom.insertMessage(String(item.text || ''));
+        if (!ok) throw new Error('O WhatsApp não aceitou o texto.');
+        await dom.delay(500);
+        sendResponse({ ok: true });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }
+    })();
+    return true;
+  }
+
+  // Depois de abrir pelo link (send?phone=...&text=...): espera a conversa abrir com o texto já escrito
+  if (request.action === 'paste_wait_prefill') {
+    (async () => {
+      const dom = window.IS.WhatsAppDOM;
+      for (let i = 0; i < 80; i++) {
+        const input = dom.findMessageInput();
+        if (input && (input.innerText || input.textContent || '').trim()) { sendResponse({ ok: true }); return; }
+        const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
+          .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp/i.test(el.innerText || ''));
+        if (invalido) { sendResponse({ ok: false, error: 'Este número não tem WhatsApp.' }); return; }
+        await dom.delay(500);
+      }
+      sendResponse({ ok: false, error: 'A conversa não abriu com o texto.' });
     })();
     return true;
   }

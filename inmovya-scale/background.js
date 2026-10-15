@@ -115,37 +115,68 @@ async function sendCampaignMessage(request, returnTabId = null) {
 }
 
 // ---------- Só colar em lote: usa a aba do WhatsApp que já está aberta (ou abre uma) ----------
+// Para cada lead: procura a conversa na própria aba (nome; se não achar, número) e cola o texto.
+// Se mesmo assim não achar, abre pelo link do número com o texto já escrito (o próprio WhatsApp preenche).
+async function mensagemNaAba(tabId, msg, tentativas = 40) {
+  let recarregou = false;
+  let lastError;
+  for (let attempt = 0; attempt < tentativas; attempt++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, msg);
+    } catch (error) {
+      lastError = error;
+      // aba aberta antes de a extensão ser recarregada: recarrega uma vez
+      if (!recarregou && /Receiving end does not exist|Could not establish connection/i.test(error.message || '')) {
+        recarregou = true;
+        await chrome.tabs.reload(tabId).catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await waitForTabComplete(tabId, 60000).catch(() => {});
+      }
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+  throw new Error('O WhatsApp Web não respondeu. Recarregue a aba do WhatsApp (F5) e tente de novo.' + (lastError ? ` (${lastError.message})` : ''));
+}
+
 async function colarEmLote(request) {
   const items = Array.isArray(request.items) ? request.items : [];
   if (!items.length) return { results: [] };
   let [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
   if (!tab) {
     tab = await chrome.tabs.create({ url: 'https://web.whatsapp.com/', active: true });
-    await waitForTabComplete(tab.id, 60000);
+    await waitForTabComplete(tab.id, 60000).catch(() => {});
   }
   await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
   if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
-  let lastError;
-  let recarregou = false;
-  for (let attempt = 0; attempt < 40; attempt++) {
+
+  const results = [];
+  const peloLink = [];
+  for (const item of items) {
     try {
-      const response = await chrome.tabs.sendMessage(tab.id, { action: 'paste_batch_tab', items });
-      if (response?.ok) return { results: response.results || [] };
-      throw Object.assign(new Error(response?.error || 'Não consegui colar as mensagens.'), { final: true });
+      const r = await mensagemNaAba(tab.id, { action: 'paste_one_tab', item });
+      if (r?.ok) results.push({ id: item.id, ok: true });
+      else if (r?.naoAchou) peloLink.push(item);
+      else results.push({ id: item.id, ok: false, error: r?.error || 'Não colado.' });
     } catch (error) {
-      if (error.final) throw error;
-      lastError = error;
-      // a aba do WhatsApp foi aberta antes de a extensão ser atualizada/recarregada: recarrega a aba uma vez
-      if (!recarregou && /Receiving end does not exist|Could not establish connection/i.test(error.message || '')) {
-        recarregou = true;
-        await chrome.tabs.reload(tab.id).catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        await waitForTabComplete(tab.id, 60000).catch(() => {});
-      }
-      await new Promise(resolve => setTimeout(resolve, 1500)); // o WhatsApp ainda está carregando
+      results.push({ id: item.id, ok: false, error: error.message });
     }
   }
-  throw new Error('O WhatsApp Web não respondeu. Recarregue a aba do WhatsApp (F5) e tente de novo.' + (lastError ? ` (${lastError.message})` : ''));
+  // não achou na busca: abre pelo número (recarrega a aba do WhatsApp; fica por último)
+  for (const item of peloLink) {
+    try {
+      const phone = String(item.phone || '').replace(/\D/g, '');
+      if (!phone) throw new Error('Telefone inválido.');
+      await chrome.tabs.update(tab.id, { url: `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(String(item.text || ''))}` });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      await waitForTabComplete(tab.id, 60000).catch(() => {});
+      const r = await mensagemNaAba(tab.id, { action: 'paste_wait_prefill' });
+      results.push(r?.ok ? { id: item.id, ok: true } : { id: item.id, ok: false, error: r?.error || 'Não colado.' });
+      await new Promise(resolve => setTimeout(resolve, 1500)); // deixa o WhatsApp guardar o rascunho
+    } catch (error) {
+      results.push({ id: item.id, ok: false, error: error.message });
+    }
+  }
+  return { results };
 }
 
 // ---------- Agente da esteira: ler a conversa e trocar etiquetas de um contato ----------

@@ -470,11 +470,11 @@ export function EsteirasModule() {
     if (!lista.length) return;
     const ok = await checarExtensao();
     setExtensaoOk(ok);
-    if (!ok || !extensaoAtualizada("1.5.1")) {
+    if (!ok || !extensaoAtualizada("1.5.3")) {
       toast({
         title: ok ? "Atualize o Inmovya Scale" : "Inmovya Scale não encontrado",
         description: ok
-          ? "Para colar todos de uma vez, atualize para a versão 1.5.1 (chrome://extensions → Recarregar) e recarregue esta página. Enquanto isso, use o Só colar de cada lead."
+          ? "Para colar todos de uma vez, atualize para a versão 1.5.3 (chrome://extensions → Recarregar) e recarregue esta página. Enquanto isso, use o Só colar de cada lead."
           : "Abra este Inmovya no Chrome onde a extensão está ativa.",
         variant: "destructive",
       });
