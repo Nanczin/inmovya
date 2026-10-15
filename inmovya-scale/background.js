@@ -150,28 +150,19 @@ async function colarEmLote(request) {
   if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
 
   const results = [];
-  const peloLink = [];
   for (const item of items) {
     try {
-      const r = await mensagemNaAba(tab.id, { action: 'paste_one_tab', item });
-      if (r?.ok) results.push({ id: item.id, ok: true });
-      else if (r?.naoAchou) peloLink.push(item);
-      else results.push({ id: item.id, ok: false, error: r?.error || 'Não colado.' });
-    } catch (error) {
-      results.push({ id: item.id, ok: false, error: error.message });
-    }
-  }
-  // não achou na busca: abre pelo número (recarrega a aba do WhatsApp; fica por último)
-  for (const item of peloLink) {
-    try {
-      const phone = String(item.phone || '').replace(/\D/g, '');
-      if (!phone) throw new Error('Telefone inválido.');
-      await chrome.tabs.update(tab.id, { url: `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(String(item.text || ''))}` });
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      await waitForTabComplete(tab.id, 60000).catch(() => {});
-      const r = await mensagemNaAba(tab.id, { action: 'paste_wait_prefill' });
+      let r = await mensagemNaAba(tab.id, { action: 'paste_one_tab', item });
+      if (!r?.ok && r?.naoAchou) {
+        // não achou na busca: abre pelo número (recarrega a aba do WhatsApp) e cola lá
+        const phone = String(item.phone || '').replace(/\D/g, '');
+        if (!phone) throw new Error('Telefone inválido.');
+        await chrome.tabs.update(tab.id, { url: `https://web.whatsapp.com/send?phone=${phone}` });
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await waitForTabComplete(tab.id, 60000).catch(() => {});
+        r = await mensagemNaAba(tab.id, { action: 'paste_one_tab', item, jaAberto: true });
+      }
       results.push(r?.ok ? { id: item.id, ok: true } : { id: item.id, ok: false, error: r?.error || 'Não colado.' });
-      await new Promise(resolve => setTimeout(resolve, 1500)); // deixa o WhatsApp guardar o rascunho
     } catch (error) {
       results.push({ id: item.id, ok: false, error: error.message });
     }

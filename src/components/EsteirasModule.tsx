@@ -440,41 +440,30 @@ export function EsteirasModule() {
     toast({ title: "Esteira de hoje", description: `${enviados} mensagem(ns) enviada(s).` });
   };
 
-  // Só colar: abre a conversa do lead no WhatsApp Web com a mensagem já escrita (sem enviar).
-  // Você confere/ajusta e aperta Enter. O lead avança na esteira como enviado.
-  const colarNaConversa = async (item: ItemFila) => {
-    if (!item.telefone) return;
-    const texto = textoDo(item);
-    const textoColado = texto.replace(/\n*===\n*/g, "\n\n").trim();
-    // abre ANTES de qualquer espera (o Chrome só deixa abrir logo após o clique); reaproveita a mesma aba
-    window.open(`https://web.whatsapp.com/send?phone=${item.telefone}&text=${encodeURIComponent(textoColado)}`, "inmovya-whatsapp-colar");
-    try {
-      const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
-      await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
-      setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado", colado: true } }));
-      setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; });
-      if (item.passo.anexos?.length) {
-        toast({ title: "Mensagem colada", description: `Os arquivos deste passo (${item.passo.anexos.map((a) => a.name).join(", ")}) não vão ao colar: anexe na conversa.` });
-      }
-      await refreshLeads();
-      if (proximoHoje) setEstado((s) => { const n = { ...s }; delete n[item.lead.id]; return n; });
-    } catch (err: any) {
-      toast({ title: "Erro", description: err?.message, variant: "destructive" });
-    }
-  };
-
-  // Só colar em LOTE (os marcados): sem intervalo. O Scale abre cada conversa na aba do WhatsApp e deixa o texto como rascunho.
+  // Só colar: o Inmovya Scale abre a conversa do lead na aba do WhatsApp (pelo nome; senão pelo número),
+  // ENVIA as mídias do passo e deixa o texto escrito, sem enviar. Você confere e aperta Enter.
+  // O lead avança na esteira como enviado. Sem o Scale 1.5.4: abre pelo link, só com o texto.
   const [colando, setColando] = useState(false);
-  const colarTodos = async () => {
-    const lista = [...selecionados];
+  const colarLista = async (lista: ItemFila[]) => {
+    lista = lista.filter((i) => i.telefone);
     if (!lista.length) return;
+    // libera a leitura dos arquivos do computador (o Chrome pede logo após o clique)
+    const comAnexo = lista.flatMap((i) => i.passo.anexos || []);
+    const unicos = Array.from(new Map(comAnexo.map((a) => [a.local_id || a.path || a.name, a])).values());
+    if (unicos.length) {
+      const faltando = await liberarArquivosLocais(unicos);
+      if (faltando.length) {
+        toast({ title: "Arquivo não encontrado neste computador", description: `${faltando.join(", ")}. Anexe de novo na esteira ou desmarque esses leads.`, variant: "destructive" });
+        return;
+      }
+    }
     const ok = await checarExtensao();
     setExtensaoOk(ok);
-    if (!ok || !extensaoAtualizada("1.5.3")) {
+    if (!ok || !extensaoAtualizada("1.5.4")) {
       toast({
         title: ok ? "Atualize o Inmovya Scale" : "Inmovya Scale não encontrado",
         description: ok
-          ? "Para colar todos de uma vez, atualize para a versão 1.5.3 (chrome://extensions → Recarregar) e recarregue esta página. Enquanto isso, use o Só colar de cada lead."
+          ? "Para colar com as mídias, atualize para a versão 1.5.4 (chrome://extensions → Recarregar) e recarregue esta página e o WhatsApp."
           : "Abra este Inmovya no Chrome onde a extensão está ativa.",
         variant: "destructive",
       });
@@ -482,44 +471,44 @@ export function EsteirasModule() {
     }
     setColando(true);
     setEstado((s) => { const n = { ...s }; lista.forEach((i) => (n[i.lead.id] = { s: "enviando" })); return n; });
+    let colados = 0;
+    const voltam: string[] = [];
     try {
-      const textos = new Map(lista.map((i) => [i.lead.id, textoDo(i)]));
-      const resultados = await colarEmLotePeloScale(
-        lista.map((i) => ({ id: i.lead.id, phone: i.telefone, name: i.lead.nome, text: (textos.get(i.lead.id) || "").replace(/\n*===\n*/g, "\n\n").trim() }))
-      );
-      let colados = 0;
-      const voltam: string[] = [];
       for (const item of lista) {
-        const r = resultados.find((x) => x.id === item.lead.id);
-        if (!r?.ok) {
-          setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: r?.error || "Não colado" } }));
-          continue;
-        }
+        const texto = textoDo(item);
         try {
+          const anexos = item.passo.anexos?.length
+            ? await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, 1, item.lead.observacoes)
+            : [];
+          const [r] = await colarEmLotePeloScale([
+            { id: item.lead.id, phone: item.telefone, name: item.lead.nome, text: texto.replace(/\n*===\n*/g, "\n\n").trim(), attachments: anexos },
+          ]);
+          if (!r?.ok) {
+            setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: r?.error || "Não colado" } }));
+            continue;
+          }
           const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
-          await avancarLead(item.lead, item.esteira, item.passos, item.passo, textos.get(item.lead.id) || "", { proximoHoje });
+          await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
           if (proximoHoje) voltam.push(item.lead.id);
           colados++;
           setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado", colado: true } }));
           setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; });
         } catch (err: any) {
-          setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha ao avançar" } }));
+          setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha" } }));
         }
       }
       await refreshLeads();
       if (voltam.length) setEstado((s) => { const n = { ...s }; voltam.forEach((id) => delete n[id]); return n; });
-      const comArquivo = lista.filter((i) => i.passo.anexos?.length).length;
       toast({
         title: "Mensagens coladas",
-        description: `${colados} de ${lista.length} conversa(s) com o texto pronto no WhatsApp (sem enviar). Abra cada uma e aperte Enter.${comArquivo ? ` ${comArquivo} têm arquivo no passo: anexe na conversa.` : ""}`,
+        description: `${colados} de ${lista.length} conversa(s) com as mídias enviadas e o texto pronto (sem enviar). Abra cada uma e aperte Enter.`,
       });
-    } catch (err: any) {
-      setEstado((s) => { const n = { ...s }; lista.forEach((i) => { if (n[i.lead.id]?.s === "enviando") delete n[i.lead.id]; }); return n; });
-      toast({ title: "Não consegui colar", description: err?.message, variant: "destructive" });
     } finally {
       setColando(false);
     }
   };
+  const colarNaConversa = (item: ItemFila) => colarLista([item]);
+  const colarTodos = () => colarLista([...selecionados]);
 
   const marcarManualEnviado = async (item: ItemFila) => {
     try {
@@ -986,9 +975,9 @@ export function EsteirasModule() {
                   <Button
                     variant="outline"
                     className="h-10 border-blue-300 text-blue-700"
-                    disabled={!selecionados.length || colando}
+                    disabled={!selecionados.length || colando || rodando}
                     onClick={colarTodos}
-                    title="Cola a mensagem (sem enviar) na conversa de cada lead marcado, tudo de uma vez, sem intervalo. Depois você abre cada conversa no WhatsApp e aperta Enter."
+                    title="Para cada lead marcado, sem intervalo: envia as mídias do passo e deixa o texto escrito na conversa (sem enviar). Depois você abre cada conversa e aperta Enter."
                   >
                     {colando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ClipboardPaste className="w-4 h-4 mr-1" />} Só colar todos ({selecionados.length})
                   </Button>
@@ -1225,13 +1214,13 @@ export function EsteirasModule() {
                               </button>
                             )}
                           </div>
-                          {!rodando && st !== "enviado" && item.telefone && (
+                          {!rodando && !colando && st !== "enviado" && item.telefone && (
                             <Button
                               size="sm"
                               variant="ghost"
                               className="shrink-0 h-8 text-xs text-blue-700 hover:text-blue-800"
                               onClick={() => colarNaConversa(item)}
-                              title="Abre a conversa no WhatsApp com a mensagem já escrita, sem enviar. Você confere e aperta Enter."
+                              title="Abre a conversa no WhatsApp, envia as mídias do passo e deixa o texto escrito, sem enviar. Você confere e aperta Enter."
                             >
                               <ClipboardPaste className="w-3.5 h-3.5 mr-1" /> Só colar
                             </Button>

@@ -468,13 +468,13 @@ export const enviarPeloWhatsApp = (
   });
 
 /** Só colar em lote: o Scale abre cada conversa na aba do WhatsApp e cola o texto, sem enviar e sem esperar. */
-export const colarEmLotePeloScale = (items: { id: string; phone: string; name: string; text: string }[]) =>
+export const colarEmLotePeloScale = (items: { id: string; phone: string; name: string; text: string; attachments?: any[] }[]) =>
   new Promise<{ id: string; ok: boolean; error?: string }[]>((resolve, reject) => {
     const token = crypto.randomUUID();
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_PASTE_BATCH_RESULT", onResult as EventListener);
       reject(new Error("Tempo esgotado aguardando o Inmovya Scale."));
-    }, 120000 + items.length * 60000);
+    }, 120000 + items.reduce((t, i) => t + 60000 + (i.attachments?.length || 0) * 90000, 0));
     const onResult = (event: CustomEvent) => {
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);

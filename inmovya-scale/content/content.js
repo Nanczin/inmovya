@@ -79,8 +79,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         };
 
         let aberto = false;
+        if (request.jaAberto) {
+          // aberto pelo link do número: espera a conversa (ou o aviso de número sem WhatsApp)
+          for (let i = 0; i < 80 && !aberto; i++) {
+            if (dom.findMessageInput()) { aberto = true; break; }
+            const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
+              .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp/i.test(el.innerText || ''));
+            if (invalido) throw new Error('Este número não tem WhatsApp.');
+            await dom.delay(500);
+          }
+          if (!aberto) throw new Error('A conversa não abriu pelo número.');
+        }
         // 1) pelo nome (exato)
-        if (contact.name) {
+        if (!aberto && contact.name) {
           const linhas = await buscar(contact.name);
           const alvo = linhas.find(r => scraper.normalizeText(scraper.getContactName(r)) === scraper.normalizeText(contact.name));
           if (alvo) aberto = await abrir(alvo);
@@ -92,10 +103,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (linhas.length) { aberto = await abrir(linhas[0]); if (aberto) break; }
           }
         }
-        try { await scraper.clearContactSearch(); } catch (_) { /* ignore */ }
+        if (!request.jaAberto) { try { await scraper.clearContactSearch(); } catch (_) { /* ignore */ } }
         if (!aberto) { sendResponse({ ok: false, naoAchou: true, error: 'Conversa não encontrada pela busca.' }); return; }
-        const input = await dom.waitForMessageInput(8000);
+        let input = await dom.waitForMessageInput(8000);
         if (!input) throw new Error('A caixa de mensagem não abriu.');
+        // mídias do passo: vão ENVIADAS na hora (o WhatsApp não guarda arquivo como rascunho); o texto fica colado
+        const arquivos = (Array.isArray(item.attachments) ? item.attachments : []).filter(a => a && a.data).map(a => ({
+          id: a.id || window.IS.generateUUID(),
+          name: a.name || 'anexo',
+          type: a.type || 'application/octet-stream',
+          size: a.size || 0,
+          data: a.data,
+          caption: '',
+          messageIndex: 0,
+          useCaption: false
+        }));
+        if (arquivos.length) {
+          dom.ultimoErro = '';
+          const enviados = await dom.insertSequenceAndAttachments('', arquivos, { sendSingleText: true });
+          if (!enviados) throw new Error(dom.ultimoErro || 'Os arquivos não foram enviados.');
+          // espera terminar de subir antes de colar o texto
+          const pendentes = () => document.querySelectorAll('#main [data-icon="msg-time"], #main [data-icon="media-cancel"], #main [data-icon="msg-time-light"]').length;
+          const limite = Date.now() + 120000;
+          let livres = 0;
+          while (Date.now() < limite && livres < 3) { await dom.delay(700); livres = pendentes() ? 0 : livres + 1; }
+          input = await dom.waitForMessageInput(8000);
+          if (!input) throw new Error('Arquivos enviados, mas a caixa de mensagem não voltou.');
+        }
         const ok = await dom.insertMessage(String(item.text || ''));
         if (!ok) throw new Error('O WhatsApp não aceitou o texto.');
         await dom.delay(500);
@@ -103,23 +137,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }
-    })();
-    return true;
-  }
-
-  // Depois de abrir pelo link (send?phone=...&text=...): espera a conversa abrir com o texto já escrito
-  if (request.action === 'paste_wait_prefill') {
-    (async () => {
-      const dom = window.IS.WhatsAppDOM;
-      for (let i = 0; i < 80; i++) {
-        const input = dom.findMessageInput();
-        if (input && (input.innerText || input.textContent || '').trim()) { sendResponse({ ok: true }); return; }
-        const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
-          .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp/i.test(el.innerText || ''));
-        if (invalido) { sendResponse({ ok: false, error: 'Este número não tem WhatsApp.' }); return; }
-        await dom.delay(500);
-      }
-      sendResponse({ ok: false, error: 'A conversa não abriu com o texto.' });
     })();
     return true;
   }
