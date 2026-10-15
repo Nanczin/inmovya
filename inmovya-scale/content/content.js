@@ -33,6 +33,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; 
   }
 
+  // Só colar em lote (esteiras do Inmovya): abre cada conversa NESTA aba, cola o texto sem enviar e passa para a próxima.
+  // O WhatsApp guarda o texto como rascunho em cada conversa; você confere e aperta Enter.
+  if (request.action === 'paste_batch_tab') {
+    (async () => {
+      try {
+        const dom = window.IS.WhatsAppDOM;
+        const scraper = window.IS.Scraper;
+        for (let i = 0; i < 120 && !document.querySelector('#pane-side'); i++) await dom.delay(500);
+        if (!document.querySelector('#pane-side')) throw new Error('O WhatsApp Web não carregou.');
+        const results = [];
+        for (const item of request.items || []) {
+          try {
+            let digits = String(item.phone || '').replace(/\D/g, '');
+            const contact = { name: String(item.name || ''), chatId: digits };
+            const atual = () => scraper.isCurrentContact(contact);
+            let aberto = atual() || await scraper.openContactBySearch(contact);
+            for (let k = 0; k < 15 && !atual(); k++) await dom.delay(200);
+            if (!aberto || !atual()) throw new Error('Conversa não encontrada no WhatsApp (use o botão Só colar deste lead).');
+            const input = await dom.waitForMessageInput(8000);
+            if (!input) throw new Error('A caixa de mensagem não abriu.');
+            const ok = await dom.insertMessage(String(item.text || ''));
+            if (!ok) throw new Error('O WhatsApp não aceitou o texto.');
+            await dom.delay(400);
+            results.push({ id: item.id, ok: true });
+          } catch (error) {
+            results.push({ id: item.id, ok: false, error: error.message });
+          }
+        }
+        try { await scraper.clearContactSearch(); } catch (_) { /* ignore */ }
+        sendResponse({ ok: true, results });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   if (request.action === 'campaign_auto_send') {
     (async () => {
       try {

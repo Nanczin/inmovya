@@ -45,6 +45,7 @@ import {
   setIntervaloMensagens,
   colocarNaEsteira,
   enviarPeloWhatsApp,
+  colarEmLotePeloScale,
   executarImportacao,
   getMeuNome,
   getSegundoPlano,
@@ -459,6 +460,64 @@ export function EsteirasModule() {
       if (proximoHoje) setEstado((s) => { const n = { ...s }; delete n[item.lead.id]; return n; });
     } catch (err: any) {
       toast({ title: "Erro", description: err?.message, variant: "destructive" });
+    }
+  };
+
+  // Só colar em LOTE (os marcados): sem intervalo. O Scale abre cada conversa na aba do WhatsApp e deixa o texto como rascunho.
+  const [colando, setColando] = useState(false);
+  const colarTodos = async () => {
+    const lista = [...selecionados];
+    if (!lista.length) return;
+    const ok = await checarExtensao();
+    setExtensaoOk(ok);
+    if (!ok || !extensaoAtualizada("1.5.1")) {
+      toast({
+        title: ok ? "Atualize o Inmovya Scale" : "Inmovya Scale não encontrado",
+        description: ok
+          ? "Para colar todos de uma vez, atualize para a versão 1.5.1 (chrome://extensions → Recarregar) e recarregue esta página. Enquanto isso, use o Só colar de cada lead."
+          : "Abra este Inmovya no Chrome onde a extensão está ativa.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setColando(true);
+    setEstado((s) => { const n = { ...s }; lista.forEach((i) => (n[i.lead.id] = { s: "enviando" })); return n; });
+    try {
+      const textos = new Map(lista.map((i) => [i.lead.id, textoDo(i)]));
+      const resultados = await colarEmLotePeloScale(
+        lista.map((i) => ({ id: i.lead.id, phone: i.telefone, name: i.lead.nome, text: (textos.get(i.lead.id) || "").replace(/\n*===\n*/g, "\n\n").trim() }))
+      );
+      let colados = 0;
+      const voltam: string[] = [];
+      for (const item of lista) {
+        const r = resultados.find((x) => x.id === item.lead.id);
+        if (!r?.ok) {
+          setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: r?.error || "Não colado" } }));
+          continue;
+        }
+        try {
+          const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
+          await avancarLead(item.lead, item.esteira, item.passos, item.passo, textos.get(item.lead.id) || "", { proximoHoje });
+          if (proximoHoje) voltam.push(item.lead.id);
+          colados++;
+          setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado", colado: true } }));
+          setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; });
+        } catch (err: any) {
+          setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha ao avançar" } }));
+        }
+      }
+      await refreshLeads();
+      if (voltam.length) setEstado((s) => { const n = { ...s }; voltam.forEach((id) => delete n[id]); return n; });
+      const comArquivo = lista.filter((i) => i.passo.anexos?.length).length;
+      toast({
+        title: "Mensagens coladas",
+        description: `${colados} de ${lista.length} conversa(s) com o texto pronto no WhatsApp (sem enviar). Abra cada uma e aperte Enter.${comArquivo ? ` ${comArquivo} têm arquivo no passo: anexe na conversa.` : ""}`,
+      });
+    } catch (err: any) {
+      setEstado((s) => { const n = { ...s }; lista.forEach((i) => { if (n[i.lead.id]?.s === "enviando") delete n[i.lead.id]; }); return n; });
+      toast({ title: "Não consegui colar", description: err?.message, variant: "destructive" });
+    } finally {
+      setColando(false);
     }
   };
 
@@ -924,6 +983,15 @@ export function EsteirasModule() {
                       <Clock className="w-4 h-4 mr-1" /> 2ª rodada hoje ({segundaRodada.length})
                     </Button>
                   )}
+                  <Button
+                    variant="outline"
+                    className="h-10 border-blue-300 text-blue-700"
+                    disabled={!selecionados.length || colando}
+                    onClick={colarTodos}
+                    title="Cola a mensagem (sem enviar) na conversa de cada lead marcado, tudo de uma vez, sem intervalo. Depois você abre cada conversa no WhatsApp e aperta Enter."
+                  >
+                    {colando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ClipboardPaste className="w-4 h-4 mr-1" />} Só colar todos ({selecionados.length})
+                  </Button>
                   <Button className="h-10 bg-green-600 hover:bg-green-700 text-white" disabled={!selecionados.length} onClick={rodar}>
                     <Play className="w-4 h-4 mr-1" /> Rodar envio ({selecionados.length})
                   </Button>

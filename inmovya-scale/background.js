@@ -114,6 +114,32 @@ async function sendCampaignMessage(request, returnTabId = null) {
   }
 }
 
+// ---------- Só colar em lote: usa a aba do WhatsApp que já está aberta (ou abre uma) ----------
+async function colarEmLote(request) {
+  const items = Array.isArray(request.items) ? request.items : [];
+  if (!items.length) return { results: [] };
+  let [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+  if (!tab) {
+    tab = await chrome.tabs.create({ url: 'https://web.whatsapp.com/', active: true });
+    await waitForTabComplete(tab.id, 60000);
+  }
+  await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+  if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  let lastError;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, { action: 'paste_batch_tab', items });
+      if (response?.ok) return { results: response.results || [] };
+      lastError = new Error(response?.error || 'Não consegui colar as mensagens.');
+      break;
+    } catch (error) {
+      lastError = error; // o WhatsApp ainda está carregando
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+  throw lastError || new Error('Não consegui colar as mensagens.');
+}
+
 // ---------- Agente da esteira: ler a conversa e trocar etiquetas de um contato ----------
 // Abre a conversa (na janelinha do canto quando background=true), executa a ação no WhatsApp e fecha.
 async function agenteNaConversa(request, acaoConteudo, returnTabId = null) {
@@ -331,6 +357,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request?.action === 'campaign_send') {
     sendCampaignMessage(request, sender.tab?.id || null)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (request?.action === 'paste_batch') {
+    colarEmLote(request)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
