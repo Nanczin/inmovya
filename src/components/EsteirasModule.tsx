@@ -96,6 +96,7 @@ import {
   ExternalLink,
   Clock,
   Workflow,
+  ClipboardPaste,
 } from "lucide-react";
 
 type LeadEsteira = Lead & {
@@ -436,6 +437,29 @@ export function EsteirasModule() {
       });
     }
     toast({ title: "Esteira de hoje", description: `${enviados} mensagem(ns) enviada(s).` });
+  };
+
+  // Só colar: abre a conversa do lead no WhatsApp Web com a mensagem já escrita (sem enviar).
+  // Você confere/ajusta e aperta Enter. O lead avança na esteira como enviado.
+  const colarNaConversa = async (item: ItemFila) => {
+    if (!item.telefone) return;
+    const texto = textoDo(item);
+    const textoColado = texto.replace(/\n*===\n*/g, "\n\n").trim();
+    // abre ANTES de qualquer espera (o Chrome só deixa abrir logo após o clique); reaproveita a mesma aba
+    window.open(`https://web.whatsapp.com/send?phone=${item.telefone}&text=${encodeURIComponent(textoColado)}`, "inmovya-whatsapp-colar");
+    try {
+      const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
+      await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
+      setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado", colado: true } }));
+      setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; });
+      if (item.passo.anexos?.length) {
+        toast({ title: "Mensagem colada", description: `Os arquivos deste passo (${item.passo.anexos.map((a) => a.name).join(", ")}) não vão ao colar: anexe na conversa.` });
+      }
+      await refreshLeads();
+      if (proximoHoje) setEstado((s) => { const n = { ...s }; delete n[item.lead.id]; return n; });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err?.message, variant: "destructive" });
+    }
   };
 
   const marcarManualEnviado = async (item: ItemFila) => {
@@ -1071,7 +1095,10 @@ export function EsteirasModule() {
                                 {item.esteira.nome} · {item.passo.titulo || `Passo ${item.passo.ordem + 1}`} ({item.passos.indexOf(item.passo) + 1}/{item.passos.length})
                               </span>
                               {st === "enviando" && <Loader2 className="w-4 h-4 animate-spin text-blue-600" />}
-                              {st === "enviado" && <CheckCircle2 className="w-4 h-4 text-green-600" />}
+                              {st === "enviado" && !estado[item.lead.id]?.colado && <CheckCircle2 className="w-4 h-4 text-green-600" />}
+                              {st === "enviado" && estado[item.lead.id]?.colado && (
+                                <span className="text-[11px] rounded bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5">colado na conversa</span>
+                              )}
                               {st === "erro" && (
                                 <span className="text-xs text-red-600 flex items-center gap-1">
                                   <AlertTriangle className="w-3.5 h-3.5" /> {estado[item.lead.id]?.erro}
@@ -1130,6 +1157,17 @@ export function EsteirasModule() {
                               </button>
                             )}
                           </div>
+                          {!rodando && st !== "enviado" && item.telefone && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="shrink-0 h-8 text-xs text-blue-700 hover:text-blue-800"
+                              onClick={() => colarNaConversa(item)}
+                              title="Abre a conversa no WhatsApp com a mensagem já escrita, sem enviar. Você confere e aperta Enter."
+                            >
+                              <ClipboardPaste className="w-3.5 h-3.5 mr-1" /> Só colar
+                            </Button>
+                          )}
                           {!rodando && st !== "enviado" && (
                             <Button size="sm" variant="ghost" className="shrink-0 h-8 text-xs" onClick={() => pularHoje(item)} title="Adiar para amanhã">
                               <Clock className="w-3.5 h-3.5 mr-1" /> Amanhã
