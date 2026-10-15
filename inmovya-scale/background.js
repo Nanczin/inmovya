@@ -126,18 +126,26 @@ async function colarEmLote(request) {
   await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
   if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
   let lastError;
-  for (let attempt = 0; attempt < 20; attempt++) {
+  let recarregou = false;
+  for (let attempt = 0; attempt < 40; attempt++) {
     try {
       const response = await chrome.tabs.sendMessage(tab.id, { action: 'paste_batch_tab', items });
       if (response?.ok) return { results: response.results || [] };
-      lastError = new Error(response?.error || 'Não consegui colar as mensagens.');
-      break;
+      throw Object.assign(new Error(response?.error || 'Não consegui colar as mensagens.'), { final: true });
     } catch (error) {
-      lastError = error; // o WhatsApp ainda está carregando
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (error.final) throw error;
+      lastError = error;
+      // a aba do WhatsApp foi aberta antes de a extensão ser atualizada/recarregada: recarrega a aba uma vez
+      if (!recarregou && /Receiving end does not exist|Could not establish connection/i.test(error.message || '')) {
+        recarregou = true;
+        await chrome.tabs.reload(tab.id).catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await waitForTabComplete(tab.id, 60000).catch(() => {});
+      }
+      await new Promise(resolve => setTimeout(resolve, 1500)); // o WhatsApp ainda está carregando
     }
   }
-  throw lastError || new Error('Não consegui colar as mensagens.');
+  throw new Error('O WhatsApp Web não respondeu. Recarregue a aba do WhatsApp (F5) e tente de novo.' + (lastError ? ` (${lastError.message})` : ''));
 }
 
 // ---------- Agente da esteira: ler a conversa e trocar etiquetas de um contato ----------
