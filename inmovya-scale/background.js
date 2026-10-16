@@ -430,6 +430,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
+  if (request?.action === 'agent_save_and_label') {
+    naVezWA(() => agenteNaConversa(request, 'agent_save_and_label_tab', sender.tab?.id || null))
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (request?.action === 'agent_read_chat' || request?.action === 'agent_set_labels') {
     naVezWA(() => agenteNaConversa(request, request.action === 'agent_read_chat' ? 'agent_read_chat_tab' : 'agent_set_labels_tab', sender.tab?.id || null))
       .then(result => sendResponse({ ok: true, ...result }))

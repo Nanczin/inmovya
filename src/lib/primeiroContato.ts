@@ -26,7 +26,7 @@ import {
 } from "@/lib/esteiras";
 import { lerChaveGemini, perguntarGemini } from "@/lib/iaGratis";
 
-export const VERSAO_SCALE_AGENTE = "1.6.0";
+export const VERSAO_SCALE_AGENTE = "1.6.1"; // 1.6.1: salva o contato e marca a etiqueta da origem
 
 // ---------- Configuração (no banco: a extensão lê de lá) ----------
 export interface ConfigPrimeiroContato {
@@ -337,6 +337,24 @@ const lerConversaAgora = (phone: string) =>
     window.dispatchEvent(new CustomEvent("INMOVYA_AGENT", { detail: { op: "read", phone, background: true, token } }));
   });
 
+/** Salva o contato com o nome e marca a etiqueta (o mesmo que a extensão faz depois do 1º contato). */
+const salvarEEtiquetarAgora = (phone: string, nome: string, etiqueta: string) =>
+  new Promise<any>((resolve, reject) => {
+    const token = crypto.randomUUID();
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("INMOVYA_AGENT_RESULT", onResult as EventListener);
+      reject(new Error("O Inmovya Scale não respondeu."));
+    }, 540000);
+    const onResult = (event: CustomEvent) => {
+      if (event.detail?.token !== token) return;
+      window.clearTimeout(timeout);
+      window.removeEventListener("INMOVYA_AGENT_RESULT", onResult as EventListener);
+      event.detail?.ok ? resolve(event.detail) : reject(new Error(event.detail?.error || "falhou"));
+    };
+    window.addEventListener("INMOVYA_AGENT_RESULT", onResult as EventListener);
+    window.dispatchEvent(new CustomEvent("INMOVYA_AGENT", { detail: { op: "save_label", phone, nome, etiqueta, background: true, token } }));
+  });
+
 const ESPERA_ENVIO_MS = 10 * 60_000;
 
 async function enviarComSegundaTentativa(tel: string, texto: string, avisar: (s: string) => void) {
@@ -362,7 +380,12 @@ export interface PassoTeste {
 }
 
 /** Faz o caminho completo do 1º contato para um número (ler conversa → IA → enviar), mostrando cada passo. */
-export async function testarEnvio(telefone: string, cfg: ConfigPrimeiroContato, onPasso: (passos: PassoTeste[]) => void) {
+export async function testarEnvio(
+  telefone: string,
+  cfg: ConfigPrimeiroContato,
+  onPasso: (passos: PassoTeste[]) => void,
+  contato?: { nome: string; etiqueta: string } // opcional: testa também salvar o contato e marcar a etiqueta
+) {
   const passos: PassoTeste[] = [];
   const marcarPasso = (passo: string, ok: boolean | null, detalhe?: string) => {
     const i = passos.findIndex((p) => p.passo === passo);
@@ -400,7 +423,25 @@ export async function testarEnvio(telefone: string, cfg: ConfigPrimeiroContato, 
       const como = await enviarComSegundaTentativa(tel, msg.texto, (aviso) => marcarPasso("Enviar no WhatsApp", null, aviso));
       marcarPasso("Enviar no WhatsApp", true, `enviado (${como})`);
     } catch (e: any) {
-      marcarPasso("Enviar no WhatsApp", false, e?.message || "falhou");
+      return marcarPasso("Enviar no WhatsApp", false, e?.message || "falhou");
+    }
+
+    if (!contato?.nome.trim()) return;
+    marcarPasso("Salvar contato e etiqueta", null, "abrindo a conversa...");
+    try {
+      const r = await salvarEEtiquetarAgora(tel, contato.nome.trim(), contato.etiqueta);
+      const naoExiste = (r?.etiqueta?.alteracoes || []).find((a: string) => /não existe/.test(a));
+      const etiquetaOk = !naoExiste && r?.etiqueta?.ok !== false;
+      marcarPasso(
+        "Salvar contato e etiqueta",
+        !!r?.contato?.salvo && etiquetaOk,
+        [
+          `contato: ${r?.contato?.motivo || (r?.contato?.salvo ? "salvo" : "não salvo")}`,
+          `etiqueta ${contato.etiqueta}: ${naoExiste ? "não existe no seu WhatsApp Business" : etiquetaOk ? "marcada" : r?.etiqueta?.error || "não marcada"}`,
+        ].join(" · ")
+      );
+    } catch (e: any) {
+      marcarPasso("Salvar contato e etiqueta", false, e?.message || "falhou");
     }
   });
 }

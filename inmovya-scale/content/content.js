@@ -295,6 +295,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // 1º contato automático: salva o contato com o nome do lead (se ainda não estiver salvo) e marca a etiqueta da origem.
+  if (request.action === 'agent_save_and_label_tab') {
+    (async () => {
+      try {
+        const dom = window.IS.WhatsAppDOM;
+        const input = await dom.waitForMessageInput(30000);
+        if (!input) throw new Error('A conversa do WhatsApp não abriu.');
+        await dom.delay(1500);
+        const contato = request.nome ? await agenteSalvarContato(request.nome) : { salvo: false, motivo: 'sem nome' };
+        await dom.delay(800);
+        const etiqueta = request.etiqueta ? await agenteTrocarEtiquetas([request.etiqueta], []) : { ok: true, alteracoes: [] };
+        sendResponse({ ok: true, final: true, contato, etiqueta });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   // Lote do agente: numa única janela do WhatsApp, procura cada contato pela busca (sem recarregar).
   //  op "scan":   lê na lista de conversas se a última mensagem é sua (tique) ou do lead, e o texto dela
   //  op "labels": abre a conversa e troca as etiquetas
@@ -351,6 +370,104 @@ async function agenteTrocarEtiquetas(add = [], remove = []) {
   botao.click(); // fecha a lista
   await agenteDelay(300);
   return { ok: true, alteracoes: feitas, etiquetas: final };
+}
+
+// ---------- 1º contato: salvar o contato no WhatsApp ----------
+// O WhatsApp Web muda os botões com frequência: procura pelo texto/rótulo (português e inglês).
+const agenteVisivel = el => !!el && el.offsetParent !== null && el.getBoundingClientRect().width > 0;
+const agenteRotulo = el => `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.innerText || ''}`.replace(/\s+/g, ' ').trim();
+
+function agenteAcharBotao(regex, raiz = document) {
+  const alvos = Array.from(raiz.querySelectorAll('button, [role="button"], [role="menuitem"], li[tabindex], div[tabindex]'));
+  return alvos.find(el => agenteVisivel(el) && el.closest('#inmovya-scale-root') === null && regex.test(agenteRotulo(el)) && agenteRotulo(el).length < 60) || null;
+}
+
+async function agenteEsperarBotao(regex, ms = 4000, raiz = document) {
+  const fim = Date.now() + ms;
+  while (Date.now() < fim) {
+    const b = agenteAcharBotao(regex, raiz);
+    if (b) return b;
+    await agenteDelay(250);
+  }
+  return null;
+}
+
+function agenteTituloConversa() {
+  const h = document.querySelector('#main [data-testid="conversation-info-header-chat-title"]') || document.querySelector('#main header span[dir="auto"]');
+  return (h?.innerText || h?.getAttribute('title') || '').replace(/[‪-‮]/g, '').trim();
+}
+
+function agentePreencher(campo, valor) {
+  campo.focus();
+  if (campo.isContentEditable) {
+    document.execCommand('selectAll', false);
+    document.execCommand('insertText', false, valor);
+    return;
+  }
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  setter ? setter.call(campo, valor) : (campo.value = valor);
+  campo.dispatchEvent(new Event('input', { bubbles: true }));
+  campo.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+async function agenteSalvarContato(nomeCompleto) {
+  const nome = String(nomeCompleto || '').replace(/\s+/g, ' ').trim();
+  if (!nome) return { salvo: false, motivo: 'lead sem nome' };
+  // cabeçalho com letras = já é um contato salvo
+  const titulo = agenteTituloConversa();
+  // (o "~Nome" do perfil, que aparece em número não salvo, não conta)
+  if (/[a-zà-ÿ]/i.test(titulo) && !titulo.startsWith('~')) return { salvo: true, jaEstava: true, motivo: `já salvo como "${titulo}"` };
+
+  const ADICIONAR = /^(adicionar( aos?)? contatos?|adicionar contato|novo contato|salvar contato|add( to)? contacts?|add contact|new contact|save contact)$/i;
+  // 1) botão na própria conversa (aviso de número desconhecido) ou no menu ⋮ do cabeçalho
+  let botao = agenteAcharBotao(ADICIONAR, document.querySelector('#main') || document);
+  if (!botao) {
+    const menu = document.querySelector('#main header [data-icon="menu"], #main header [data-icon="kebab-menu"]')?.closest('button, [role="button"]')
+      || Array.from(document.querySelectorAll('#main header button, #main header [role="button"]')).find(b => /mais op|menu|more options/i.test(agenteRotulo(b)));
+    if (menu) {
+      menu.click();
+      botao = await agenteEsperarBotao(ADICIONAR, 2500);
+      if (!botao) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }
+  }
+  // 2) dados do contato (clicar no cabeçalho)
+  if (!botao) {
+    const cabecalho = document.querySelector('#main header [data-testid="conversation-info-header"], #main header [role="button"]') || document.querySelector('#main header');
+    cabecalho?.click();
+    botao = await agenteEsperarBotao(ADICIONAR, 4000);
+  }
+  if (!botao) return { salvo: false, motivo: 'não achei o botão "Adicionar contato" no WhatsApp Web' };
+  botao.click();
+  await agenteDelay(1200);
+
+  // formulário: Nome / Sobrenome (às vezes um campo só)
+  const campos = Array.from(document.querySelectorAll('input[type="text"], input:not([type]), [contenteditable="true"][role="textbox"]'))
+    .filter(c => agenteVisivel(c) && !c.closest('#main footer') && !c.closest('#side') && !c.closest('#inmovya-scale-root'));
+  const rotuloCampo = c => `${c.getAttribute('aria-label') || ''} ${c.getAttribute('placeholder') || ''} ${c.closest('label')?.innerText || ''}`.toLowerCase();
+  const campoNome = campos.find(c => /nome|first|name/.test(rotuloCampo(c)) && !/sobrenome|last|telefone|phone/.test(rotuloCampo(c))) || campos[0];
+  const campoSobrenome = campos.find(c => /sobrenome|last/.test(rotuloCampo(c)));
+  if (!campoNome) return { salvo: false, motivo: 'o formulário de contato não abriu' };
+  const partes = nome.split(' ');
+  if (campoSobrenome && partes.length > 1) {
+    agentePreencher(campoNome, partes[0]);
+    await agenteDelay(300);
+    agentePreencher(campoSobrenome, partes.slice(1).join(' '));
+  } else {
+    agentePreencher(campoNome, nome);
+  }
+  await agenteDelay(600);
+  const salvar = await agenteEsperarBotao(/^(salvar|save|concluir|done|ok)$/i, 3000);
+  if (!salvar) return { salvo: false, motivo: 'não achei o botão Salvar do contato' };
+  salvar.click();
+  await agenteDelay(2500);
+  // fecha painéis abertos e confere o nome no cabeçalho
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await agenteDelay(800);
+  const depois = agenteTituloConversa();
+  const primeiro = agenteNorm(partes[0]);
+  return agenteNorm(depois).includes(primeiro)
+    ? { salvo: true, motivo: `salvo como "${depois}"` }
+    : { salvo: false, motivo: 'cliquei em Salvar, mas o nome não apareceu no cabeçalho — confira no celular' };
 }
 
 const agenteLinhasVisiveis = () => Array.from(document.querySelectorAll('[role="row"]'))

@@ -52,6 +52,8 @@ export function PrimeiroContatoPainel() {
   const [telTeste, setTelTeste] = useState("");
   const [testandoEnvio, setTestandoEnvio] = useState(false);
   const [passosTeste, setPassosTeste] = useState<PassoTeste[]>([]);
+  const [nomeTeste, setNomeTeste] = useState("");
+  const [etiquetaTeste, setEtiquetaTeste] = useState("Meta Ads");
 
   const recarregar = useCallback(async () => {
     try {
@@ -185,6 +187,10 @@ export function PrimeiroContatoPainel() {
             Quem envia é o <b>Inmovya Scale</b>: funciona com o Inmovya <b>fechado</b>. Precisa só do Chrome aberto (pode ficar minimizado), do WhatsApp
             Web conectado e do computador sem entrar em suspensão. Com o computador desligado, os leads esperam e são atendidos quando ele voltar
             (até 3 dias).
+          </div>
+          <div>
+            Depois de enviar, <b>salva o contato</b> no WhatsApp com o nome do lead e marca a <b>etiqueta da origem</b>: Bitrix → “Bitrix”, Meta Ads →
+            “Meta Ads” (as etiquetas precisam existir no seu WhatsApp Business). No Inmovya o lead já fica com a tag da mesma origem.
           </div>
           <div>
             Nunca manda duas vezes: o banco reserva cada lead para um envio só, confere se o mesmo número já recebeu e, antes de enviar, a extensão lê a
@@ -350,6 +356,22 @@ export function PrimeiroContatoPainel() {
         </p>
         <div className="flex flex-col sm:flex-row gap-2">
           <Input value={telTeste} placeholder="Seu WhatsApp com DDD, ex.: 11 99999-9999" onChange={(e) => setTelTeste(e.target.value)} className="sm:w-72" />
+          <Input
+            value={nomeTeste}
+            placeholder="Nome p/ salvar o contato (opcional)"
+            onChange={(e) => setNomeTeste(e.target.value)}
+            className="sm:w-60"
+            title="Se preencher, o teste também salva o contato com esse nome e marca a etiqueta escolhida"
+          />
+          <select
+            className="h-10 rounded-md border bg-background px-2 text-sm"
+            value={etiquetaTeste}
+            onChange={(e) => setEtiquetaTeste(e.target.value)}
+            disabled={!nomeTeste.trim()}
+          >
+            <option value="Meta Ads">etiqueta Meta Ads</option>
+            <option value="Bitrix">etiqueta Bitrix</option>
+          </select>
           <Button
             variant="outline"
             disabled={testandoEnvio || !telTeste.trim()}
@@ -357,7 +379,7 @@ export function PrimeiroContatoPainel() {
               setTestandoEnvio(true);
               setPassosTeste([]);
               try {
-                await testarEnvio(telTeste, cfg, setPassosTeste);
+                await testarEnvio(telTeste, cfg, setPassosTeste, nomeTeste.trim() ? { nome: nomeTeste, etiqueta: etiquetaTeste } : undefined);
               } finally {
                 setTestandoEnvio(false);
               }

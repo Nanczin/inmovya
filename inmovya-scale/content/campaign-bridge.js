@@ -41,7 +41,8 @@
   // Agente da esteira: ler conversa / trocar etiquetas de um contato
   window.addEventListener('INMOVYA_AGENT', event => {
     const detail = event.detail || {};
-    chrome.runtime.sendMessage({ ...detail, action: detail.op === 'batch' ? 'agent_batch' : detail.op === 'labels' ? 'agent_set_labels' : 'agent_read_chat' }, response => {
+    const action = detail.op === 'batch' ? 'agent_batch' : detail.op === 'labels' ? 'agent_set_labels' : detail.op === 'save_label' ? 'agent_save_and_label' : 'agent_read_chat';
+    chrome.runtime.sendMessage({ ...detail, action }, response => {
       const error = chrome.runtime.lastError?.message;
       window.dispatchEvent(new CustomEvent('INMOVYA_AGENT_RESULT', {
         detail: { ...(response || {}), token: detail.token, ok: !!response?.ok && !error, error: error || response?.error || '' }

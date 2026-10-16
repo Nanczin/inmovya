@@ -195,6 +195,33 @@ function agenteTelefone(t) {
   return d;
 }
 
+// ---------- Depois do envio: salvar o contato e marcar a etiqueta da origem ----------
+// Bitrix (tag Bitrix ou origem roleta) → etiqueta "Bitrix"; Meta Ads → etiqueta "Meta Ads".
+// No Inmovya o lead já tem a tag da origem (a captura automática põe), que é de onde sai a etiqueta.
+function agenteEtiquetaDaOrigem(lead) {
+  const tags = (lead.tags || []).map(t => String(t).toLowerCase());
+  const origem = String(lead.origem || '').toLowerCase();
+  if (tags.includes('bitrix') || tags.includes('roleta') || origem === 'roleta') return 'Bitrix';
+  if (tags.includes('meta ads') || origem === 'facebook' || origem === 'instagram') return 'Meta Ads';
+  return null;
+}
+
+/** Devolve um aviso para a tela do Inmovya quando algo não deu certo (ou null). Nunca desfaz o envio. */
+async function agenteSalvarEEtiquetar(tel, lead) {
+  const etiqueta = agenteEtiquetaDaOrigem(lead);
+  try {
+    const r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: lead.nome || '', etiqueta }, 'agent_save_and_label_tab'));
+    const problemas = [];
+    if (r?.contato && !r.contato.salvo) problemas.push(`contato de ${lead.nome || tel} não foi salvo (${r.contato.motivo})`);
+    const naoExiste = (r?.etiqueta?.alteracoes || []).find(a => /não existe/.test(a));
+    if (etiqueta && naoExiste) problemas.push(`a etiqueta "${etiqueta}" não existe no seu WhatsApp Business — crie para o agente marcar`);
+    else if (etiqueta && r?.etiqueta && r.etiqueta.ok === false) problemas.push(`não consegui marcar a etiqueta ${etiqueta} (${r.etiqueta.error || 'erro'})`);
+    return problemas.length ? `1º contato enviado, mas: ${problemas.join('; ')}.` : null;
+  } catch (err) {
+    return `1º contato enviado, mas não consegui salvar o contato/etiqueta de ${lead.nome || tel}: ${err.message}`;
+  }
+}
+
 // ---------- Rodada (1 lead por minuto) ----------
 let agenteEmCurso = false;
 async function agenteRodada() {
@@ -263,8 +290,10 @@ async function agenteAtender(cred, cfg, lead) {
     });
     if (feito.pulou) { await resultado('pulado', { erro: feito.pulou }); return 'pulado'; }
     const via = feito.msg.aviso ? `${feito.msg.via} (${feito.msg.aviso})` : feito.msg.via;
+    // grava o envio JÁ (é o que impede mandar de novo); salvar contato e etiqueta vêm depois
     await resultado('enviado', { msg: feito.msg.texto, via });
-    await agenteAviso(cred, null);
+    const aviso = await agenteSalvarEEtiquetar(tel, lead);
+    await agenteAviso(cred, aviso);
     return 'enviado';
   } catch (err) {
     const erro = err?.message || 'falha no envio';
