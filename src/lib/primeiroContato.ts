@@ -84,7 +84,7 @@ export const setConfigPrimeiroContato = (c: ConfigPrimeiroContato) => {
 };
 
 // ---------- Estado (para a tela) ----------
-export type StatusContato = "enviando" | "enviado" | "pulado" | "erro";
+export type StatusContato = "enviando" | "enviado" | "pulado" | "erro" | "ignorado";
 export interface RegistroContato {
   leadId: string;
   nome: string;
@@ -386,6 +386,7 @@ async function atenderLead(lead: LeadContato, userId: string, cfg: ConfigPrimeir
 // ---------- Rodada: procura leads novos e atende um por vez ----------
 let rodando = false;
 let ultimoEnvio = 0;
+const avisadosForaDaRegra = new Set<string>();
 let timer: number | undefined;
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -464,7 +465,22 @@ async function rodada(cfg: ConfigPrimeiroContato) {
   }
   mudar({ aviso: "" });
 
-  const fila = ((data || []) as LeadContato[]).filter((l) => precisaAtender(l) && (cfg.quais === "todos" || ehLeadDaCaptura(l)));
+  const pendentes = ((data || []) as LeadContato[]).filter(precisaAtender);
+  // fora da regra "Quais leads": não envia, mas mostra no histórico (uma vez por lead) para não parecer travado
+  for (const l of pendentes) {
+    if (cfg.quais === "todos" || ehLeadDaCaptura(l) || avisadosForaDaRegra.has(l.id)) continue;
+    if (estado.log.some((x) => x.leadId === l.id && x.status === "ignorado")) continue; // já avisado antes de recarregar a página
+    avisadosForaDaRegra.add(l.id);
+    registrar({
+      leadId: l.id,
+      nome: l.nome || "Lead sem nome",
+      telefone: l.telefone || "",
+      status: "ignorado",
+      detalhe: 'não veio da captura automática (ex.: cadastrado à mão). Para atender também esses, marque "Todos os leads novos".',
+      em: new Date().toISOString(),
+    });
+  }
+  const fila = pendentes.filter((l) => cfg.quais === "todos" || ehLeadDaCaptura(l));
   for (const lead of fila) {
     if (!getConfigPrimeiroContato().ativo) break; // desligaram no meio
     // intervalo entre um 1º contato e outro
