@@ -311,6 +311,23 @@ async function numeroJaContatado(lead: LeadContato, userId: string) {
   return (data || []).find((l: any) => ultimos8(l.telefone) === k) || null;
 }
 
+/** Se o gatilho do Negócios pôs o lead numa esteira no D1 (envio hoje), passa o D1 para amanhã. Devolve o nome da esteira. */
+async function adiarD1ParaAmanha(leadId: string): Promise<string | null> {
+  const { data: l } = await supabase.from("leads").select("esteira_id, esteira_passo").eq("id", leadId).maybeSingle();
+  if (!(l as any)?.esteira_id || ((l as any).esteira_passo || 0) !== 0) return null;
+  const amanha = new Date();
+  amanha.setDate(amanha.getDate() + 1);
+  amanha.setHours(0, 0, 0, 0);
+  // só muda a data: o gatilho não mexe quando a etapa não muda
+  const { error } = await supabase.from("leads").update({ esteira_proximo: amanha.toISOString() } as any).eq("id", leadId);
+  if (error) {
+    console.error("1º contato: não consegui adiar o D1 da esteira", error);
+    return null;
+  }
+  const { data: e } = await supabase.from("esteiras").select("nome").eq("id", (l as any).esteira_id).maybeSingle();
+  return (e as any)?.nome || "da coluna";
+}
+
 // ---------- Atender um lead ----------
 async function atenderLead(lead: LeadContato, userId: string, cfg: ConfigPrimeiroContato): Promise<"enviado" | "pulado" | "erro" | "ignorado"> {
   const nome = lead.nome || "Lead sem nome";
@@ -369,17 +386,27 @@ async function atenderLead(lead: LeadContato, userId: string, cfg: ConfigPrimeir
       tags,
       ultimo_contato: agora,
     });
+    // Regra do Negócios (gatilho lead_esteira_por_etapa no banco): ao entrar em Primeiro impacto o lead vai para
+    // a esteira ligada a essa coluna, no D1, com envio para hoje. Como ele acabou de receber o 1º contato,
+    // o D1 fica para amanhã (aparece na aba Hoje das Esteiras no dia seguinte).
+    const esteiraNome = mover ? await adiarD1ParaAmanha(lead.id) : null;
     const { error: erroHistorico } = await supabase.from("lead_timeline").insert({
       lead_id: lead.id,
       type: "note",
       title: "1º contato automático enviado no WhatsApp",
       description: `${msg.texto}\n\n— escrito por: ${msg.via}${msg.aviso ? ` (${msg.aviso})` : ""}${
         mover ? `\nEtapa em Negócios: ${lead.status || "sem etapa"} → ${ETAPA_APOS_CONTATO}` : ""
-      }`,
+      }${esteiraNome ? `\nEsteira ${esteiraNome}: D1 amanhã` : ""}`,
       author: "Agente",
     } as any);
     if (erroHistorico) console.error("1º contato: histórico não gravado", erroHistorico);
-    const detalhe = [msg.aviso ? `${msg.via} — ${msg.aviso}` : msg.via, mover && `movido em Negócios para ${ETAPA_APOS_CONTATO}`].filter(Boolean).join(" · ");
+    const detalhe = [
+      msg.aviso ? `${msg.via} — ${msg.aviso}` : msg.via,
+      mover && `movido em Negócios para ${ETAPA_APOS_CONTATO}`,
+      esteiraNome && `esteira ${esteiraNome}: D1 amanhã`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
     registrar({ ...base, status: "enviado", detalhe, texto: msg.texto, via: msg.via, em: agora });
     return "enviado";
   } catch (e: any) {
