@@ -19,9 +19,9 @@ import {
   LeadNaFila,
   carregarConfigAgente,
   entregarParaExtensao,
-  incluirLeadsDesde,
+  colocarNaFila,
   lerFilaAgente,
-  retentarLead,
+  tirarDaFila,
   exemploDeMensagem,
   lerHistoricoAgente,
   salvarChaveNoAgente,
@@ -59,6 +59,7 @@ export function PrimeiroContatoPainel() {
   const [fila, setFila] = useState<LeadNaFila[]>([]);
   const [conferindo, setConferindo] = useState(false);
   const [mexendo, setMexendo] = useState<string | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [nomeTeste, setNomeTeste] = useState("");
   const [etiquetaTeste, setEtiquetaTeste] = useState("Meta Ads");
 
@@ -184,32 +185,39 @@ export function PrimeiroContatoPainel() {
     }
   };
 
-  const retentar = async (l: LeadNaFila) => {
-    setMexendo(l.id);
-    try {
-      await retentarLead(l.id);
-      await entregarParaExtensao(true);
-      toast({ title: `${l.nome} voltou para a fila`, description: "A extensão tenta de novo em 1 a 2 minutos." });
-      await recarregar();
-    } catch (e: any) {
-      toast({ title: "Não consegui", description: e?.message, variant: "destructive" });
-    } finally {
-      setMexendo(null);
-    }
-  };
+  const marcar = (id: string, v: boolean) =>
+    setSelecionados((s) => {
+      const n = new Set(s);
+      if (v) n.add(id);
+      else n.delete(id);
+      return n;
+    });
 
-  const incluirAntigos = async () => {
-    const antigos = fila.filter((l) => l.situacao === "antes_de_ligar");
-    if (!antigos.length) return;
-    setMexendo("antigos");
+  const acaoSelecionados = async (acao: "atender" | "tirar") => {
+    const ids = fila.filter((l) => selecionados.has(l.id) && l.situacao !== "atendendo").map((l) => l.id);
+    if (!ids.length) return;
+    setMexendo(acao);
     try {
-      const maisAntigo = antigos.reduce((a, b) => (a.criadoEm < b.criadoEm ? a : b));
-      await incluirLeadsDesde(new Date(new Date(maisAntigo.criadoEm).getTime() - 1000).toISOString());
-      await entregarParaExtensao(true);
-      toast({ title: `${antigos.length} lead(s) incluído(s) na fila`, description: "A extensão atende 1 por minuto, a partir de agora." });
+      if (acao === "atender") {
+        await colocarNaFila(ids);
+        if (cfg?.ativo) await entregarParaExtensao(true);
+        toast({
+          title: `${ids.length} lead(s) na fila`,
+          description: cfg?.ativo ? "A extensão atende 1 por minuto, a partir de agora." : "Ligue o agente para eles receberem.",
+        });
+      } else {
+        await tirarDaFila(ids);
+        toast({ title: `${ids.length} lead(s) tirado(s) da fila`, description: "O agente não vai chamar esses leads. Dá para pôr de volta selecionando e clicando em Atender." });
+      }
+      setSelecionados(new Set());
       await recarregar();
     } catch (e: any) {
-      toast({ title: "Não consegui", description: e?.message, variant: "destructive" });
+      const msg = String(e?.message || "");
+      toast({
+        title: "Não consegui",
+        description: /na_fila|check|constraint/i.test(msg) ? "Rode o SQL supabase/agente_fila_manual.sql no Supabase e tente de novo." : msg,
+        variant: "destructive",
+      });
     } finally {
       setMexendo(null);
     }
@@ -297,34 +305,82 @@ export function PrimeiroContatoPainel() {
         )}
       </div>
 
-      {/* Fila: leads novos dos últimos 3 dias que ainda não receberam */}
+      {/* Fila: leads novos (7 dias) que ainda não receberam — você escolhe quem atender e quem tirar */}
       <div className="rounded-lg border bg-white p-4 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold text-sm">Leads novos que ainda não receberam ({fila.length})</h3>
-          {cfg.ativo && fila.some((l) => l.situacao === "antes_de_ligar") && (
-            <Button size="sm" variant="outline" className="h-7 ml-auto" disabled={!!mexendo} onClick={incluirAntigos}>
-              {mexendo === "antigos" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
-              Atender também os que chegaram antes de ligar ({fila.filter((l) => l.situacao === "antes_de_ligar").length})
-            </Button>
-          )}
+          <h3 className="font-semibold text-sm">Leads que ainda não receberam ({fila.length})</h3>
+          <span className="text-xs text-muted-foreground">últimos 7 dias · selecione para atender ou tirar da fila</span>
         </div>
+        {fila.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 p-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={fila.filter((l) => l.situacao !== "atendendo").length > 0 && fila.filter((l) => l.situacao !== "atendendo").every((l) => selecionados.has(l.id))}
+                onChange={(e) => setSelecionados(e.target.checked ? new Set(fila.filter((l) => l.situacao !== "atendendo").map((l) => l.id)) : new Set())}
+              />
+              Selecionar todos
+            </label>
+            {[
+              { k: "antes_de_ligar", t: "os que chegaram antes" },
+              { k: "desistiu", t: "os que falharam" },
+              { k: "fora_da_regra", t: "os fora da captura" },
+            ]
+              .filter((g) => fila.some((l) => l.situacao === g.k))
+              .map((g) => (
+                <button
+                  key={g.k}
+                  type="button"
+                  className="text-xs underline text-muted-foreground"
+                  onClick={() => setSelecionados(new Set(fila.filter((l) => l.situacao === g.k).map((l) => l.id)))}
+                >
+                  só {g.t}
+                </button>
+              ))}
+            <div className="ml-auto flex gap-2">
+              <Button size="sm" className="h-8" disabled={!selecionados.size || !!mexendo} onClick={() => acaoSelecionados("atender")}>
+                {mexendo === "atender" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                Atender ({selecionados.size})
+              </Button>
+              <Button size="sm" variant="outline" className="h-8" disabled={!selecionados.size || !!mexendo} onClick={() => acaoSelecionados("tirar")}>
+                {mexendo === "tirar" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+                Tirar da fila ({selecionados.size})
+              </Button>
+            </div>
+          </div>
+        )}
         {fila.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum nos últimos 3 dias.</p>
+          <p className="text-sm text-muted-foreground">Nenhum nos últimos 7 dias.</p>
         ) : (
           <ul className="divide-y">
             {fila.map((l) => (
-              <li key={l.id} className="py-2 text-sm flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium break-words">
-                    {l.nome} <span className="text-xs font-normal text-muted-foreground">{l.telefone} · chegou {hora(l.criadoEm)}</span>
-                  </div>
-                  <div className={`text-xs ${l.situacao === "na_fila" || l.situacao === "atendendo" ? "text-green-700" : "text-amber-700"}`}>{l.motivo}</div>
-                </div>
-                {l.situacao === "desistiu" && (
-                  <Button size="sm" variant="outline" className="h-7 shrink-0" disabled={!!mexendo} onClick={() => retentar(l)}>
-                    {mexendo === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Tentar de novo"}
-                  </Button>
-                )}
+              <li key={l.id} className="py-2 text-sm">
+                <label className={`flex items-start gap-3 ${l.situacao === "atendendo" ? "" : "cursor-pointer"}`}>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 mt-0.5 shrink-0"
+                    disabled={l.situacao === "atendendo"}
+                    checked={selecionados.has(l.id)}
+                    onChange={(e) => marcar(l.id, e.target.checked)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium break-words">
+                      {l.nome} <span className="text-xs font-normal text-muted-foreground">{l.telefone} · chegou {hora(l.criadoEm)}</span>
+                    </span>
+                    <span
+                      className={`block text-xs ${
+                        l.situacao === "na_fila" || l.situacao === "escolhido" || l.situacao === "atendendo"
+                          ? "text-green-700"
+                          : l.situacao === "tirado"
+                            ? "text-muted-foreground"
+                            : "text-amber-700"
+                      }`}
+                    >
+                      {l.motivo}
+                    </span>
+                  </span>
+                </label>
               </li>
             ))}
           </ul>

@@ -214,6 +214,7 @@ export async function lerHistoricoAgente(): Promise<RegistroContato[]> {
     .select("id, nome, telefone, primeiro_contato_status, primeiro_contato_em, primeiro_contato_msg, primeiro_contato_erro, primeiro_contato_tentativas, status")
     .eq("user_id", user.id)
     .not("primeiro_contato_status", "is", null)
+    .neq("primeiro_contato_status", "na_fila") // os escolhidos aparecem na lista da fila, não aqui
     .order("primeiro_contato_em", { ascending: false })
     .limit(40);
   if (error) return [];
@@ -237,7 +238,8 @@ export async function lerHistoricoAgente(): Promise<RegistroContato[]> {
 }
 
 // ---------- Diagnóstico: leads novos dos últimos 3 dias e por que estão (ou não) na fila ----------
-export type SituacaoFila = "na_fila" | "antes_de_ligar" | "desistiu" | "fora_da_regra" | "atendendo";
+export type SituacaoFila = "na_fila" | "escolhido" | "antes_de_ligar" | "desistiu" | "fora_da_regra" | "atendendo" | "tirado";
+export const TIRADO_DA_FILA = "tirado da fila por você";
 export interface LeadNaFila {
   id: string;
   nome: string;
@@ -259,21 +261,27 @@ export async function lerFilaAgente(cfg: ConfigPrimeiroContato): Promise<LeadNaF
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
-  const desde = new Date(Date.now() - 3 * 86400_000).toISOString();
+  const desde = new Date(Date.now() - 7 * 86400_000).toISOString();
   const { data, error } = await supabase
     .from("leads")
     .select("id, nome, telefone, origem, tags, created_at, primeiro_contato_status, primeiro_contato_tentativas, primeiro_contato_em, primeiro_contato_erro")
     .eq("user_id", user.id)
     .gte("created_at", desde)
-    .or("primeiro_contato_status.is.null,primeiro_contato_status.eq.erro,primeiro_contato_status.eq.enviando")
+    .or("primeiro_contato_status.is.null,primeiro_contato_status.eq.erro,primeiro_contato_status.eq.enviando,primeiro_contato_status.eq.na_fila,primeiro_contato_status.eq.pulado")
     .order("created_at", { ascending: false })
-    .limit(60);
+    .limit(100);
   if (error) return [];
   const ligadoEm = cfg.ativadoEm ? new Date(cfg.ativadoEm).getTime() : Infinity;
-  return (data || []).map((l: any) => {
+  const tresDias = Date.now() - 3 * 86400_000;
+  const lista = (data || []).filter((l: any) => l.primeiro_contato_status !== "pulado" || l.primeiro_contato_erro === TIRADO_DA_FILA);
+  return lista.map((l: any) => {
     const base = { id: l.id, nome: l.nome || "Lead sem nome", telefone: l.telefone || "", criadoEm: l.created_at };
     const tent = l.primeiro_contato_tentativas || 0;
     const s = l.primeiro_contato_status;
+    if (s === "pulado") return { ...base, situacao: "tirado" as const, motivo: "você tirou da fila — não será chamado" };
+    if (s === "na_fila") return { ...base, situacao: "escolhido" as const, motivo: cfg.ativo ? "você escolheu atender — recebe em 1 a 2 minutos" : "você escolheu atender — ligue o agente para enviar" };
+    if (new Date(l.created_at).getTime() < tresDias)
+      return { ...base, situacao: "antes_de_ligar" as const, motivo: "chegou há mais de 3 dias (o agente sozinho não chama) — selecione para atender" };
     if (s && tent >= 3) return { ...base, situacao: "desistiu" as const, motivo: `desistiu depois de 3 tentativas${l.primeiro_contato_erro ? `: ${l.primeiro_contato_erro}` : ""}` };
     if (cfg.quais !== "todos" && !ehDaCaptura(l)) return { ...base, situacao: "fora_da_regra" as const, motivo: 'não veio da captura automática (marque "Todos os leads novos" para incluir)' };
     if (new Date(l.created_at).getTime() < ligadoEm)
@@ -284,14 +292,28 @@ export async function lerFilaAgente(cfg: ConfigPrimeiroContato): Promise<LeadNaF
   });
 }
 
-/** Põe o lead de volta na fila do zero (apaga as tentativas que falharam). */
-export async function retentarLead(leadId: string) {
+/** Você escolhe atender: entra na fila do zero (apaga as tentativas que falharam), mesmo fora das regras automáticas. */
+export async function colocarNaFila(leadIds: string[]) {
+  if (!leadIds.length) return;
   const { error } = await supabase
     .from("leads")
-    .update({ primeiro_contato_status: null, primeiro_contato_tentativas: 0, primeiro_contato_erro: null, primeiro_contato_em: null } as any)
-    .eq("id", leadId);
+    .update({ primeiro_contato_status: "na_fila", primeiro_contato_tentativas: 0, primeiro_contato_erro: null, primeiro_contato_em: null } as any)
+    .in("id", leadIds);
   if (error) throw error;
 }
+
+/** Você tira da fila: o agente não chama esses leads (dá para pôr de volta depois). */
+export async function tirarDaFila(leadIds: string[]) {
+  if (!leadIds.length) return;
+  const { error } = await supabase
+    .from("leads")
+    .update({ primeiro_contato_status: "pulado", primeiro_contato_erro: TIRADO_DA_FILA, primeiro_contato_em: new Date().toISOString() } as any)
+    .in("id", leadIds)
+    .or("primeiro_contato_status.is.null,primeiro_contato_status.neq.enviado"); // nunca mexe em quem já recebeu
+  if (error) throw error;
+}
+
+export const retentarLead = (leadId: string) => colocarNaFila([leadId]);
 
 /** Faz o agente atender também quem chegou antes de ligar (até 3 dias atrás). */
 export async function incluirLeadsDesde(iso: string) {
