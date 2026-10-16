@@ -46,7 +46,7 @@ export function PrimeiroContatoPainel() {
   const [gerando, setGerando] = useState(false);
   const [, setRelogio] = useState(0);
   const [telTeste, setTelTeste] = useState("");
-  const [testando, setTestando] = useState(false);
+  const [testandoEnvio, setTestandoEnvio] = useState(false);
   const [passosTeste, setPassosTeste] = useState<PassoTeste[]>([]);
 
   useEffect(() => {
@@ -285,18 +285,18 @@ export function PrimeiroContatoPainel() {
           <Input value={telTeste} placeholder="Seu WhatsApp com DDD, ex.: 11 99999-9999" onChange={(e) => setTelTeste(e.target.value)} className="sm:w-72" />
           <Button
             variant="outline"
-            disabled={testando || !telTeste.trim()}
+            disabled={testandoEnvio || !telTeste.trim()}
             onClick={async () => {
-              setTestando(true);
+              setTestandoEnvio(true);
               setPassosTeste([]);
               try {
                 await testarEnvio(telTeste, setPassosTeste);
               } finally {
-                setTestando(false);
+                setTestandoEnvio(false);
               }
             }}
           >
-            {testando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            {testandoEnvio ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
             Testar envio
           </Button>
         </div>
