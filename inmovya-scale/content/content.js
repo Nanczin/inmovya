@@ -303,9 +303,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const input = await dom.waitForMessageInput(30000);
         if (!input) throw new Error('A conversa do WhatsApp não abriu.');
         await dom.delay(1500);
-        const contato = request.nome ? await agenteSalvarContato(request.nome, request.phone) : { salvo: false, motivo: 'sem nome' };
-        await dom.delay(800);
+        // etiqueta PRIMEIRO: depois de salvar o contato o WhatsApp tira a conversa da tela
         const etiqueta = request.etiqueta ? await agenteEtiquetar([request.etiqueta], []) : { ok: true, alteracoes: [] };
+        await dom.delay(800);
+        const contato = request.nome ? await agenteSalvarContato(request.nome, request.phone) : { salvo: false, motivo: 'sem nome' };
         sendResponse({ ok: true, final: true, contato, etiqueta });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
@@ -656,15 +657,23 @@ async function agenteSalvarContato(nomeCompleto, telefone) {
   salvar.scrollIntoView?.({ block: 'center' });
   await agenteDelay(300);
   salvar.click();
-  await agenteDelay(2500);
-  // fecha painéis abertos e confere o nome no cabeçalho
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await agenteDelay(800);
-  const depois = agenteTituloConversa();
+  // confirmação: o aviso "Fulano foi adicionado(a) à sua lista de contatos" ou o nome no cabeçalho
   const primeiro = agenteNorm(partes[0]);
-  return agenteNorm(depois).includes(primeiro)
-    ? { salvo: true, motivo: `salvo como "${depois}"` }
-    : { salvo: false, motivo: 'cliquei em Salvar, mas o nome não apareceu no cabeçalho — confira no celular' };
+  const fimConf = Date.now() + 6000;
+  let confirmado = '';
+  while (!confirmado && Date.now() < fimConf) {
+    await agenteDelay(400);
+    const aviso = Array.from(document.querySelectorAll('[role="status"], [role="alert"], li, span'))
+      .map(el => (el.innerText || '').trim())
+      .find(t => t.length < 160 && /(adicionad[oa]\(?a?\)? à sua lista de contatos|added to your contacts|contato salvo|contact saved)/i.test(t));
+    if (aviso) confirmado = aviso;
+    else if (agenteNorm(agenteTituloConversa()).includes(primeiro)) confirmado = `salvo como "${agenteTituloConversa()}"`;
+  }
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await agenteDelay(500);
+  return confirmado
+    ? { salvo: true, motivo: confirmado }
+    : { salvo: false, motivo: 'cliquei em Salvar, mas o WhatsApp não confirmou — confira no celular' };
 }
 
 const agenteLinhasVisiveis = () => Array.from(document.querySelectorAll('[role="row"]'))

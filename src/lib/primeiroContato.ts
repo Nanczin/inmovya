@@ -280,15 +280,23 @@ export async function lerFilaAgente(cfg: ConfigPrimeiroContato): Promise<LeadNaF
     const s = l.primeiro_contato_status;
     if (s === "pulado") return { ...base, situacao: "tirado" as const, motivo: "você tirou da fila — não será chamado" };
     if (s === "na_fila") return { ...base, situacao: "escolhido" as const, motivo: cfg.ativo ? "você escolheu atender — recebe em 1 a 2 minutos" : "você escolheu atender — ligue o agente para enviar" };
+    // já entrou na fila alguma vez (automático ou escolhido): tenta de novo até 3 vezes
+    if (s && tent >= 3) return { ...base, situacao: "desistiu" as const, motivo: `desistiu depois de 3 tentativas${l.primeiro_contato_erro ? `: ${l.primeiro_contato_erro}` : ""} — selecione e clique em Atender para tentar de novo` };
+    if (s === "enviando") {
+      const travado = l.primeiro_contato_em && Date.now() - new Date(l.primeiro_contato_em).getTime() > 15 * 60_000;
+      return travado
+        ? { ...base, situacao: "na_fila" as const, motivo: `o envio travou — volta para a fila (tentativa ${tent + 1} de 3)` }
+        : { ...base, situacao: "atendendo" as const, motivo: "a extensão está atendendo agora" };
+    }
+    if (s === "erro")
+      return { ...base, situacao: "na_fila" as const, motivo: `falhou${l.primeiro_contato_erro ? ` (${l.primeiro_contato_erro})` : ""} — tenta de novo em uns 5 min (tentativa ${tent + 1} de 3)` };
+    // nunca entrou na fila: valem as regras automáticas
     if (new Date(l.created_at).getTime() < tresDias)
       return { ...base, situacao: "antes_de_ligar" as const, motivo: "chegou há mais de 3 dias (o agente sozinho não chama) — selecione para atender" };
-    if (s && tent >= 3) return { ...base, situacao: "desistiu" as const, motivo: `desistiu depois de 3 tentativas${l.primeiro_contato_erro ? `: ${l.primeiro_contato_erro}` : ""}` };
-    if (cfg.quais !== "todos" && !ehDaCaptura(l)) return { ...base, situacao: "fora_da_regra" as const, motivo: 'não veio da captura automática (marque "Todos os leads novos" para incluir)' };
+    if (cfg.quais !== "todos" && !ehDaCaptura(l)) return { ...base, situacao: "fora_da_regra" as const, motivo: 'não veio da captura automática (selecione para atender, ou marque "Todos os leads novos")' };
     if (new Date(l.created_at).getTime() < ligadoEm)
-      return { ...base, situacao: "antes_de_ligar" as const, motivo: cfg.ativo ? "chegou antes de você ligar o agente" : "o agente está desligado" };
-    const travado = s === "enviando" && l.primeiro_contato_em && Date.now() - new Date(l.primeiro_contato_em).getTime() > 15 * 60_000;
-    if (s === "enviando" && !travado) return { ...base, situacao: "atendendo" as const, motivo: "a extensão está atendendo (ou travou — volta para a fila em 15 min)" };
-    return { ...base, situacao: "na_fila" as const, motivo: s === "erro" ? `na fila de novo (tentativa ${tent + 1} de 3)` : "na fila — recebe em 1 a 2 minutos" };
+      return { ...base, situacao: "antes_de_ligar" as const, motivo: cfg.ativo ? "chegou antes de você ligar o agente — selecione para atender" : "o agente está desligado" };
+    return { ...base, situacao: "na_fila" as const, motivo: "na fila — recebe em 1 a 2 minutos" };
   });
 }
 
