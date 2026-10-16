@@ -305,7 +305,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         await dom.delay(1500);
         const contato = request.nome ? await agenteSalvarContato(request.nome) : { salvo: false, motivo: 'sem nome' };
         await dom.delay(800);
-        const etiqueta = request.etiqueta ? await agenteTrocarEtiquetas([request.etiqueta], []) : { ok: true, alteracoes: [] };
+        const etiqueta = request.etiqueta ? await agenteEtiquetar([request.etiqueta], []) : { ok: true, alteracoes: [] };
         sendResponse({ ok: true, final: true, contato, etiqueta });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
@@ -370,6 +370,108 @@ async function agenteTrocarEtiquetas(add = [], remove = []) {
   botao.click(); // fecha a lista
   await agenteDelay(300);
   return { ok: true, alteracoes: feitas, etiquetas: final };
+}
+
+// ---------- 1º contato: ajudas para achar botões que mudam de versão em versão ----------
+// Lista curta do que existe na tela (vai no aviso quando algo não é achado, para ajustar sem adivinhar).
+function agenteDescreverBotoes(raiz = document, max = 15) {
+  const vistos = [];
+  Array.from((raiz || document).querySelectorAll('button, [role="button"], [role="menuitem"], [role="checkbox"], li[tabindex]'))
+    .filter(el => agenteVisivel(el) && !el.closest('#inmovya-scale-root'))
+    .forEach(el => {
+      const icone = el.querySelector('[data-icon]')?.getAttribute('data-icon') || el.getAttribute('data-icon') || '';
+      const t = (agenteRotulo(el).slice(0, 30) || (icone ? `ícone:${icone}` : '')).trim();
+      if (t && !vistos.includes(t)) vistos.push(t);
+    });
+  return vistos.slice(0, max).join(' | ') || 'nenhum';
+}
+
+// sobe do campo até o painel/diálogo que tem os botões do formulário
+function agentePainelDoCampo(campo) {
+  let el = campo;
+  for (let i = 0; i < 12 && el && el !== document.body; i++) {
+    el = el.parentElement;
+    if (!el) break;
+    if (el.matches('[role="dialog"], [data-animate-modal-body], section') || el.querySelectorAll('button, [role="button"]').length >= 2) {
+      if (el.querySelector('[data-icon*="checkmark" i], [data-icon*="check" i], button, [role="button"]')) return el;
+    }
+  }
+  return document;
+}
+
+// botão de confirmar: texto Salvar/Save/Concluir/OK ou só o ícone ✓
+function agenteBotaoConfirmar(raiz) {
+  if (!raiz) return null;
+  const porTexto = agenteAcharBotao(/^(salvar|save|salvar contato|save contact|concluir|done|ok|confirmar|confirm|aplicar|apply)$/i, raiz);
+  if (porTexto) return porTexto;
+  // o ícone em si pode não ter tamanho: confere o botão em volta dele
+  const icone = Array.from(raiz.querySelectorAll('[data-icon*="checkmark" i], [data-icon="done"], [data-icon*="check-filled" i], [data-icon="send"]'))
+    .find(i => {
+      const alvo = i.closest('button, [role="button"]') || i;
+      return agenteVisivel(alvo) && !i.closest('#main footer') && !i.closest('#inmovya-scale-root') && !i.closest('[role="checkbox"]') && !i.closest('li');
+    });
+  return icone ? icone.closest('button, [role="button"]') || icone : null;
+}
+
+// Etiqueta: 1) botão de etiqueta no cabeçalho (WhatsApp antigo); 2) menu ⋮ → "Etiquetar conversa" (atual)
+async function agenteEtiquetar(add = [], remove = []) {
+  const antigo = await agenteTrocarEtiquetas(add, remove);
+  if (antigo.ok || !/não achei o botão de etiquetas/i.test(antigo.error || '')) return antigo;
+
+  const ITEM = /^(etiquetar( conversa)?|label( chat)?|adicionar etiqueta|add label|editar etiquetas|edit labels|etiquetas|labels)$/i;
+  const abrirMenu = async () => {
+    const menu = document.querySelector('#main header [data-icon="menu"], #main header [data-icon="kebab-menu"], #main header [data-icon*="more" i]')?.closest('button, [role="button"]')
+      || Array.from(document.querySelectorAll('#main header button, #main header [role="button"]')).find(b => /mais op|menu|more options|opções/i.test(agenteRotulo(b)));
+    if (!menu) return null;
+    menu.click();
+    return agenteEsperarBotao(ITEM, 2500);
+  };
+  const item = await abrirMenu();
+  if (!item) {
+    const vistos = agenteDescreverBotoes(document);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return { ok: false, error: `não achei "Etiquetar conversa" no menu ⋮. Opções vistas: ${vistos}` };
+  }
+  item.click();
+  await agenteDelay(1200);
+
+  // diálogo com a lista de etiquetas (cada uma com caixinha)
+  const dialogo = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-body]')).find(agenteVisivel) || document;
+  const opcoes = () =>
+    Array.from(dialogo.querySelectorAll('li, [role="checkbox"], [role="option"], [role="listitem"], label, [role="button"]'))
+      .filter(el => agenteVisivel(el) && agenteRotulo(el).length > 0 && agenteRotulo(el).length < 40);
+  const marcada = el => {
+    const cb = el.matches('input[type="checkbox"]') ? el : el.querySelector('input[type="checkbox"]');
+    if (cb) return cb.checked;
+    const aria = el.getAttribute('aria-checked') ?? el.querySelector('[aria-checked]')?.getAttribute('aria-checked') ?? el.getAttribute('aria-selected');
+    if (aria != null) return aria === 'true';
+    return !!el.querySelector('[data-icon*="checkbox-checked" i], [data-icon*="checkmark" i]');
+  };
+  const nomes = opcoes().map(o => agenteRotulo(o));
+  const feitas = [];
+  for (const nome of [...add, ...remove]) {
+    const alvo = agenteNorm(nome);
+    const op = opcoes().find(o => agenteNorm(agenteRotulo(o)) === alvo);
+    if (!op) {
+      if (add.includes(nome)) feitas.push(`etiqueta "${nome}" não existe (opções: ${nomes.slice(0, 12).join(', ') || 'nenhuma'})`);
+      continue;
+    }
+    const quer = add.includes(nome);
+    if (marcada(op) !== quer) {
+      (op.querySelector('input[type="checkbox"], [role="checkbox"]') || op).click();
+      await agenteDelay(600);
+      feitas.push(`${quer ? '+' : '-'}${nome}`);
+    }
+  }
+  const salvar = agenteBotaoConfirmar(dialogo === document ? document : dialogo);
+  if (salvar) {
+    salvar.click();
+    await agenteDelay(1200);
+  } else if (feitas.some(f => /^[+-]/.test(f))) {
+    return { ok: false, error: `marquei a etiqueta mas não achei o botão Salvar. Botões: ${agenteDescreverBotoes(dialogo)}`, alteracoes: feitas };
+  }
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  return { ok: true, alteracoes: feitas };
 }
 
 // ---------- 1º contato: salvar o contato no WhatsApp ----------
@@ -456,8 +558,10 @@ async function agenteSalvarContato(nomeCompleto) {
     agentePreencher(campoNome, nome);
   }
   await agenteDelay(600);
-  const salvar = await agenteEsperarBotao(/^(salvar|save|concluir|done|ok)$/i, 3000);
-  if (!salvar) return { salvo: false, motivo: 'não achei o botão Salvar do contato' };
+  // o botão de salvar fica no mesmo painel do formulário; às vezes é só um ícone ✓ (sem texto)
+  const painel = agentePainelDoCampo(campoNome);
+  const salvar = agenteBotaoConfirmar(painel) || agenteBotaoConfirmar(document);
+  if (!salvar) return { salvo: false, motivo: `não achei o botão Salvar do contato. Botões no formulário: ${agenteDescreverBotoes(painel)}` };
   salvar.click();
   await agenteDelay(2500);
   // fecha painéis abertos e confere o nome no cabeçalho

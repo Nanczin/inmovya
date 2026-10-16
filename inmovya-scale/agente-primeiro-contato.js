@@ -214,7 +214,7 @@ async function agenteSalvarEEtiquetar(tel, lead) {
     const problemas = [];
     if (r?.contato && !r.contato.salvo) problemas.push(`contato de ${lead.nome || tel} não foi salvo (${r.contato.motivo})`);
     const naoExiste = (r?.etiqueta?.alteracoes || []).find(a => /não existe/.test(a));
-    if (etiqueta && naoExiste) problemas.push(`a etiqueta "${etiqueta}" não existe no seu WhatsApp Business — crie para o agente marcar`);
+    if (etiqueta && naoExiste) problemas.push(`${naoExiste} — crie a etiqueta "${etiqueta}" no WhatsApp Business para o agente marcar`);
     else if (etiqueta && r?.etiqueta && r.etiqueta.ok === false) problemas.push(`não consegui marcar a etiqueta ${etiqueta} (${r.etiqueta.error || 'erro'})`);
     return problemas.length ? `1º contato enviado, mas: ${problemas.join('; ')}.` : null;
   } catch (err) {
