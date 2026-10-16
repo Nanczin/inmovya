@@ -16,8 +16,12 @@ import {
   RegistroContato,
   SinalAgente,
   VERSAO_SCALE_AGENTE,
+  LeadNaFila,
   carregarConfigAgente,
   entregarParaExtensao,
+  incluirLeadsDesde,
+  lerFilaAgente,
+  retentarLead,
   exemploDeMensagem,
   lerHistoricoAgente,
   salvarChaveNoAgente,
@@ -52,6 +56,9 @@ export function PrimeiroContatoPainel() {
   const [telTeste, setTelTeste] = useState("");
   const [testandoEnvio, setTestandoEnvio] = useState(false);
   const [passosTeste, setPassosTeste] = useState<PassoTeste[]>([]);
+  const [fila, setFila] = useState<LeadNaFila[]>([]);
+  const [conferindo, setConferindo] = useState(false);
+  const [mexendo, setMexendo] = useState<string | null>(null);
   const [nomeTeste, setNomeTeste] = useState("");
   const [etiquetaTeste, setEtiquetaTeste] = useState("Meta Ads");
 
@@ -61,6 +68,7 @@ export function PrimeiroContatoPainel() {
       setCfg((atual) => (atual && alterado ? atual : r.cfg));
       setSinal(r.sinal);
       setErroBanco("");
+      setFila(await lerFilaAgente(r.cfg));
     } catch (e: any) {
       setErroBanco(e?.message || "Não consegui ler a configuração do agente.");
       setCfg((atual) => atual);
@@ -150,6 +158,63 @@ export function PrimeiroContatoPainel() {
     }
   };
 
+  const conferirAgora = async () => {
+    if (!cfg) return;
+    setConferindo(true);
+    try {
+      const ok = await entregarParaExtensao(true);
+      const lista = await lerFilaAgente(cfg);
+      setFila(lista);
+      const naFila = lista.filter((l) => l.situacao === "na_fila").length;
+      const fora = lista.filter((l) => l.situacao === "antes_de_ligar" || l.situacao === "desistiu" || l.situacao === "fora_da_regra").length;
+      toast({
+        title: !ok ? "A extensão não respondeu" : naFila ? `${naFila} lead(s) na fila` : "Nenhum lead esperando o 1º contato",
+        description: !ok
+          ? `Recarregue o Inmovya Scale em chrome://extensions (precisa da ${VERSAO_SCALE_AGENTE}) e esta página.`
+          : naFila
+            ? "A extensão começou a atender agora (1 por minuto). Acompanhe em Últimos atendimentos."
+            : fora
+              ? `${fora} lead(s) novo(s) estão fora da fila — veja o motivo na lista "Leads novos" logo abaixo.`
+              : "Quando chegar um lead novo, ele é atendido em 1 a 2 minutos.",
+        variant: ok ? undefined : "destructive",
+      });
+      window.setTimeout(recarregar, 15_000);
+    } finally {
+      setConferindo(false);
+    }
+  };
+
+  const retentar = async (l: LeadNaFila) => {
+    setMexendo(l.id);
+    try {
+      await retentarLead(l.id);
+      await entregarParaExtensao(true);
+      toast({ title: `${l.nome} voltou para a fila`, description: "A extensão tenta de novo em 1 a 2 minutos." });
+      await recarregar();
+    } catch (e: any) {
+      toast({ title: "Não consegui", description: e?.message, variant: "destructive" });
+    } finally {
+      setMexendo(null);
+    }
+  };
+
+  const incluirAntigos = async () => {
+    const antigos = fila.filter((l) => l.situacao === "antes_de_ligar");
+    if (!antigos.length) return;
+    setMexendo("antigos");
+    try {
+      const maisAntigo = antigos.reduce((a, b) => (a.criadoEm < b.criadoEm ? a : b));
+      await incluirLeadsDesde(new Date(new Date(maisAntigo.criadoEm).getTime() - 1000).toISOString());
+      await entregarParaExtensao(true);
+      toast({ title: `${antigos.length} lead(s) incluído(s) na fila`, description: "A extensão atende 1 por minuto, a partir de agora." });
+      await recarregar();
+    } catch (e: any) {
+      toast({ title: "Não consegui", description: e?.message, variant: "destructive" });
+    } finally {
+      setMexendo(null);
+    }
+  };
+
   if (erroBanco && !cfg) {
     return <div className="max-w-xl rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">{erroBanco}</div>;
   }
@@ -225,10 +290,44 @@ export function PrimeiroContatoPainel() {
             )}
             {sinal?.ultimoSinal && extensaoRodando && <span className="text-muted-foreground">conferido às {hora(sinal.ultimoSinal)}</span>}
             <span className="text-muted-foreground">· {enviadosHoje} enviado(s) hoje</span>
-            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => entregarParaExtensao(true).then(() => setTimeout(recarregar, 3000))}>
-              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Conferir agora
+            <Button variant="ghost" size="sm" className="h-7 px-2" disabled={conferindo} onClick={conferirAgora}>
+              {conferindo ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />} Conferir agora
             </Button>
           </div>
+        )}
+      </div>
+
+      {/* Fila: leads novos dos últimos 3 dias que ainda não receberam */}
+      <div className="rounded-lg border bg-white p-4 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-semibold text-sm">Leads novos que ainda não receberam ({fila.length})</h3>
+          {cfg.ativo && fila.some((l) => l.situacao === "antes_de_ligar") && (
+            <Button size="sm" variant="outline" className="h-7 ml-auto" disabled={!!mexendo} onClick={incluirAntigos}>
+              {mexendo === "antigos" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
+              Atender também os que chegaram antes de ligar ({fila.filter((l) => l.situacao === "antes_de_ligar").length})
+            </Button>
+          )}
+        </div>
+        {fila.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhum nos últimos 3 dias.</p>
+        ) : (
+          <ul className="divide-y">
+            {fila.map((l) => (
+              <li key={l.id} className="py-2 text-sm flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium break-words">
+                    {l.nome} <span className="text-xs font-normal text-muted-foreground">{l.telefone} · chegou {hora(l.criadoEm)}</span>
+                  </div>
+                  <div className={`text-xs ${l.situacao === "na_fila" || l.situacao === "atendendo" ? "text-green-700" : "text-amber-700"}`}>{l.motivo}</div>
+                </div>
+                {l.situacao === "desistiu" && (
+                  <Button size="sm" variant="outline" className="h-7 shrink-0" disabled={!!mexendo} onClick={() => retentar(l)}>
+                    {mexendo === l.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Tentar de novo"}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 

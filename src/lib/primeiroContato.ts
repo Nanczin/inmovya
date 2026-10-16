@@ -236,6 +236,77 @@ export async function lerHistoricoAgente(): Promise<RegistroContato[]> {
   }));
 }
 
+// ---------- Diagnóstico: leads novos dos últimos 3 dias e por que estão (ou não) na fila ----------
+export type SituacaoFila = "na_fila" | "antes_de_ligar" | "desistiu" | "fora_da_regra" | "atendendo";
+export interface LeadNaFila {
+  id: string;
+  nome: string;
+  telefone: string;
+  criadoEm: string;
+  situacao: SituacaoFila;
+  motivo: string;
+}
+
+const ehDaCaptura = (l: { tags: string[] | null; origem: string | null }) => {
+  const tags = (l.tags || []).map((t) => String(t).toLowerCase());
+  const origem = String(l.origem || "").toLowerCase();
+  return tags.includes("meta ads") || tags.includes("bitrix") || tags.includes("roleta") || ["roleta", "facebook", "instagram", "formulário", "formulario"].includes(origem);
+};
+
+/** Mesmas regras do agente_pendentes (banco), para a tela explicar quem vai e quem não vai receber. */
+export async function lerFilaAgente(cfg: ConfigPrimeiroContato): Promise<LeadNaFila[]> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+  const desde = new Date(Date.now() - 3 * 86400_000).toISOString();
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id, nome, telefone, origem, tags, created_at, primeiro_contato_status, primeiro_contato_tentativas, primeiro_contato_em, primeiro_contato_erro")
+    .eq("user_id", user.id)
+    .gte("created_at", desde)
+    .or("primeiro_contato_status.is.null,primeiro_contato_status.eq.erro,primeiro_contato_status.eq.enviando")
+    .order("created_at", { ascending: false })
+    .limit(60);
+  if (error) return [];
+  const ligadoEm = cfg.ativadoEm ? new Date(cfg.ativadoEm).getTime() : Infinity;
+  return (data || []).map((l: any) => {
+    const base = { id: l.id, nome: l.nome || "Lead sem nome", telefone: l.telefone || "", criadoEm: l.created_at };
+    const tent = l.primeiro_contato_tentativas || 0;
+    const s = l.primeiro_contato_status;
+    if (s && tent >= 3) return { ...base, situacao: "desistiu" as const, motivo: `desistiu depois de 3 tentativas${l.primeiro_contato_erro ? `: ${l.primeiro_contato_erro}` : ""}` };
+    if (cfg.quais !== "todos" && !ehDaCaptura(l)) return { ...base, situacao: "fora_da_regra" as const, motivo: 'não veio da captura automática (marque "Todos os leads novos" para incluir)' };
+    if (new Date(l.created_at).getTime() < ligadoEm)
+      return { ...base, situacao: "antes_de_ligar" as const, motivo: cfg.ativo ? "chegou antes de você ligar o agente" : "o agente está desligado" };
+    const travado = s === "enviando" && l.primeiro_contato_em && Date.now() - new Date(l.primeiro_contato_em).getTime() > 15 * 60_000;
+    if (s === "enviando" && !travado) return { ...base, situacao: "atendendo" as const, motivo: "a extensão está atendendo (ou travou — volta para a fila em 15 min)" };
+    return { ...base, situacao: "na_fila" as const, motivo: s === "erro" ? `na fila de novo (tentativa ${tent + 1} de 3)` : "na fila — recebe em 1 a 2 minutos" };
+  });
+}
+
+/** Põe o lead de volta na fila do zero (apaga as tentativas que falharam). */
+export async function retentarLead(leadId: string) {
+  const { error } = await supabase
+    .from("leads")
+    .update({ primeiro_contato_status: null, primeiro_contato_tentativas: 0, primeiro_contato_erro: null, primeiro_contato_em: null } as any)
+    .eq("id", leadId);
+  if (error) throw error;
+}
+
+/** Faz o agente atender também quem chegou antes de ligar (até 3 dias atrás). */
+export async function incluirLeadsDesde(iso: string) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Entre no Inmovya.");
+  const limite = new Date(Date.now() - 3 * 86400_000 + 60_000).toISOString();
+  const { error } = await supabase
+    .from("agente_config" as any)
+    .update({ ativado_em: iso < limite ? limite : iso } as any)
+    .eq("user_id", user.id);
+  if (error) throw error;
+}
+
 // ---------- Mensagem (a extensão usa a mesma lógica) ----------
 export interface MensagemWA {
   dir: "in" | "out";
