@@ -303,7 +303,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const input = await dom.waitForMessageInput(30000);
         if (!input) throw new Error('A conversa do WhatsApp não abriu.');
         await dom.delay(1500);
-        const contato = request.nome ? await agenteSalvarContato(request.nome) : { salvo: false, motivo: 'sem nome' };
+        const contato = request.nome ? await agenteSalvarContato(request.nome, request.phone) : { salvo: false, motivo: 'sem nome' };
         await dom.delay(800);
         const etiqueta = request.etiqueta ? await agenteEtiquetar([request.etiqueta], []) : { ok: true, alteracoes: [] };
         sendResponse({ ok: true, final: true, contato, etiqueta });
@@ -413,6 +413,56 @@ function agenteBotaoConfirmar(raiz) {
   return icone ? icone.closest('button, [role="button"]') || icone : null;
 }
 
+// Menu ⋮ da CONVERSA aberta (não o da barra lateral): o ícone de menu mais alto dentro do painel da conversa.
+function agenteMenuDaConversa() {
+  const main = document.querySelector('#main');
+  if (!main) return null;
+  const topo = main.getBoundingClientRect().top + 160;
+  const candidatos = Array.from(main.querySelectorAll('[data-icon], button[aria-label], [role="button"][aria-label]'))
+    .map(el => (el.matches('[data-icon]') ? el.closest('button, [role="button"]') || el : el))
+    .filter(el => el && agenteVisivel(el) && el.getBoundingClientRect().top < topo);
+  const ehMenu = el => {
+    const icone = (el.getAttribute('data-icon') || el.querySelector('[data-icon]')?.getAttribute('data-icon') || '').toLowerCase();
+    return /menu|kebab|more|dots/.test(icone) || /mais op|more options|menu|opções da conversa/i.test(el.getAttribute('aria-label') || el.getAttribute('title') || '');
+  };
+  const menus = candidatos.filter(ehMenu);
+  // o mais à direita (o ⋮ fica no canto direito do cabeçalho)
+  return menus.sort((a, b) => b.getBoundingClientRect().right - a.getBoundingClientRect().right)[0] || null;
+}
+
+// Guarda uma "foto" dos botões/campos da tela no armazenamento da extensão (sem textos das mensagens),
+// para ajustar os caminhos quando o WhatsApp muda.
+async function agenteGuardarDiagnostico(etapa, raiz) {
+  try {
+    const desc = el => {
+      const r = el.getBoundingClientRect();
+      return {
+        tag: el.tagName.toLowerCase(),
+        role: el.getAttribute('role') || '',
+        aria: (el.getAttribute('aria-label') || '').slice(0, 50),
+        title: (el.getAttribute('title') || '').slice(0, 50),
+        icon: el.getAttribute('data-icon') || el.querySelector('[data-icon]')?.getAttribute('data-icon') || '',
+        texto: (el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+        tipo: el.getAttribute('type') || '',
+        ph: (el.getAttribute('placeholder') || '').slice(0, 40),
+        des: el.disabled || el.getAttribute('aria-disabled') === 'true' ? 1 : 0,
+        vis: agenteVisivel(el) ? 1 : 0,
+        pos: `${Math.round(r.left)},${Math.round(r.top)}`
+      };
+    };
+    const main = document.querySelector('#main');
+    const topoMain = main ? Array.from(main.querySelectorAll('button, [role="button"], [data-icon], header, [aria-label]'))
+      .filter(el => el.getBoundingClientRect().top < main.getBoundingClientRect().top + 160).slice(0, 40).map(desc) : [];
+    const abertos = Array.from(document.querySelectorAll('[role="dialog"], [role="menu"], [role="application"], [data-animate-modal-body], ul'))
+      .filter(agenteVisivel).filter(el => !el.closest('#pane-side') && !el.closest('#main [role="application"]'))
+      .slice(0, 6).map(el => ({ ...desc(el), itens: Array.from(el.querySelectorAll('button, [role="button"], [role="menuitem"], li, input, [contenteditable="true"], [data-icon]')).slice(0, 40).map(desc) }));
+    const daRaiz = raiz && raiz !== document ? Array.from(raiz.querySelectorAll('button, [role="button"], input, [contenteditable="true"], [data-icon], [tabindex]')).slice(0, 50).map(desc) : [];
+    const { agenteDiagnosticos = [] } = await chrome.storage.local.get('agenteDiagnosticos');
+    agenteDiagnosticos.unshift({ em: new Date().toISOString(), etapa, temMain: !!main, temHeader: !!document.querySelector('#main header'), topoMain, abertos, daRaiz });
+    await chrome.storage.local.set({ agenteDiagnosticos: agenteDiagnosticos.slice(0, 6) });
+  } catch (_) { /* diagnóstico é só ajuda */ }
+}
+
 // Etiqueta: 1) botão de etiqueta no cabeçalho (WhatsApp antigo); 2) menu ⋮ → "Etiquetar conversa" (atual)
 async function agenteEtiquetar(add = [], remove = []) {
   const antigo = await agenteTrocarEtiquetas(add, remove);
@@ -420,17 +470,29 @@ async function agenteEtiquetar(add = [], remove = []) {
 
   const ITEM = /^(etiquetar( conversa)?|label( chat)?|adicionar etiqueta|add label|editar etiquetas|edit labels|etiquetas|labels)$/i;
   const abrirMenu = async () => {
-    const menu = document.querySelector('#main header [data-icon="menu"], #main header [data-icon="kebab-menu"], #main header [data-icon*="more" i]')?.closest('button, [role="button"]')
-      || Array.from(document.querySelectorAll('#main header button, #main header [role="button"]')).find(b => /mais op|menu|more options|opções/i.test(agenteRotulo(b)));
+    const menu = agenteMenuDaConversa();
     if (!menu) return null;
     menu.click();
     return agenteEsperarBotao(ITEM, 2500);
   };
-  const item = await abrirMenu();
+  // alternativa: botão direito na conversa selecionada da lista (também tem "Etiquetar conversa")
+  const abrirPeloBotaoDireito = async () => {
+    const linha = document.querySelector('#pane-side [aria-selected="true"]') || document.querySelector('#pane-side [role="row"] [aria-selected="true"]');
+    if (!linha) return null;
+    const r = linha.getBoundingClientRect();
+    linha.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, view: window, clientX: r.left + 40, clientY: r.top + r.height / 2, button: 2 }));
+    return agenteEsperarBotao(ITEM, 2500);
+  };
+  let item = await abrirMenu();
   if (!item) {
-    const vistos = agenteDescreverBotoes(document);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    return { ok: false, error: `não achei "Etiquetar conversa" no menu ⋮. Opções vistas: ${vistos}` };
+    await agenteDelay(400);
+    item = await abrirPeloBotaoDireito();
+  }
+  if (!item) {
+    await agenteGuardarDiagnostico('etiqueta: item "Etiquetar conversa" não encontrado');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return { ok: false, error: 'não achei "Etiquetar conversa" (nem no menu ⋮ da conversa nem com o botão direito). Guardei os detalhes da tela para ajuste.' };
   }
   item.click();
   await agenteDelay(1200);
@@ -512,7 +574,14 @@ function agentePreencher(campo, valor) {
   campo.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-async function agenteSalvarContato(nomeCompleto) {
+// qualquer botão (mesmo fora da tela, lá embaixo do formulário) com "Salvar"/"Save" no texto
+function agenteBotaoSalvarPorTexto() {
+  return Array.from(document.querySelectorAll('button, [role="button"], div[tabindex]'))
+    .filter(el => !el.closest('#inmovya-scale-root') && !el.closest('#main footer') && !el.closest('#pane-side'))
+    .find(el => /^(salvar|save|salvar contato|save contact)$/i.test((el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()) && el.getBoundingClientRect().width > 0) || null;
+}
+
+async function agenteSalvarContato(nomeCompleto, telefone) {
   const nome = String(nomeCompleto || '').replace(/\s+/g, ' ').trim();
   if (!nome) return { salvo: false, motivo: 'lead sem nome' };
   // cabeçalho com letras = já é um contato salvo
@@ -524,8 +593,7 @@ async function agenteSalvarContato(nomeCompleto) {
   // 1) botão na própria conversa (aviso de número desconhecido) ou no menu ⋮ do cabeçalho
   let botao = agenteAcharBotao(ADICIONAR, document.querySelector('#main') || document);
   if (!botao) {
-    const menu = document.querySelector('#main header [data-icon="menu"], #main header [data-icon="kebab-menu"]')?.closest('button, [role="button"]')
-      || Array.from(document.querySelectorAll('#main header button, #main header [role="button"]')).find(b => /mais op|menu|more options/i.test(agenteRotulo(b)));
+    const menu = agenteMenuDaConversa();
     if (menu) {
       menu.click();
       botao = await agenteEsperarBotao(ADICIONAR, 2500);
@@ -538,7 +606,10 @@ async function agenteSalvarContato(nomeCompleto) {
     cabecalho?.click();
     botao = await agenteEsperarBotao(ADICIONAR, 4000);
   }
-  if (!botao) return { salvo: false, motivo: 'não achei o botão "Adicionar contato" no WhatsApp Web' };
+  if (!botao) {
+    await agenteGuardarDiagnostico('contato: botão Adicionar contato não encontrado');
+    return { salvo: false, motivo: 'não achei o botão "Adicionar contato" no WhatsApp Web. Guardei os detalhes da tela para ajuste.' };
+  }
   botao.click();
   await agenteDelay(1200);
 
@@ -558,10 +629,32 @@ async function agenteSalvarContato(nomeCompleto) {
     agentePreencher(campoNome, nome);
   }
   await agenteDelay(600);
-  // o botão de salvar fica no mesmo painel do formulário; às vezes é só um ícone ✓ (sem texto)
+
+  // telefone: o formulário às vezes abre com o número vazio (e o Salvar só aparece com ele preenchido)
+  const campoTel = Array.from(document.querySelectorAll('input[type="tel"], input[inputmode="tel"], input[type="text"], input:not([type])'))
+    .filter(c => agenteVisivel(c) && !c.closest('#main footer') && !c.closest('#side') && !c.closest('#inmovya-scale-root') && c !== campoNome && c !== campoSobrenome)
+    .find(c => c.type === 'tel' || c.inputMode === 'tel' || /telefone|phone|número|numero|celular/.test(rotuloCampo(c)));
+  const digitos = String(telefone || '').replace(/\D/g, '');
+  if (campoTel && !String(campoTel.value || '').replace(/\D/g, '') && digitos) {
+    // com o país "BR +55" já escolhido, vai só DDD + número
+    agentePreencher(campoTel, digitos.startsWith('55') && digitos.length >= 12 ? digitos.slice(2) : digitos);
+    await agenteDelay(800);
+  }
+
+  // o botão de salvar fica no mesmo painel do formulário (às vezes mais abaixo, ou só um ícone ✓)
   const painel = agentePainelDoCampo(campoNome);
-  const salvar = agenteBotaoConfirmar(painel) || agenteBotaoConfirmar(document);
-  if (!salvar) return { salvo: false, motivo: `não achei o botão Salvar do contato. Botões no formulário: ${agenteDescreverBotoes(painel)}` };
+  let salvar = null;
+  const fim = Date.now() + 4000;
+  while (!salvar && Date.now() < fim) {
+    salvar = agenteBotaoConfirmar(painel) || agenteBotaoConfirmar(document) || agenteBotaoSalvarPorTexto();
+    if (!salvar) await agenteDelay(400);
+  }
+  if (!salvar) {
+    await agenteGuardarDiagnostico('contato: botão Salvar não encontrado', painel);
+    return { salvo: false, motivo: `não achei o botão Salvar do contato (botões vistos: ${agenteDescreverBotoes(painel)}). Guardei os detalhes da tela para ajuste.` };
+  }
+  salvar.scrollIntoView?.({ block: 'center' });
+  await agenteDelay(300);
   salvar.click();
   await agenteDelay(2500);
   // fecha painéis abertos e confere o nome no cabeçalho
