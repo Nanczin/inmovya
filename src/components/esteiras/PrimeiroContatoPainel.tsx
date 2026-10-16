@@ -1,26 +1,28 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Bot, CheckCircle2, Loader2, RotateCcw, Sparkles } from "lucide-react";
-import { getMeuNome, setMeuNome } from "@/lib/esteiras";
+import { AlertTriangle, Bot, CheckCircle2, Loader2, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
+import { checarExtensao, extensaoAtualizada, versaoExtensao } from "@/lib/esteiras";
 import { lerChaveGemini, salvarChaveGemini, testarChaveGemini } from "@/lib/iaGratis";
 import {
   ConfigPrimeiroContato,
-  PassoTeste,
-  testarEnvio,
   INSTRUCOES_PADRAO,
   MENSAGEM_RESERVA_PADRAO,
-  agendarRodada,
-  assinarPrimeiroContato,
+  PassoTeste,
+  RegistroContato,
+  SinalAgente,
+  VERSAO_SCALE_AGENTE,
+  carregarConfigAgente,
+  entregarParaExtensao,
   exemploDeMensagem,
-  getConfigPrimeiroContato,
-  lerEstadoPrimeiroContato,
-  limparLogPrimeiroContato,
-  setConfigPrimeiroContato,
+  lerHistoricoAgente,
+  salvarChaveNoAgente,
+  salvarConfigAgente,
+  testarEnvio,
 } from "@/lib/primeiroContato";
 
 const hora = (iso?: string | null) =>
@@ -30,67 +32,109 @@ const COR: Record<string, string> = {
   enviado: "bg-green-50 text-green-700 border-green-200",
   enviando: "bg-blue-50 text-blue-700 border-blue-200",
   pulado: "bg-gray-50 text-gray-600 border-gray-200",
-  ignorado: "bg-amber-50 text-amber-700 border-amber-200",
   erro: "bg-red-50 text-red-700 border-red-200",
 };
 
 export function PrimeiroContatoPainel() {
   const { toast } = useToast();
-  const estado = useSyncExternalStore(assinarPrimeiroContato, lerEstadoPrimeiroContato);
-  const [cfg, setCfg] = useState<ConfigPrimeiroContato>(getConfigPrimeiroContato);
-  const [meuNome, setMeuNomeLocal] = useState(getMeuNome);
+  const [cfg, setCfg] = useState<ConfigPrimeiroContato | null>(null);
+  const [sinal, setSinal] = useState<SinalAgente | null>(null);
+  const [erroBanco, setErroBanco] = useState("");
+  const [historico, setHistorico] = useState<RegistroContato[]>([]);
+  const [extensao, setExtensao] = useState<{ ok: boolean; atual: boolean; versao: string | null } | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [alterado, setAlterado] = useState(false);
   const [chave, setChave] = useState("");
   const [chaveOk, setChaveOk] = useState<boolean | null>(null);
-  const [testando, setTestando] = useState(false);
+  const [testandoChave, setTestandoChave] = useState(false);
   const [exemplo, setExemplo] = useState<{ texto: string; via: string; aviso?: string } | null>(null);
   const [gerando, setGerando] = useState(false);
-  const [, setRelogio] = useState(0);
   const [telTeste, setTelTeste] = useState("");
   const [testandoEnvio, setTestandoEnvio] = useState(false);
   const [passosTeste, setPassosTeste] = useState<PassoTeste[]>([]);
+
+  const recarregar = useCallback(async () => {
+    try {
+      const r = await carregarConfigAgente();
+      setCfg((atual) => (atual && alterado ? atual : r.cfg));
+      setSinal(r.sinal);
+      setErroBanco("");
+    } catch (e: any) {
+      setErroBanco(e?.message || "Não consegui ler a configuração do agente.");
+      setCfg((atual) => atual);
+    }
+    setHistorico(await lerHistoricoAgente());
+  }, [alterado]);
+
+  useEffect(() => {
+    recarregar();
+    const t = window.setInterval(recarregar, 30_000);
+    return () => window.clearInterval(t);
+  }, [recarregar]);
 
   useEffect(() => {
     lerChaveGemini().then((k) => {
       setChave(k);
       if (k) setChaveOk(true);
     });
+    checarExtensao().then((ok) => setExtensao({ ok, atual: ok && extensaoAtualizada(VERSAO_SCALE_AGENTE), versao: versaoExtensao }));
   }, []);
 
-  // contagem até o próximo envio
-  useEffect(() => {
-    if (!estado.proximoEnvioEm) return;
-    const t = window.setInterval(() => setRelogio((n) => n + 1), 1000);
-    return () => window.clearInterval(t);
-  }, [estado.proximoEnvioEm]);
+  const mudar = (p: Partial<ConfigPrimeiroContato>) => {
+    setCfg((c) => (c ? { ...c, ...p } : c));
+    setAlterado(true);
+  };
 
-  const salvar = (p: Partial<ConfigPrimeiroContato>) => {
-    const novo = { ...getConfigPrimeiroContato(), ...p };
-    setConfigPrimeiroContato(novo);
-    setCfg(getConfigPrimeiroContato());
+  const salvar = async (p: Partial<ConfigPrimeiroContato> = {}, aviso?: { title: string; description?: string }) => {
+    if (!cfg) return;
+    setSalvando(true);
+    try {
+      const novo = await salvarConfigAgente({ ...cfg, ...p });
+      setCfg(novo);
+      setAlterado(false);
+      const entregue = extensao?.atual ? await entregarParaExtensao(novo.ativo) : false;
+      toast({
+        title: aviso?.title || "Configuração salva",
+        description: [aviso?.description, novo.ativo && !entregue && `Atualize o Inmovya Scale para a versão ${VERSAO_SCALE_AGENTE} (chrome://extensions → Recarregar).`]
+          .filter(Boolean)
+          .join(" "),
+        variant: novo.ativo && !entregue ? "destructive" : undefined,
+      });
+      recarregar();
+    } catch (e: any) {
+      toast({ title: "Não consegui salvar", description: e?.message, variant: "destructive" });
+    } finally {
+      setSalvando(false);
+    }
   };
 
   const ligar = (v: boolean) => {
-    if (v && !meuNome.trim()) {
+    if (!cfg) return;
+    if (v && !cfg.meuNome.trim()) {
       toast({ title: "Preencha o seu nome", description: "O agente se apresenta com ele na mensagem.", variant: "destructive" });
       return;
     }
     if (v && cfg.usarIA && !chave.trim()) {
       toast({ title: "Sem chave do Gemini", description: "Vou usar a mensagem reserva até você colocar a chave grátis do Gemini." });
     }
-    salvar({ ativo: v });
-    toast({
-      title: v ? "1º contato automático ligado" : "1º contato automático desligado",
-      description: v ? "Vale para os leads que chegarem a partir de agora. Deixe este Chrome aberto com o Inmovya." : undefined,
-    });
+    salvar(
+      { ativo: v },
+      v
+        ? { title: "1º contato automático ligado", description: "Vale para os leads que chegarem a partir de agora. Pode fechar o Inmovya: a extensão continua." }
+        : { title: "1º contato automático desligado" }
+    );
   };
 
   const testarChave = async () => {
     if (!chave.trim()) return;
-    setTestando(true);
+    setTestandoChave(true);
     try {
       const ok = await testarChaveGemini(chave);
       setChaveOk(ok);
-      if (ok) await salvarChaveGemini(chave);
+      if (ok) {
+        await salvarChaveGemini(chave);
+        await salvarChaveNoAgente(chave);
+      }
       toast({
         title: ok ? "Gemini conectado e chave salva" : "Chave do Gemini inválida",
         description: ok ? "O agente vai escrever as mensagens com a IA grátis do Google." : "Confira a chave criada no Google AI Studio.",
@@ -100,21 +144,25 @@ export function PrimeiroContatoPainel() {
       setChaveOk(false);
       toast({ title: "Não foi possível testar o Gemini", variant: "destructive" });
     } finally {
-      setTestando(false);
+      setTestandoChave(false);
     }
   };
 
-  const gerarExemplo = async () => {
-    setGerando(true);
-    try {
-      setExemplo(await exemploDeMensagem(getConfigPrimeiroContato()));
-    } finally {
-      setGerando(false);
-    }
-  };
+  if (erroBanco && !cfg) {
+    return <div className="max-w-xl rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">{erroBanco}</div>;
+  }
+  if (!cfg) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+      </div>
+    );
+  }
 
-  const segundos = estado.proximoEnvioEm ? Math.max(0, Math.round((estado.proximoEnvioEm - Date.now()) / 1000)) : 0;
-  const enviadosHoje = estado.log.filter((r) => r.status === "enviado" && new Date(r.em).toDateString() === new Date().toDateString()).length;
+  // a extensão confere a cada minuto: sem sinal há mais de 3 min = parada (Chrome fechado, PC dormindo, extensão antiga)
+  const minutosSemSinal = sinal?.ultimoSinal ? (Date.now() - new Date(sinal.ultimoSinal).getTime()) / 60_000 : Infinity;
+  const extensaoRodando = minutosSemSinal < 3;
+  const enviadosHoje = historico.filter((r) => r.status === "enviado" && r.em && new Date(r.em).toDateString() === new Date().toDateString()).length;
 
   return (
     <div className="space-y-4">
@@ -126,42 +174,53 @@ export function PrimeiroContatoPainel() {
               <Bot className="w-5 h-5" /> 1º contato automático
             </h2>
             <p className="text-sm text-muted-foreground">
-              Lead novo entrou → em cerca de 1 minuto ele recebe a primeira mensagem no WhatsApp, escrita pela IA grátis do Google. 24 horas por
-              dia, sem custo.
+              Lead novo entrou → em 1 a 2 minutos ele recebe a primeira mensagem no WhatsApp, escrita pela IA grátis do Google. 24 horas por dia,
+              sem custo.
             </p>
           </div>
-          <Switch checked={cfg.ativo} onCheckedChange={ligar} />
+          <Switch checked={cfg.ativo} disabled={salvando} onCheckedChange={ligar} />
         </div>
         <div className="text-xs text-muted-foreground space-y-1">
           <div>
-            Precisa deste <b>Chrome aberto com o Inmovya</b> (qualquer aba) e o Inmovya Scale. Com o computador desligado, os leads esperam e são
-            atendidos quando ele voltar (até 3 dias).
+            Quem envia é o <b>Inmovya Scale</b>: funciona com o Inmovya <b>fechado</b>. Precisa só do Chrome aberto (pode ficar minimizado), do WhatsApp
+            Web conectado e do computador sem entrar em suspensão. Com o computador desligado, os leads esperam e são atendidos quando ele voltar
+            (até 3 dias).
           </div>
           <div>
-            Nunca manda duas vezes: confere no Inmovya se o lead (ou o mesmo número) já recebeu e, antes de enviar, lê a conversa no WhatsApp — se já
-            existe mensagem sua, pula.
+            Nunca manda duas vezes: o banco reserva cada lead para um envio só, confere se o mesmo número já recebeu e, antes de enviar, a extensão lê a
+            conversa no WhatsApp — se já existe mensagem sua, pula.
           </div>
         </div>
+        {extensao && !extensao.atual && (
+          <div className="flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            {extensao.ok
+              ? `Este Chrome está com o Inmovya Scale ${extensao.versao || "antigo"}. O agente precisa da ${VERSAO_SCALE_AGENTE}: abra chrome://extensions e clique em Recarregar no Inmovya Scale; depois recarregue esta página.`
+              : "Inmovya Scale não encontrado neste Chrome."}
+          </div>
+        )}
         {cfg.ativo && (
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            {estado.aviso ? (
+            {sinal?.aviso ? (
               <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800">
-                <AlertTriangle className="w-3.5 h-3.5" /> {estado.aviso}
+                <AlertTriangle className="w-3.5 h-3.5" /> {sinal.aviso}
               </span>
-            ) : estado.atual ? (
-              <span className="flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Atendendo {estado.atual}
+            ) : extensaoRodando ? (
+              <span className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-green-700">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Extensão ligada — esperando lead novo
               </span>
             ) : (
-              <span className="flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-green-700">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Ligado — esperando lead novo
+              <span className="flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-red-700">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {sinal?.ultimoSinal
+                  ? `A extensão não confere desde ${hora(sinal.ultimoSinal)} (Chrome fechado, computador dormindo ou extensão desatualizada)`
+                  : "A extensão ainda não conferiu nenhuma vez — recarregue o Inmovya Scale em chrome://extensions"}
               </span>
             )}
-            {segundos > 0 && <span className="text-muted-foreground">próximo envio em {segundos}s</span>}
-            {estado.verificadoEm && <span className="text-muted-foreground">conferido às {hora(estado.verificadoEm)}</span>}
+            {sinal?.ultimoSinal && extensaoRodando && <span className="text-muted-foreground">conferido às {hora(sinal.ultimoSinal)}</span>}
             <span className="text-muted-foreground">· {enviadosHoje} enviado(s) hoje</span>
-            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => agendarRodada(0)}>
-              Conferir agora
+            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => entregarParaExtensao(true).then(() => setTimeout(recarregar, 3000))}>
+              <RefreshCw className="w-3.5 h-3.5 mr-1" /> Conferir agora
             </Button>
           </div>
         )}
@@ -171,15 +230,7 @@ export function PrimeiroContatoPainel() {
       <div className="rounded-lg border bg-white p-4 grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="pc-nome">Seu nome (o agente se apresenta com ele)</Label>
-          <Input
-            id="pc-nome"
-            value={meuNome}
-            placeholder="Ex.: Estevão"
-            onChange={(e) => {
-              setMeuNomeLocal(e.target.value);
-              setMeuNome(e.target.value);
-            }}
-          />
+          <Input id="pc-nome" value={cfg.meuNome} placeholder="Ex.: Estevão" onChange={(e) => mudar({ meuNome: e.target.value })} />
         </div>
 
         <div className="space-y-1.5">
@@ -198,8 +249,8 @@ export function PrimeiroContatoPainel() {
                 setChaveOk(null);
               }}
             />
-            <Button variant="outline" onClick={testarChave} disabled={testando || !chave.trim()}>
-              {testando ? <Loader2 className="w-4 h-4 animate-spin" /> : "Testar e salvar"}
+            <Button variant="outline" onClick={testarChave} disabled={testandoChave || !chave.trim()}>
+              {testandoChave ? <Loader2 className="w-4 h-4 animate-spin" /> : "Testar e salvar"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -215,11 +266,11 @@ export function PrimeiroContatoPainel() {
           <Label>Quais leads</Label>
           <div className="space-y-1 text-sm">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" className="h-4 w-4" checked={cfg.quais === "captura"} onChange={() => salvar({ quais: "captura" })} />
+              <input type="radio" className="h-4 w-4" checked={cfg.quais === "captura"} onChange={() => mudar({ quais: "captura" })} />
               Só da captura automática (Meta Ads, Bitrix, formulários)
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" className="h-4 w-4" checked={cfg.quais === "todos"} onChange={() => salvar({ quais: "todos" })} />
+              <input type="radio" className="h-4 w-4" checked={cfg.quais === "todos"} onChange={() => mudar({ quais: "todos" })} />
               Todos os leads novos (inclusive cadastrados à mão)
             </label>
           </div>
@@ -228,7 +279,7 @@ export function PrimeiroContatoPainel() {
         <div className="space-y-2">
           <Label>Quem escreve</Label>
           <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <Switch checked={cfg.usarIA} onCheckedChange={(v) => salvar({ usarIA: v })} />
+            <Switch checked={cfg.usarIA} onCheckedChange={(v) => mudar({ usarIA: v })} />
             {cfg.usarIA ? "IA (Gemini) escreve uma mensagem para cada lead" : "Sempre a mensagem reserva (sem IA)"}
           </label>
         </div>
@@ -237,42 +288,58 @@ export function PrimeiroContatoPainel() {
           <div className="space-y-1.5 md:col-span-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="pc-instr">Instruções para a IA</Label>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => salvar({ instrucoes: INSTRUCOES_PADRAO })}>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => mudar({ instrucoes: INSTRUCOES_PADRAO })}>
                 <RotateCcw className="w-3 h-3 mr-1" /> Padrão
               </Button>
             </div>
-            <Textarea id="pc-instr" rows={4} value={cfg.instrucoes} onChange={(e) => salvar({ instrucoes: e.target.value })} />
+            <Textarea id="pc-instr" rows={4} value={cfg.instrucoes} onChange={(e) => mudar({ instrucoes: e.target.value })} />
           </div>
         )}
 
         <div className="space-y-1.5 md:col-span-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="pc-reserva">Mensagem reserva {cfg.usarIA && "(se a IA não responder)"}</Label>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => salvar({ mensagemReserva: MENSAGEM_RESERVA_PADRAO })}>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => mudar({ mensagemReserva: MENSAGEM_RESERVA_PADRAO })}>
               <RotateCcw className="w-3 h-3 mr-1" /> Padrão
             </Button>
           </div>
-          <Textarea id="pc-reserva" rows={3} value={cfg.mensagemReserva} onChange={(e) => salvar({ mensagemReserva: e.target.value })} />
+          <Textarea id="pc-reserva" rows={3} value={cfg.mensagemReserva} onChange={(e) => mudar({ mensagemReserva: e.target.value })} />
           <p className="text-xs text-muted-foreground">
             Variáveis: {"{{nome}}"}, {"{{saudacao}}"}, {"{{meu_nome}}"}, {"{{empreendimento}}"}
           </p>
         </div>
 
-        <div className="md:col-span-2 space-y-2">
-          <Button variant="outline" onClick={gerarExemplo} disabled={gerando}>
+        <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+          <Button onClick={() => salvar()} disabled={salvando || !alterado}>
+            {salvando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Salvar configuração
+          </Button>
+          {alterado && <span className="text-xs text-amber-700">alterações ainda não salvas</span>}
+          <Button
+            variant="outline"
+            onClick={async () => {
+              setGerando(true);
+              try {
+                setExemplo(await exemploDeMensagem(cfg));
+              } finally {
+                setGerando(false);
+              }
+            }}
+            disabled={gerando}
+          >
             {gerando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
             Ver exemplo (não envia nada)
           </Button>
-          {exemplo && (
-            <div className="rounded-lg border bg-green-50/50 p-3 text-sm space-y-1">
-              <div className="whitespace-pre-wrap">{exemplo.texto}</div>
-              <div className="text-xs text-muted-foreground">
-                Lead de exemplo: Mariana Souza, Residencial Jardim das Flores · escrito por: {exemplo.via}
-                {exemplo.aviso && ` (${exemplo.aviso})`}
-              </div>
-            </div>
-          )}
         </div>
+        {exemplo && (
+          <div className="md:col-span-2 rounded-lg border bg-green-50/50 p-3 text-sm space-y-1">
+            <div className="whitespace-pre-wrap">{exemplo.texto}</div>
+            <div className="text-xs text-muted-foreground">
+              Lead de exemplo: Mariana Souza, Residencial Jardim das Flores · escrito por: {exemplo.via}
+              {exemplo.aviso && ` (${exemplo.aviso})`}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Teste */}
@@ -290,7 +357,7 @@ export function PrimeiroContatoPainel() {
               setTestandoEnvio(true);
               setPassosTeste([]);
               try {
-                await testarEnvio(telTeste, setPassosTeste);
+                await testarEnvio(telTeste, cfg, setPassosTeste);
               } finally {
                 setTestandoEnvio(false);
               }
@@ -318,26 +385,24 @@ export function PrimeiroContatoPainel() {
       {/* Histórico */}
       <div className="rounded-lg border bg-white p-4 space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm">Últimos atendimentos neste computador</h3>
-          {estado.log.length > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={limparLogPrimeiroContato}>
-              Limpar
-            </Button>
-          )}
+          <h3 className="font-semibold text-sm">Últimos atendimentos</h3>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={recarregar}>
+            <RefreshCw className="w-3 h-3 mr-1" /> Atualizar
+          </Button>
         </div>
-        {estado.log.length === 0 ? (
+        {historico.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum ainda. Quando um lead novo chegar, ele aparece aqui.</p>
         ) : (
           <ul className="divide-y">
-            {estado.log.map((r) => (
-              <li key={`${r.leadId}-${r.em}`} className="py-2 text-sm space-y-1">
+            {historico.map((r) => (
+              <li key={r.leadId} className="py-2 text-sm space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`text-xs rounded-full border px-2 py-0.5 ${COR[r.status] || ""}`}>{r.status}</span>
                   <span className="font-medium">{r.nome}</span>
                   <span className="text-xs text-muted-foreground">{r.telefone}</span>
                   <span className="text-xs text-muted-foreground ml-auto">{hora(r.em)}</span>
                 </div>
-                <div className="text-xs text-muted-foreground">{r.detalhe}</div>
+                {r.detalhe && <div className="text-xs text-muted-foreground">{r.detalhe}</div>}
                 {r.texto && r.status === "enviado" && <div className="text-xs whitespace-pre-wrap rounded bg-muted/50 p-2">{r.texto}</div>}
               </li>
             ))}

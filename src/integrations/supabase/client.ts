@@ -5,6 +5,9 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://hhtzdxtythejyykrpgqw.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhodHpkeHR5dGhlanl5a3JwZ3F3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQwNjQ0NTMsImV4cCI6MjA2OTY0MDQ1M30.BSNW9wL7JBjin_AMl-u9nYV59kLD_fhojQTf3SefUsE";
 
+// endereço e chave pública (a extensão Inmovya Scale usa para o 1º contato automático)
+export { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY };
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 

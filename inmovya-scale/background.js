@@ -24,6 +24,15 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
+// Uma coisa por vez no WhatsApp: envios do Inmovya (esteira, disparo), leituras e o 1º contato automático
+// da própria extensão entram nesta fila — nunca abrem duas janelas do WhatsApp ao mesmo tempo.
+let filaWA = Promise.resolve();
+function naVezWA(tarefa) {
+  const p = filaWA.then(tarefa, tarefa);
+  filaWA = p.catch(() => {});
+  return p;
+}
+
 async function waitForTabComplete(tabId, timeoutMs = 30000) {
   const current = await chrome.tabs.get(tabId);
   if (current.status === 'complete') return;
@@ -385,26 +394,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
+  // 1º contato automático: o Inmovya entrega o token do agente (e liga/desliga)
+  if (request?.action === 'agente_config') {
+    (async () => {
+      const c = request.config || {};
+      if (c.token && c.url && c.anonKey) {
+        await chrome.storage.local.set({ agentePrimeiroContato: { url: c.url, anonKey: c.anonKey, token: c.token } });
+        agenteGarantirAlarme();
+        if (c.rodarAgora) agenteRodada().catch(() => {});
+      } else {
+        await chrome.storage.local.remove('agentePrimeiroContato');
+      }
+      const { agenteUltimoEnvio = 0 } = await chrome.storage.local.get('agenteUltimoEnvio');
+      return { ultimoEnvio: agenteUltimoEnvio };
+    })()
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
   if (request?.action === 'campaign_send') {
-    sendCampaignMessage(request, sender.tab?.id || null)
+    naVezWA(() => sendCampaignMessage(request, sender.tab?.id || null))
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (request?.action === 'paste_batch') {
-    colarEmLote(request)
+    naVezWA(() => colarEmLote(request))
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (request?.action === 'agent_batch') {
-    agenteEmLote(request, sender.tab?.id || null)
+    naVezWA(() => agenteEmLote(request, sender.tab?.id || null))
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (request?.action === 'agent_read_chat' || request?.action === 'agent_set_labels') {
-    agenteNaConversa(request, request.action === 'agent_read_chat' ? 'agent_read_chat_tab' : 'agent_set_labels_tab', sender.tab?.id || null)
+    naVezWA(() => agenteNaConversa(request, request.action === 'agent_read_chat' ? 'agent_read_chat_tab' : 'agent_set_labels_tab', sender.tab?.id || null))
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -436,3 +463,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     .catch(error => sendResponse({ ok: false, error: error.message }));
   return true;
 });
+
+// 1º contato automático (roda sozinho, com o Inmovya fechado)
+importScripts("agente-primeiro-contato.js");

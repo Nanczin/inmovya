@@ -2,6 +2,17 @@
   const announceReady = () => window.dispatchEvent(new CustomEvent('INMOVYA_EXTENSION_READY', { detail: { version: chrome.runtime.getManifest().version } }));
 
   window.addEventListener('INMOVYA_CHECK_EXTENSION', announceReady);
+
+  // 1º contato automático: o Inmovya entrega o token do agente para a extensão (que roda sozinha depois)
+  window.addEventListener('INMOVYA_AGENTE_CONFIG', event => {
+    const detail = event.detail || {};
+    chrome.runtime.sendMessage({ action: 'agente_config', config: detail.config || {} }, response => {
+      const error = chrome.runtime.lastError?.message;
+      window.dispatchEvent(new CustomEvent('INMOVYA_AGENTE_CONFIG_RESULT', {
+        detail: { token: detail.token, ok: !!response?.ok && !error, error: error || response?.error || '', ultimoEnvio: response?.ultimoEnvio || 0 }
+      }));
+    });
+  });
   window.addEventListener('INMOVYA_OPEN_WHATSAPP', event => {
     const detail = event.detail || {};
     chrome.runtime.sendMessage({ action: 'campaign_send', ...detail }, response => {
