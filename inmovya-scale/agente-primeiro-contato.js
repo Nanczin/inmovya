@@ -4,7 +4,7 @@
 // A cada minuto (chrome.alarms): pergunta ao banco (funções agente_* com o token do agente) se há lead novo,
 // atende UM por vez (o intervalo entre envios é o próprio minuto do alarme):
 //   reserva no banco (só um envio por lead) → mesmo número já recebeu? pula → lê a conversa no WhatsApp
-//   (mensagem sua? pula) → escreve com o Gemini (grátis) ou usa a mensagem reserva → envia → grava o resultado.
+//   (mensagem sua? pula) → monta a SUA mensagem pronta com spintax (sem IA) → envia → grava o resultado.
 // Usa as funções do background.js: naVezWA, agenteNaConversa, sendCampaignMessage.
 
 const AGENTE_ALARME = 'inmovya-primeiro-contato';
@@ -97,10 +97,26 @@ function agenteEmpreendimento(observacoes, leadNome) {
   return agenteNaoEhProjeto(projeto) ? '' : projeto;
 }
 
+// Spintax: {Oi|Olá|Oii} escolhe uma opção ao acaso (aceita um dentro do outro).
+// As variáveis {{nome}}, {{saudacao}}... (chaves duplas) não são mexidas.
+function agenteSpin(texto) {
+  const vars = [];
+  let t = String(texto || '').replace(/\{\{[^{}]*\}\}/g, m => `\u0000${vars.push(m) - 1}\u0000`);
+  for (let i = 0; i < 20; i++) {
+    const antes = t;
+    t = t.replace(/\{([^{}]*)\}/g, (_, dentro) => {
+      const opcoes = dentro.split('|');
+      return opcoes[Math.floor(Math.random() * opcoes.length)];
+    });
+    if (t === antes) break;
+  }
+  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => vars[+i]);
+}
+
 function agenteMontar(template, lead, meuNome) {
   const agora = new Date();
   const projeto = agenteEmpreendimento(lead.observacoes, lead.nome);
-  let t = String(template || '');
+  let t = agenteSpin(template);
   t = projeto
     ? t.replace(/\{\{\s*empreendimento\s*\}\}/gi, projeto)
     : t.replace(/\b(n[oa]s?)\s+\{\{\s*empreendimento\s*\}\}/gi, 'buscando imóveis')
@@ -120,72 +136,11 @@ function agenteMontar(template, lead, meuNome) {
     .trim();
 }
 
-function agenteFonte(lead) {
-  const tags = (lead.tags || []).map(t => String(t).toLowerCase());
-  if (tags.includes('meta ads')) return `anúncio no ${lead.origem || 'Facebook/Instagram'}`;
-  if (tags.includes('bitrix') || String(lead.origem || '').toLowerCase() === 'roleta') return 'cadastro recebido pelo Bitrix';
-  return lead.origem || 'cadastro';
-}
-
-const AGENTE_MODELOS = ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest'];
-
-async function agenteGemini(chave, prompt) {
-  let ultimoErro = '';
-  for (const modelo of AGENTE_MODELOS) {
-    let resp;
-    try {
-      resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(chave)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.8, responseMimeType: 'application/json' } })
-      });
-    } catch (_) { ultimoErro = 'sem conexão com o Gemini'; continue; }
-    if (resp.status === 404 || resp.status === 429 || resp.status >= 500) {
-      ultimoErro = resp.status === 404 ? `modelo ${modelo} indisponível` : resp.status === 429 ? 'limite grátis do Gemini atingido por agora' : 'Gemini sobrecarregado';
-      continue;
-    }
-    if (!resp.ok) throw new Error(resp.status === 400 || resp.status === 403 ? 'chave do Gemini inválida' : `Gemini indisponível (${resp.status})`);
-    const json = await resp.json();
-    const texto = (json.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-    try { return JSON.parse(texto.replace(/^```(?:json)?\s*|\s*```$/g, '') || '{}'); } catch (_) { ultimoErro = 'resposta do Gemini fora do formato'; }
-  }
-  throw new Error(ultimoErro || 'Gemini indisponível');
-}
-
-async function agenteGerarMensagem(lead, cfg, conversa) {
-  const reserva = () => ({ texto: agenteMontar(cfg.mensagem_reserva, lead, cfg.meu_nome), via: 'mensagem reserva' });
-  if (!cfg.usar_ia) return reserva();
-  if (!cfg.gemini_key) return { ...reserva(), aviso: 'sem chave do Gemini' };
-  const agora = new Date();
-  const doLead = (conversa || []).filter(m => m.dir === 'in').map(m => m.texto || `(${m.tipo || 'mídia'})`).slice(-5);
-  const projeto = agenteEmpreendimento(lead.observacoes, lead.nome);
-  const prompt = [
-    'Você escreve a PRIMEIRA mensagem de WhatsApp de um corretor de imóveis para um lead que acabou de chegar.',
-    '',
-    'Instruções do corretor:',
-    String(cfg.instrucoes || '').trim(),
-    '',
-    'Dados:',
-    `- Nome do corretor: ${cfg.meu_nome || '(não informado — não invente um nome)'}`,
-    `- Primeiro nome do lead: ${agentePrimeiroNome(lead.nome) || '(sem nome — cumprimente sem usar nome)'}`,
-    `- Empreendimento de interesse: ${projeto || 'não informado (fale em imóveis, sem inventar um empreendimento)'}`,
-    `- De onde veio: ${agenteFonte(lead)}`,
-    `- Observações do cadastro: ${String(lead.observacoes || '').replace(/\s+/g, ' ').slice(0, 400) || 'nenhuma'}`,
-    `- Agora: ${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} (saudação do horário: "${agenteSaudacao(agora)}")`,
-    doLead.length ? `- O lead já escreveu no WhatsApp: ${doLead.map(t => `"${t}"`).join(' / ')}` : '- O lead ainda não escreveu nada no WhatsApp.',
-    '',
-    'Regras fixas: português do Brasil; não invente preço, condição de pagamento, endereço, metragem, prazo de entrega nem promessas;',
-    'não use colchetes, chaves nem campos para preencher; no máximo 450 caracteres; escreva só a mensagem, sem assinatura.',
-    'Responda apenas com JSON: {"mensagem": "texto da mensagem"}'
-  ].join('\n');
-  try {
-    const r = await agenteGemini(cfg.gemini_key, prompt);
-    const texto = String(r?.mensagem ?? '').trim().replace(/^["'“”]+|["'“”]+$/g, '').replace(/\n{3,}/g, '\n\n').trim();
-    if (texto.length >= 15 && texto.length <= 700 && !/\{\{|\}\}|\[[^\]]*\]|<[^>]+>/.test(texto)) return { texto, via: 'IA (Gemini)' };
-    return { ...reserva(), aviso: 'a IA devolveu um texto fora do padrão' };
-  } catch (err) {
-    return { ...reserva(), aviso: err.message || 'IA indisponível' };
-  }
+// 1º contato SEM IA: sempre a sua mensagem pronta, com spintax ({Oi|Olá}) para cada lead receber um texto diferente.
+async function agenteGerarMensagem(lead, cfg) {
+  const texto = agenteMontar(cfg.mensagem_reserva, lead, cfg.meu_nome);
+  if (!texto) throw new Error('a mensagem do 1º contato está vazia — escreva a sua no Inmovya (Esteiras → 1º contato)');
+  return { texto, via: 'sua mensagem (spintax)' };
 }
 
 function agenteTelefone(t) {
@@ -213,6 +168,8 @@ async function agenteSalvarEEtiquetar(tel, lead) {
     const r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: lead.nome || '', etiqueta }, 'agent_save_and_label_tab'));
     const problemas = [];
     if (r?.contato && !r.contato.salvo) problemas.push(`contato de ${lead.nome || tel} não foi salvo (${r.contato.motivo})`);
+    else if (r?.contato?.salvo && r.contato.sincronizado === false && !r.contato.jaEstava)
+      problemas.push(`contato de ${lead.nome || tel} salvo no WhatsApp, mas não achei a opção de sincronizar com a agenda do celular`);
     const naoExiste = (r?.etiqueta?.alteracoes || []).find(a => /não existe/.test(a));
     if (etiqueta && naoExiste) problemas.push(`${naoExiste} — crie a etiqueta "${etiqueta}" no WhatsApp Business para o agente marcar`);
     else if (etiqueta && r?.etiqueta && r.etiqueta.ok === false) problemas.push(`não consegui marcar a etiqueta ${etiqueta} (${r.etiqueta.error || 'erro'})`);
@@ -284,7 +241,7 @@ async function agenteAtender(cred, cfg, lead) {
       const leitura = await agenteNaConversa({ phone: tel, background: true }, 'agent_read_chat_tab');
       const conversa = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
       if (conversa.some(m => m.dir === 'out')) return { pulou: 'já existe mensagem sua nesta conversa do WhatsApp' };
-      const msg = await agenteGerarMensagem(lead, cfg, conversa);
+      const msg = await agenteGerarMensagem(lead, cfg);
       await sendCampaignMessage({ phone: tel, text: msg.texto, background: true, gapMinMs: 0, gapMaxMs: 0 });
       return { msg };
     });

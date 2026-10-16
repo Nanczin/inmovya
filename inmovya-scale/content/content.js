@@ -575,6 +575,30 @@ function agentePreencher(campo, valor) {
   campo.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+// Liga a chave "Sincronizar contato com o telefone" do formulário de novo contato (se estiver desligada).
+// Devolve 'ligou' | 'ja_ligada' | null (não achou a chave).
+function agenteLigarSincronizacao() {
+  const rotulo = /sincroniz|sync/i;
+  const visivel = el => {
+    const alvo = el.matches('input') ? el.closest('label') || el.parentElement || el : el;
+    return alvo.getClientRects().length > 0 && getComputedStyle(alvo).visibility !== 'hidden';
+  };
+  const chaves = Array.from(document.querySelectorAll('input[type="checkbox"], [role="switch"], [role="checkbox"]'))
+    .filter(el => visivel(el) && !el.closest('#inmovya-scale-root') && !el.closest('#pane-side') && !el.closest('#main footer') && !el.closest('li'));
+  for (const chave of chaves) {
+    // o texto da opção fica na MESMA linha da chave (bloco pequeno: pai/avô), nunca na página inteira
+    const textoDe = el => `${el.innerText || ''} ${el.getAttribute?.('aria-label') || ''}`;
+    let bloco = chave;
+    for (let i = 0; i < 3 && bloco && !rotulo.test(textoDe(bloco)); i++) bloco = bloco.parentElement;
+    if (!bloco || !rotulo.test(textoDe(bloco)) || (bloco.innerText || '').length > 120) continue;
+    const ligada = chave.matches('input') ? chave.checked : chave.getAttribute('aria-checked') === 'true';
+    if (ligada) return 'ja_ligada';
+    (chave.matches('input') ? chave.closest('label') || chave : chave).click();
+    return 'ligou';
+  }
+  return null;
+}
+
 // qualquer botão (mesmo fora da tela, lá embaixo do formulário) com "Salvar"/"Save" no texto
 function agenteBotaoSalvarPorTexto() {
   return Array.from(document.querySelectorAll('button, [role="button"], div[tabindex]'))
@@ -642,8 +666,13 @@ async function agenteSalvarContato(nomeCompleto, telefone) {
     await agenteDelay(800);
   }
 
+  // "Sincronizar contato com o telefone": precisa estar LIGADO, senão o contato fica só no WhatsApp e não vai para a agenda do celular
+  const sincronizacao = agenteLigarSincronizacao();
+  if (sincronizacao) await agenteDelay(500);
+
   // o botão de salvar fica no mesmo painel do formulário (às vezes mais abaixo, ou só um ícone ✓)
   const painel = agentePainelDoCampo(campoNome);
+  if (!sincronizacao) await agenteGuardarDiagnostico('contato: opção "sincronizar com o telefone" não encontrada', painel.parentElement || painel);
   let salvar = null;
   const fim = Date.now() + 4000;
   while (!salvar && Date.now() < fim) {
@@ -671,9 +700,12 @@ async function agenteSalvarContato(nomeCompleto, telefone) {
   }
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await agenteDelay(500);
+  const sinc = sincronizacao === 'ligou' ? ' (liguei "sincronizar com o telefone")'
+    : sincronizacao === 'ja_ligada' ? ' (sincroniza com o telefone)'
+    : ' (não achei a opção de sincronizar com o telefone — guardei os detalhes do formulário para ajuste)';
   return confirmado
-    ? { salvo: true, motivo: confirmado }
-    : { salvo: false, motivo: 'cliquei em Salvar, mas o WhatsApp não confirmou — confira no celular' };
+    ? { salvo: true, motivo: confirmado + sinc, sincronizado: !!sincronizacao }
+    : { salvo: false, motivo: 'cliquei em Salvar, mas o WhatsApp não confirmou — confira no celular' + sinc };
 }
 
 const agenteLinhasVisiveis = () => Array.from(document.querySelectorAll('[role="row"]'))

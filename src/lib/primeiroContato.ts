@@ -1,5 +1,5 @@
 // 1º CONTATO AUTOMÁTICO: assim que um lead novo entra no Inmovya, o agente escreve a primeira
-// mensagem com IA gratuita (Google Gemini) e envia pelo WhatsApp Web, 24 horas por dia.
+// mensagem (a SUA mensagem pronta, com spintax — sem IA) e envia pelo WhatsApp Web, 24 horas por dia.
 //
 // Quem trabalha é o INMOVYA SCALE (inmovya-scale/agente-primeiro-contato.js): ele acorda a cada minuto e roda
 // mesmo com o Inmovya fechado — basta o Chrome aberto (pode estar minimizado) e o WhatsApp Web conectado.
@@ -24,18 +24,17 @@ import {
   saudacao,
   telefoneWhatsApp,
 } from "@/lib/esteiras";
-import { lerChaveGemini, perguntarGemini } from "@/lib/iaGratis";
 
-export const VERSAO_SCALE_AGENTE = "1.6.1"; // 1.6.1: salva o contato e marca a etiqueta da origem
+export const VERSAO_SCALE_AGENTE = "1.6.5"; // 1.6.5: sem IA — sua mensagem com spintax; sincroniza o contato com o celular
 
 // ---------- Configuração (no banco: a extensão lê de lá) ----------
 export interface ConfigPrimeiroContato {
   ativo: boolean;
   ativadoEm: string | null; // só leads que chegarem depois disso (não dispara para a base antiga)
-  usarIA: boolean;
+  usarIA: boolean; // sempre false: o 1º contato usa só a sua mensagem com spintax
   quais: "captura" | "todos"; // captura = Meta Ads, Bitrix/roleta e formulários; todos = inclusive cadastrados à mão
-  instrucoes: string;
-  mensagemReserva: string; // usada quando a IA não responder
+  instrucoes: string; // (antigo, da IA; não é mais usado)
+  mensagemReserva: string; // a SUA mensagem do 1º contato, com spintax {Oi|Olá} e variáveis {{nome}}
   meuNome: string;
 }
 
@@ -53,12 +52,12 @@ export const INSTRUCOES_PADRAO =
   "Se o lead já mandou mensagem, responda ao que ele disse.";
 
 export const MENSAGEM_RESERVA_PADRAO =
-  "Oi, {{nome}}, {{saudacao}}! Aqui é {{meu_nome}}, tudo bem? Vi seu cadastro no {{empreendimento}} e quero te ajudar. Você procura para morar ou para investir?";
+  "{Oi|Olá|Oii}, {{nome}}, {{saudacao}}! {Aqui é|Quem fala é|Sou} {{meu_nome}}, {tudo bem|tudo certo|tudo bom}? {Vi|Recebi} seu cadastro no {{empreendimento}} e {quero te ajudar|posso te ajudar|vou te ajudar}. {Você procura|Você está procurando|Você busca} para morar ou para investir?";
 
 const PADRAO: ConfigPrimeiroContato = {
   ativo: false,
   ativadoEm: null,
-  usarIA: true,
+  usarIA: false,
   quais: "captura",
   instrucoes: INSTRUCOES_PADRAO,
   mensagemReserva: MENSAGEM_RESERVA_PADRAO,
@@ -103,7 +102,7 @@ export async function carregarConfigAgente(): Promise<{ cfg: ConfigPrimeiroConta
     ? {
         ativo: !!r.ativo,
         ativadoEm: r.ativado_em || null,
-        usarIA: r.usar_ia !== false,
+        usarIA: false, // sem IA no 1º contato
         quais: r.quais === "todos" ? "todos" : "captura",
         instrucoes: r.instrucoes || INSTRUCOES_PADRAO,
         mensagemReserva: r.mensagem_reserva || MENSAGEM_RESERVA_PADRAO,
@@ -125,18 +124,16 @@ export async function salvarConfigAgente(c: ConfigPrimeiroContato) {
   // ao ligar, vale só para os leads que chegarem a partir de agora
   const ativadoEm = c.ativo ? (anterior?.cfg.ativo && c.ativadoEm ? c.ativadoEm : new Date().toISOString()) : null;
   const token = tokenAtual || novoToken();
-  const gemini = await lerChaveGemini();
   const { error } = await supabase.from("agente_config" as any).upsert(
     {
       user_id: user.id,
       ativo: c.ativo,
       ativado_em: ativadoEm,
-      usar_ia: c.usarIA,
+      usar_ia: false, // sem IA: a extensão usa só a sua mensagem com spintax
       quais: c.quais,
       instrucoes: c.instrucoes,
       mensagem_reserva: c.mensagemReserva,
       meu_nome: c.meuNome.trim(),
-      gemini_key: gemini || null,
       token,
       updated_at: new Date().toISOString(),
     } as any,
@@ -146,15 +143,6 @@ export async function salvarConfigAgente(c: ConfigPrimeiroContato) {
   tokenAtual = token;
   setMeuNome(c.meuNome);
   return { ...c, ativadoEm };
-}
-
-/** Atualiza só a chave do Gemini no agente (quando ela muda na tela). */
-export async function salvarChaveNoAgente(chave: string) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user || !tokenAtual) return;
-  await supabase.from("agente_config" as any).update({ gemini_key: chave.trim() || null } as any).eq("user_id", user.id);
 }
 
 /** Entrega endereço do banco + token do agente para o Inmovya Scale deste Chrome. */
@@ -346,74 +334,105 @@ export interface MensagemWA {
 
 type LeadMensagem = { nome: string | null; origem: string | null; tags: string[] | null; observacoes: string | null };
 
-const fonteDoLead = (lead: Pick<LeadMensagem, "origem" | "tags">) => {
-  const tags = (lead.tags || []).map((t) => String(t).toLowerCase());
-  if (tags.includes("meta ads")) return `anúncio no ${lead.origem || "Facebook/Instagram"}`;
-  if (tags.includes("bitrix") || String(lead.origem).toLowerCase() === "roleta") return "cadastro recebido pelo Bitrix";
-  return lead.origem || "cadastro";
+// ---------- Spintax: {Oi|Olá|Oii} escolhe uma opção ao acaso (aceita um dentro do outro) ----------
+// As variáveis {{nome}}, {{saudacao}}... (chaves duplas) não são mexidas. A extensão usa a mesma regra.
+const protegerVariaveis = (texto: string) => {
+  const vars: string[] = [];
+  const t = String(texto || "").replace(/\{\{[^{}]*\}\}/g, (m) => `\u0000${vars.push(m) - 1}\u0000`);
+  return { t, voltar: (s: string) => s.replace(/\u0000(\d+)\u0000/g, (_, i) => vars[+i]) };
 };
 
-const textoValido = (t: unknown): t is string => {
-  if (typeof t !== "string") return false;
-  const s = t.trim();
-  return s.length >= 15 && s.length <= 700 && !/\{\{|\}\}|\[[^\]]*\]|<[^>]+>/.test(s);
-};
-
-const limparTexto = (t: string) =>
-  t
-    .trim()
-    .replace(/^["'“”]+|["'“”]+$/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-export async function gerarMensagem(lead: LeadMensagem, cfg: ConfigPrimeiroContato, conversa: MensagemWA[] = []): Promise<{ texto: string; via: string; aviso?: string }> {
-  const nome = lead.nome || "";
-  const meuNome = cfg.meuNome || getMeuNome();
-  // sem nome do lead: "Oi, , boa noite" vira "Oi, boa noite"
-  const reserva = () =>
-    montarMensagem(cfg.mensagemReserva.replace(/\{\{\s*meu_nome\s*\}\}/gi, meuNome), nome, lead.observacoes)
-      .replace(/\s+([,.!?])/g, "$1")
-      .replace(/,(\s*,)+/g, ",")
-      .trim();
-  if (!cfg.usarIA) return { texto: reserva(), via: "mensagem reserva" };
-
-  const chave = await lerChaveGemini();
-  if (!chave) return { texto: reserva(), via: "mensagem reserva", aviso: "sem chave do Gemini" };
-
-  const agora = new Date();
-  const doLead = conversa.filter((m) => m.dir === "in").map((m) => m.texto || `(${m.tipo || "mídia"})`).slice(-5);
-  const projeto = empreendimentoDoLead(lead.observacoes, nome);
-  const prompt = [
-    "Você escreve a PRIMEIRA mensagem de WhatsApp de um corretor de imóveis para um lead que acabou de chegar.",
-    "",
-    "Instruções do corretor:",
-    cfg.instrucoes.trim(),
-    "",
-    "Dados:",
-    `- Nome do corretor: ${meuNome || "(não informado — não invente um nome)"}`,
-    `- Primeiro nome do lead: ${primeiroNome(nome) || "(sem nome — cumprimente sem usar nome)"}`,
-    `- Empreendimento de interesse: ${projeto || "não informado (fale em imóveis, sem inventar um empreendimento)"}`,
-    `- De onde veio: ${fonteDoLead(lead)}`,
-    `- Observações do cadastro: ${String(lead.observacoes || "").replace(/\s+/g, " ").slice(0, 400) || "nenhuma"}`,
-    `- Agora: ${agora.toLocaleDateString("pt-BR")} ${agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} (saudação do horário: "${saudacao(agora)}")`,
-    doLead.length ? `- O lead já escreveu no WhatsApp: ${doLead.map((t) => `"${t}"`).join(" / ")}` : "- O lead ainda não escreveu nada no WhatsApp.",
-    "",
-    "Regras fixas: português do Brasil; não invente preço, condição de pagamento, endereço, metragem, prazo de entrega nem promessas;",
-    "não use colchetes, chaves nem campos para preencher; no máximo 450 caracteres; escreva só a mensagem, sem assinatura.",
-    'Responda apenas com JSON: {"mensagem": "texto da mensagem"}',
-  ].join("\n");
-
-  try {
-    const r = await perguntarGemini(chave, prompt, 0.8);
-    const texto = limparTexto(String(r?.mensagem ?? ""));
-    if (textoValido(texto)) return { texto, via: "IA (Gemini)" };
-    return { texto: reserva(), via: "mensagem reserva", aviso: "a IA devolveu um texto fora do padrão" };
-  } catch (e: any) {
-    return { texto: reserva(), via: "mensagem reserva", aviso: e?.message || "IA indisponível" };
+export function spin(texto: string) {
+  const p = protegerVariaveis(texto);
+  let t = p.t;
+  for (let i = 0; i < 20; i++) {
+    const antes = t;
+    t = t.replace(/\{([^{}]*)\}/g, (_, dentro: string) => {
+      const opcoes = dentro.split("|");
+      return opcoes[Math.floor(Math.random() * opcoes.length)];
+    });
+    if (t === antes) break;
   }
+  return p.voltar(t);
 }
 
-/** Gera um exemplo de mensagem (sem enviar), para conferir o tom da IA. */
+/** Quantas mensagens diferentes o spintax gera (aproximado, para mostrar na tela). */
+export function contarVariacoes(texto: string) {
+  const { t } = protegerVariaveis(texto);
+  let total = 1;
+  for (const m of t.matchAll(/\{([^{}]*)\}/g)) total *= Math.max(1, m[1].split("|").length);
+  return total;
+}
+
+/** Spintax com chaves sobrando ou faltando? */
+export function spintaxValido(texto: string) {
+  const { t } = protegerVariaveis(texto);
+  let nivel = 0;
+  for (const c of t) {
+    if (c === "{") nivel++;
+    else if (c === "}") nivel--;
+    if (nivel < 0) return false;
+  }
+  return nivel === 0;
+}
+
+// Sinônimos para gerar spintax a partir da sua mensagem (sem IA). O mais longo é trocado primeiro.
+const SINONIMOS: string[][] = [
+  ["para morar ou para investir", "para morar ou investir", "para moradia ou investimento"],
+  ["vi seu cadastro", "recebi seu cadastro", "chegou aqui o seu cadastro"],
+  ["vi que você", "percebi que você", "notei que você"],
+  ["quero te ajudar", "posso te ajudar", "vou te ajudar"],
+  ["posso te ajudar", "quero te ajudar", "vou te ajudar"],
+  ["posso te mandar", "posso te enviar", "quer que eu te mande"],
+  ["podemos conversar", "vamos conversar", "posso te explicar melhor"],
+  ["fico no aguardo", "aguardo seu retorno", "fico à disposição"],
+  ["você procura", "você está procurando", "você busca"],
+  ["você está procurando", "você procura", "você busca"],
+  ["tem interesse", "tem vontade", "pensa"],
+  ["tudo bem", "tudo certo", "tudo bom", "como vai"],
+  ["tudo bom", "tudo bem", "tudo certo"],
+  ["aqui é", "quem fala é", "sou"],
+  ["me conta", "me fala", "me diz"],
+  ["informações", "detalhes"],
+  ["obrigado", "valeu", "agradeço"],
+  ["olá", "oi", "oii"],
+  ["oi", "olá", "oii", "opa"],
+];
+
+const manterMaiuscula = (orig: string, alt: string) => (orig[0] === orig[0].toUpperCase() && orig[0] !== orig[0].toLowerCase() ? alt.charAt(0).toUpperCase() + alt.slice(1) : alt);
+const semAcentoSp = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** Transforma a sua mensagem em spintax trocando expressões comuns por {opção|opção}. Você revisa e edita depois. */
+export function gerarSpintax(texto: string) {
+  const grupos: string[] = [];
+  // não mexe no que já é spintax nem nas variáveis
+  const guardar = (s: string) => `\u0001${grupos.push(s) - 1}\u0001`;
+  let t = String(texto || "").replace(/\{\{[^{}]*\}\}/g, guardar);
+  for (let i = 0; i < 5; i++) t = t.replace(/\{[^{}\u0001]*\}/g, guardar);
+  const ordenados = [...SINONIMOS].sort((a, b) => b[0].length - a[0].length);
+  for (const [base, ...alts] of ordenados) {
+    const escapado = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`(^|[^\\p{L}\\u0001])(${escapado})(?=$|[^\\p{L}])`, "giu");
+    t = t.replace(re, (m, antes: string, achado: string) => {
+      const opcoes = [achado, ...alts.map((a) => manterMaiuscula(achado, a))].filter((o, i, arr) => arr.findIndex((x) => semAcentoSp(x) === semAcentoSp(o)) === i);
+      return antes + guardar(`{${opcoes.join("|")}}`);
+    });
+  }
+  for (let i = 0; i < 10 && /\u0001\d+\u0001/.test(t); i++) t = t.replace(/\u0001(\d+)\u0001/g, (_, k) => grupos[+k]);
+  return t;
+}
+
+/** Monta a mensagem do 1º contato: sua mensagem pronta + spintax + variáveis (sem IA). */
+export async function gerarMensagem(lead: LeadMensagem, cfg: ConfigPrimeiroContato): Promise<{ texto: string; via: string; aviso?: string }> {
+  const meuNome = cfg.meuNome || getMeuNome();
+  const texto = montarMensagem(spin(cfg.mensagemReserva).replace(/\{\{\s*meu_nome\s*\}\}/gi, meuNome), lead.nome || "", lead.observacoes)
+    .replace(/\s+([,.!?])/g, "$1")
+    .replace(/,(\s*,)+/g, ",") // sem nome do lead: "Oi, , boa noite" vira "Oi, boa noite"
+    .trim();
+  return { texto, via: "sua mensagem (spintax)" };
+}
+
+/** Exemplos de mensagem (sem enviar), para conferir as variações. */
 export async function exemploDeMensagem(cfg: ConfigPrimeiroContato) {
   return gerarMensagem({ nome: "Mariana Souza", origem: "Instagram", tags: ["Meta Ads"], observacoes: "Empreendimento: Residencial Jardim das Flores" }, cfg);
 }
@@ -516,7 +535,7 @@ export async function testarEnvio(
     }
 
     marcarPasso("Escrever a mensagem", null);
-    const msg = await gerarMensagem({ nome: "Teste", origem: "Instagram", tags: ["Meta Ads"], observacoes: null }, cfg, conversa);
+    const msg = await gerarMensagem({ nome: "Teste", origem: "Instagram", tags: ["Meta Ads"], observacoes: null }, cfg);
     marcarPasso("Escrever a mensagem", true, `${msg.via}${msg.aviso ? ` (${msg.aviso})` : ""}: ${msg.texto}`);
 
     marcarPasso("Enviar no WhatsApp", null, "enviando na janelinha...");

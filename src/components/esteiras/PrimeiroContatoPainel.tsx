@@ -5,12 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Bot, CheckCircle2, Loader2, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, Loader2, RefreshCw, RotateCcw, Shuffle, Sparkles } from "lucide-react";
 import { checarExtensao, extensaoAtualizada, versaoExtensao } from "@/lib/esteiras";
-import { lerChaveGemini, salvarChaveGemini, testarChaveGemini } from "@/lib/iaGratis";
 import {
   ConfigPrimeiroContato,
-  INSTRUCOES_PADRAO,
   MENSAGEM_RESERVA_PADRAO,
   PassoTeste,
   RegistroContato,
@@ -24,7 +22,9 @@ import {
   tirarDaFila,
   exemploDeMensagem,
   lerHistoricoAgente,
-  salvarChaveNoAgente,
+  contarVariacoes,
+  gerarSpintax,
+  spintaxValido,
   salvarConfigAgente,
   testarEnvio,
 } from "@/lib/primeiroContato";
@@ -48,11 +48,7 @@ export function PrimeiroContatoPainel() {
   const [extensao, setExtensao] = useState<{ ok: boolean; atual: boolean; versao: string | null } | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [alterado, setAlterado] = useState(false);
-  const [chave, setChave] = useState("");
-  const [chaveOk, setChaveOk] = useState<boolean | null>(null);
-  const [testandoChave, setTestandoChave] = useState(false);
-  const [exemplo, setExemplo] = useState<{ texto: string; via: string; aviso?: string } | null>(null);
-  const [gerando, setGerando] = useState(false);
+  const [exemplos, setExemplos] = useState<string[]>([]);
   const [telTeste, setTelTeste] = useState("");
   const [testandoEnvio, setTestandoEnvio] = useState(false);
   const [passosTeste, setPassosTeste] = useState<PassoTeste[]>([]);
@@ -84,10 +80,6 @@ export function PrimeiroContatoPainel() {
   }, [recarregar]);
 
   useEffect(() => {
-    lerChaveGemini().then((k) => {
-      setChave(k);
-      if (k) setChaveOk(true);
-    });
     checarExtensao().then((ok) => setExtensao({ ok, atual: ok && extensaoAtualizada(VERSAO_SCALE_AGENTE), versao: versaoExtensao }));
   }, []);
 
@@ -125,8 +117,9 @@ export function PrimeiroContatoPainel() {
       toast({ title: "Preencha o seu nome", description: "O agente se apresenta com ele na mensagem.", variant: "destructive" });
       return;
     }
-    if (v && cfg.usarIA && !chave.trim()) {
-      toast({ title: "Sem chave do Gemini", description: "Vou usar a mensagem reserva até você colocar a chave grátis do Gemini." });
+    if (v && (!cfg.mensagemReserva.trim() || !spintaxValido(cfg.mensagemReserva))) {
+      toast({ title: "Confira a sua mensagem", description: "A mensagem do 1º contato está vazia ou com chaves { } sobrando.", variant: "destructive" });
+      return;
     }
     salvar(
       { ativo: v },
@@ -134,29 +127,6 @@ export function PrimeiroContatoPainel() {
         ? { title: "1º contato automático ligado", description: "Vale para os leads que chegarem a partir de agora. Pode fechar o Inmovya: a extensão continua." }
         : { title: "1º contato automático desligado" }
     );
-  };
-
-  const testarChave = async () => {
-    if (!chave.trim()) return;
-    setTestandoChave(true);
-    try {
-      const ok = await testarChaveGemini(chave);
-      setChaveOk(ok);
-      if (ok) {
-        await salvarChaveGemini(chave);
-        await salvarChaveNoAgente(chave);
-      }
-      toast({
-        title: ok ? "Gemini conectado e chave salva" : "Chave do Gemini inválida",
-        description: ok ? "O agente vai escrever as mensagens com a IA grátis do Google." : "Confira a chave criada no Google AI Studio.",
-        variant: ok ? undefined : "destructive",
-      });
-    } catch {
-      setChaveOk(false);
-      toast({ title: "Não foi possível testar o Gemini", variant: "destructive" });
-    } finally {
-      setTestandoChave(false);
-    }
   };
 
   const conferirAgora = async () => {
@@ -249,7 +219,7 @@ export function PrimeiroContatoPainel() {
               <Bot className="w-5 h-5" /> 1º contato automático
             </h2>
             <p className="text-sm text-muted-foreground">
-              Lead novo entrou → em 1 a 2 minutos ele recebe a primeira mensagem no WhatsApp, escrita pela IA grátis do Google. 24 horas por dia,
+              Lead novo entrou → em 1 a 2 minutos ele recebe a primeira mensagem no WhatsApp, com a sua mensagem pronta (spintax, sem IA). 24 horas por dia,
               sem custo.
             </p>
           </div>
@@ -390,37 +360,8 @@ export function PrimeiroContatoPainel() {
       {/* Configuração */}
       <div className="rounded-lg border bg-white p-4 grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="pc-nome">Seu nome (o agente se apresenta com ele)</Label>
+          <Label htmlFor="pc-nome">Seu nome (vai no {"{{meu_nome}}"})</Label>
           <Input id="pc-nome" value={cfg.meuNome} placeholder="Ex.: Estevão" onChange={(e) => mudar({ meuNome: e.target.value })} />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="pc-chave" className="flex items-center gap-1">
-            Chave do Google Gemini (grátis)
-            {chaveOk && <CheckCircle2 className="w-4 h-4 text-green-600" />}
-          </Label>
-          <div className="flex gap-2">
-            <Input
-              id="pc-chave"
-              type="password"
-              value={chave}
-              placeholder="AIza..."
-              onChange={(e) => {
-                setChave(e.target.value.trim());
-                setChaveOk(null);
-              }}
-            />
-            <Button variant="outline" onClick={testarChave} disabled={testandoChave || !chave.trim()}>
-              {testandoChave ? <Loader2 className="w-4 h-4 animate-spin" /> : "Testar e salvar"}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Crie de graça em{" "}
-            <a className="underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-              aistudio.google.com/apikey
-            </a>{" "}
-            (entre com sua conta Google → "Create API key"). Sem cartão.
-          </p>
         </div>
 
         <div className="space-y-2">
@@ -437,41 +378,51 @@ export function PrimeiroContatoPainel() {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <Label>Quem escreve</Label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <Switch checked={cfg.usarIA} onCheckedChange={(v) => mudar({ usarIA: v })} />
-            {cfg.usarIA ? "IA (Gemini) escreve uma mensagem para cada lead" : "Sempre a mensagem reserva (sem IA)"}
-          </label>
-        </div>
-
-        {cfg.usarIA && (
-          <div className="space-y-1.5 md:col-span-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="pc-instr">Instruções para a IA</Label>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => mudar({ instrucoes: INSTRUCOES_PADRAO })}>
-                <RotateCcw className="w-3 h-3 mr-1" /> Padrão
+        <div className="space-y-1.5 md:col-span-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor="pc-reserva">Sua mensagem do 1º contato (sem IA, com spintax)</Label>
+            <div className="ml-auto flex gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                title="Troca expressões comuns da sua mensagem por variações {opção|opção}. Revise depois."
+                onClick={() => {
+                  const novo = gerarSpintax(cfg.mensagemReserva);
+                  if (novo === cfg.mensagemReserva) {
+                    toast({ title: "Nada para variar", description: "Não achei expressões comuns para trocar. Escreva as variações à mão: {Oi|Olá|Oii}." });
+                    return;
+                  }
+                  mudar({ mensagemReserva: novo });
+                  toast({ title: "Spintax gerado", description: `Agora são ${contarVariacoes(novo).toLocaleString("pt-BR")} combinações. Revise e salve.` });
+                }}
+              >
+                <Shuffle className="w-3 h-3 mr-1" /> Gerar spintax da minha mensagem
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => mudar({ mensagemReserva: MENSAGEM_RESERVA_PADRAO })}>
+                <RotateCcw className="w-3 h-3 mr-1" /> Exemplo
               </Button>
             </div>
-            <Textarea id="pc-instr" rows={4} value={cfg.instrucoes} onChange={(e) => mudar({ instrucoes: e.target.value })} />
           </div>
-        )}
-
-        <div className="space-y-1.5 md:col-span-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="pc-reserva">Mensagem reserva {cfg.usarIA && "(se a IA não responder)"}</Label>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => mudar({ mensagemReserva: MENSAGEM_RESERVA_PADRAO })}>
-              <RotateCcw className="w-3 h-3 mr-1" /> Padrão
-            </Button>
+          <Textarea id="pc-reserva" rows={5} value={cfg.mensagemReserva} onChange={(e) => mudar({ mensagemReserva: e.target.value })} />
+          <div className="text-xs text-muted-foreground space-y-0.5">
+            <div>
+              <b>Spintax:</b> escreva as opções entre chaves separadas por barra — {"{Oi|Olá|Oii}"} — e cada lead recebe uma combinação diferente
+              (ajuda a não ser bloqueado no WhatsApp). Pode pôr um dentro do outro.
+            </div>
+            <div>
+              <b>Variáveis:</b> {"{{nome}}"}, {"{{saudacao}}"} (bom dia/boa tarde/boa noite), {"{{meu_nome}}"}, {"{{empreendimento}}"}
+            </div>
+            {spintaxValido(cfg.mensagemReserva) ? (
+              <div className="text-green-700">{contarVariacoes(cfg.mensagemReserva).toLocaleString("pt-BR")} combinação(ões) diferente(s)</div>
+            ) : (
+              <div className="text-red-600">Tem chave sobrando ou faltando no spintax: confira os {"{ }"}.</div>
+            )}
           </div>
-          <Textarea id="pc-reserva" rows={3} value={cfg.mensagemReserva} onChange={(e) => mudar({ mensagemReserva: e.target.value })} />
-          <p className="text-xs text-muted-foreground">
-            Variáveis: {"{{nome}}"}, {"{{saudacao}}"}, {"{{meu_nome}}"}, {"{{empreendimento}}"}
-          </p>
         </div>
 
         <div className="md:col-span-2 flex flex-wrap items-center gap-2">
-          <Button onClick={() => salvar()} disabled={salvando || !alterado}>
+          <Button onClick={() => salvar()} disabled={salvando || !alterado || !spintaxValido(cfg.mensagemReserva) || !cfg.mensagemReserva.trim()}>
             {salvando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
             Salvar configuração
           </Button>
@@ -479,26 +430,23 @@ export function PrimeiroContatoPainel() {
           <Button
             variant="outline"
             onClick={async () => {
-              setGerando(true);
-              try {
-                setExemplo(await exemploDeMensagem(cfg));
-              } finally {
-                setGerando(false);
-              }
+              const lista = [];
+              for (let i = 0; i < 3; i++) lista.push(await exemploDeMensagem(cfg));
+              setExemplos(lista.map((e) => e.texto));
             }}
-            disabled={gerando}
           >
-            {gerando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-            Ver exemplo (não envia nada)
+            <Sparkles className="w-4 h-4 mr-2" />
+            Ver 3 exemplos (não envia nada)
           </Button>
         </div>
-        {exemplo && (
-          <div className="md:col-span-2 rounded-lg border bg-green-50/50 p-3 text-sm space-y-1">
-            <div className="whitespace-pre-wrap">{exemplo.texto}</div>
-            <div className="text-xs text-muted-foreground">
-              Lead de exemplo: Mariana Souza, Residencial Jardim das Flores · escrito por: {exemplo.via}
-              {exemplo.aviso && ` (${exemplo.aviso})`}
-            </div>
+        {exemplos.length > 0 && (
+          <div className="md:col-span-2 rounded-lg border bg-green-50/50 p-3 text-sm space-y-2">
+            {exemplos.map((t, i) => (
+              <div key={i} className="whitespace-pre-wrap border-b last:border-0 pb-2 last:pb-0">
+                {t}
+              </div>
+            ))}
+            <div className="text-xs text-muted-foreground">Lead de exemplo: Mariana Souza, Residencial Jardim das Flores</div>
           </div>
         )}
       </div>
