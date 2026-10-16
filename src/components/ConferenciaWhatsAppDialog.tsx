@@ -117,8 +117,8 @@ export function ConferenciaWhatsAppDialog({ open, onOpenChange }: { open: boolea
             <span className="text-xs text-muted-foreground">(só gera o relatório; corrigir é com você)</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Precisa do WhatsApp Web aberto numa aba deste Chrome e do Inmovya Scale. A aba do WhatsApp vem para a frente enquanto lê as etiquetas; depois a
-            busca pelos telefones roda numa janelinha no canto (uns 5 s por lead).
+            Precisa do Inmovya Scale neste Chrome (e do WhatsApp Web conectado). Numa janelinha no canto, abre a conversa de cada lead pelo telefone e lê
+            quais etiquetas estão marcadas — sem mudar nada no WhatsApp. Uns 8 s por lead: 100 leads ≈ 15 min.
           </p>
           <div className="flex items-center gap-2">
             {estado.rodando ? (
@@ -159,7 +159,7 @@ export function ConferenciaWhatsAppDialog({ open, onOpenChange }: { open: boolea
             {rel.erro && <div className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{rel.erro}</div>}
             {Object.keys(rel.contagemEtiquetas).length > 0 && (
               <div className="text-xs text-muted-foreground">
-                No WhatsApp:{" "}
+                Etiquetas encontradas nos leads conferidos:{" "}
                 {Object.entries(rel.contagemEtiquetas)
                   .map(([k, v]) => `${k} ${v}`)
                   .join(" · ")}

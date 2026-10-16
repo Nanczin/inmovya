@@ -160,31 +160,12 @@ export const pararConferencia = () => {
 };
 
 // ---------- Inmovya Scale ----------
-interface EtiquetaWA {
-  name: string;
-  contacts: { name: string; chatId?: string }[];
-}
-
-const lerEtiquetasAgora = () =>
-  new Promise<EtiquetaWA[]>((resolve, reject) => {
-    const token = crypto.randomUUID();
-    const timeout = window.setTimeout(() => {
-      window.removeEventListener("INMOVYA_WA_LABELS_RESULT", onResult as EventListener);
-      reject(new Error("Tempo esgotado lendo as etiquetas do WhatsApp."));
-    }, 15 * 60_000);
-    const onResult = (event: CustomEvent) => {
-      if (event.detail?.token !== token) return;
-      window.clearTimeout(timeout);
-      window.removeEventListener("INMOVYA_WA_LABELS_RESULT", onResult as EventListener);
-      event.detail?.ok ? resolve(event.detail.labels || []) : reject(new Error(event.detail?.error || "Não consegui ler as etiquetas do WhatsApp."));
-    };
-    window.addEventListener("INMOVYA_WA_LABELS_RESULT", onResult as EventListener);
-    window.dispatchEvent(new CustomEvent("INMOVYA_READ_WA_LABELS", { detail: { token } }));
-  });
-
+// Para cada telefone: busca a conversa, abre e lê no seletor de etiquetas do cabeçalho quais estão MARCADAS.
+// add/remove vazios = só leitura (nenhuma etiqueta é alterada no WhatsApp).
 interface ResultadoBusca {
   ok: boolean;
   encontrado?: boolean;
+  etiquetas?: string[]; // marcadas na conversa
   info?: { nome: string; etiquetas?: string[] };
   error?: string;
 }
@@ -208,7 +189,7 @@ const buscarTelefonesAgora = (itens: { id: string; phone: string }[]) =>
     window.addEventListener("INMOVYA_AGENT_RESULT", onResult as EventListener);
     window.dispatchEvent(
       new CustomEvent("INMOVYA_AGENT", {
-        detail: { op: "batch", background: true, token, itens: itens.map((i) => ({ id: i.id, op: "scan", phone: i.phone })) },
+        detail: { op: "batch", background: true, token, itens: itens.map((i) => ({ id: i.id, op: "labels", phone: i.phone, add: [], remove: [] })) },
       })
     );
   });
@@ -226,7 +207,7 @@ interface LeadBase {
 const ehHoje = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();
 const temTag = (lead: LeadBase, tag: string) => (lead.tags || []).some((t) => semAcento(t) === semAcento(tag));
 
-function julgar(lead: LeadBase, nomeWA: string, etiquetas: string[]): Pick<ItemConferencia, "situacao" | "motivo" | "correcao"> {
+function julgar(lead: LeadBase, etiquetas: string[]): Pick<ItemConferencia, "situacao" | "motivo" | "correcao"> {
   const chaves = new Set(etiquetas.map(chaveDaEtiqueta).filter(Boolean) as string[]);
   const etapa = getStageForStatus(lead.status);
   const etapaNome = lead.status && lead.status !== "Nenhuma" ? lead.status : "Nenhuma";
@@ -269,9 +250,6 @@ function julgar(lead: LeadBase, nomeWA: string, etiquetas: string[]): Pick<ItemC
   }
 
   // 4) sem etiqueta de funil no WhatsApp
-  const contatoNaoSalvo = !/[a-zà-ÿ]/i.test(nomeWA);
-  if (contatoNaoSalvo && etapa && !FORA_DO_FUNIL.has(etapa.id))
-    return { situacao: "observacao", motivo: "contato não salvo no WhatsApp: não dá para ler as etiquetas dele (salve o contato)" };
   if (etapa && PROSPECCAO.has(etapa.id)) {
     if (ehHoje(lead.created_at)) return { situacao: "observacao", motivo: "cadastrado hoje e ainda sem etiqueta no WhatsApp" };
     return { situacao: "excluir", motivo: `saiu da Bitrix e está sem etiqueta no WhatsApp (Inmovya: ${etapaNome})` };
@@ -309,70 +287,42 @@ export async function rodarConferencia(origem: "manual" | "automatica" = "manual
     });
     relatorio.total = leads.length;
 
-    // 1) etiquetas do WhatsApp (a aba do WhatsApp vem para a frente durante a leitura)
-    mudar({ fase: "lendo as etiquetas do WhatsApp (a aba do WhatsApp vem para a frente)..." });
-    const etiquetas = await naVezDoWhatsApp(lerEtiquetasAgora);
-    const doNome = new Map<string, Set<string>>(); // nome do contato → etiquetas
-    const doTel = new Map<string, Set<string>>(); // 8 últimos dígitos → etiquetas (quando o WhatsApp informa)
-    etiquetas.forEach((et) => {
-      if (!chaveDaEtiqueta(et.name)) return; // só as etiquetas do processo
-      relatorio.contagemEtiquetas[et.name] = (et.contacts || []).length;
-      (et.contacts || []).forEach((c) => {
-        const n = semAcento(c.name);
-        if (n) doNome.set(n, new Set([...(doNome.get(n) || []), et.name]));
-        const t = ultimos8(String(c.chatId || "").split("@")[0]);
-        if (t.length === 8) doTel.set(t, new Set([...(doTel.get(t) || []), et.name]));
-      });
-    });
-
-    // 2) cada lead pelo telefone, em lotes (entre um lote e outro o 1º contato automático pode passar)
+    // Cada lead pelo telefone, em lotes numa janelinha do WhatsApp (entre um lote e outro o 1º contato automático pode passar).
+    // Não usa o menu de etiquetas do WhatsApp (mudou de lugar e a leitura antiga falhava): lê direto na conversa.
     mudar({ fase: `conferindo 0 de ${leads.length} pelo telefone...`, total: leads.length });
-    const nomesConferidos = new Set<string>();
     for (let i = 0; i < leads.length && !pararPedido; i += LOTE) {
       const lote = leads.slice(i, i + LOTE);
       const r = await naVezDoWhatsApp(() => buscarTelefonesAgora(lote.map((l) => ({ id: l.id, phone: telefoneWhatsApp(l.telefone) }))));
+      const falhas: string[] = [];
       for (const lead of lote) {
         const b = r[lead.id];
         const base = { leadId: lead.id, nome: lead.nome || "Lead sem nome", telefone: lead.telefone || "", statusInmovya: lead.status };
-        if (!b?.ok) {
-          relatorio.itens.push({ ...base, nomeWhatsApp: "", etiquetas: [], situacao: "observacao", motivo: `não consegui buscar: ${b?.error || "sem resposta"}` });
-          continue;
-        }
-        if (!b.encontrado || !b.info) {
+        if (b?.ok === true && b.encontrado === false) {
           relatorio.itens.push({ ...base, nomeWhatsApp: "", etiquetas: [], situacao: "nao_achado", motivo: "número não encontrado nas conversas do WhatsApp" });
           continue;
         }
-        const nomeWA = b.info.nome || "";
-        nomesConferidos.add(semAcento(nomeWA));
-        const ets = new Set<string>([
-          ...(b.info.etiquetas || []).filter((e) => chaveDaEtiqueta(e)),
-          ...(doTel.get(ultimos8(lead.telefone)) || []),
-          ...(doNome.get(semAcento(nomeWA)) || []),
-        ]);
-        const lista = Array.from(ets);
-        relatorio.itens.push({ ...base, nomeWhatsApp: nomeWA, etiquetas: lista, ...julgar(lead, nomeWA, lista) });
+        if (!b?.ok) {
+          falhas.push(b?.error || "sem resposta");
+          relatorio.itens.push({
+            ...base,
+            nomeWhatsApp: b?.info?.nome || "",
+            etiquetas: [],
+            situacao: "observacao",
+            motivo: `não consegui ler as etiquetas: ${b?.error || "sem resposta do WhatsApp"}`,
+          });
+          continue;
+        }
+        const lista = Array.from(
+          new Set([...(b.etiquetas || []), ...(b.info?.etiquetas || [])].map((e) => String(e).trim()).filter((e) => chaveDaEtiqueta(e)))
+        );
+        lista.forEach((e) => (relatorio.contagemEtiquetas[e] = (relatorio.contagemEtiquetas[e] || 0) + 1));
+        relatorio.itens.push({ ...base, nomeWhatsApp: b.info?.nome || "", etiquetas: lista, ...julgar(lead, lista) });
+      }
+      // o 1º lote inteiro falhou com o mesmo problema: para logo (não adianta passar 1 hora errando)
+      if (i === 0 && falhas.length === lote.length && lote.length >= 3) {
+        throw new Error(`Não consegui ler as etiquetas nas conversas do WhatsApp: ${falhas[0]}`);
       }
       mudar({ feitos: Math.min(i + LOTE, leads.length), fase: `conferindo ${Math.min(i + LOTE, leads.length)} de ${leads.length} pelo telefone...` });
-    }
-
-    // 3) quem está numa etiqueta do processo no WhatsApp e não apareceu entre os leads conferidos
-    if (!pararPedido) {
-      const porNome = new Map<string, LeadBase>();
-      todos.forEach((l) => porNome.set(semAcento(l.nome || ""), l));
-      etiquetas.forEach((et) => {
-        const ch = chaveDaEtiqueta(et.name);
-        if (!ch || ch === "nutricao" || ch === "lead") return;
-        (et.contacts || []).forEach((c) => {
-          const n = semAcento(c.name);
-          if (!n || nomesConferidos.has(n)) return;
-          const mesmo = porNome.get(n);
-          relatorio.foraDoInmovya.push({
-            nome: c.name,
-            etiqueta: et.name,
-            ...(mesmo ? { leadComMesmoNome: `${mesmo.nome} — ${mesmo.status || "Nenhuma"}` } : {}),
-          });
-        });
-      });
     }
     if (pararPedido) relatorio.erro = "Conferência interrompida: o relatório mostra só o que deu tempo de conferir.";
   } catch (e: any) {
