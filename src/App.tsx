@@ -13,6 +13,7 @@ import NotFound from "./pages/NotFound";
 import { TaskNotificationPoller } from "./components/TaskNotificationPoller";
 import { NewLeadNotifier } from "./components/NewLeadNotifier";
 import { PrimeiroContatoRunner } from "./components/PrimeiroContatoRunner";
+import { ConferenciaRunner } from "./components/ConferenciaRunner";
 
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
               <TaskNotificationPoller />
               <NewLeadNotifier />
               <PrimeiroContatoRunner />
+              <ConferenciaRunner />
               <BrowserRouter>
                 <Routes>
                   <Route path="/" element={<Index />} />

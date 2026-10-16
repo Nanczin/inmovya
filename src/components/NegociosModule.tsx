@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow, ShieldCheck } from "lucide-react";
+import { ConferenciaWhatsAppDialog } from "@/components/ConferenciaWhatsAppDialog";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { colocarNaEsteira, tirarDaEsteira, moverParaPasso, cortarNaEtapaFinal } from "@/lib/esteiras";
 import {
@@ -78,6 +79,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [esteirasLista, setEsteirasLista] = useState<{ id: string; nome: string; etapa?: string | null; ao_concluir_etapa?: string | null }[]>([]);
   const [passosLista, setPassosLista] = useState<{ id: string; esteira_id: string; ordem: number; titulo: string; etapa?: string | null }[]>([]);
   const [bulkEsteira, setBulkEsteira] = useState<string>("");
+  const [conferenciaAberta, setConferenciaAberta] = useState(false);
   const [bulkPasso, setBulkPasso] = useState<string>("0"); // índice do passo da esteira (D1 = 0)
   const passosBulk = useMemo(
     () => passosLista.filter((p) => p.esteira_id === bulkEsteira).sort((a, b) => a.ordem - b.ordem),
@@ -661,6 +663,10 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
               <Wand2 className="w-4 h-4 mr-1" /> Padronizar etapas ({normalizationTotal})
             </Button>
           )}
+          <Button variant="outline" className="h-9" onClick={() => setConferenciaAberta(true)}>
+            <ShieldCheck className="w-4 h-4 mr-1" /> Conferir com WhatsApp
+          </Button>
+          <ConferenciaWhatsAppDialog open={conferenciaAberta} onOpenChange={setConferenciaAberta} />
           <Button
             variant={selectMode ? "secondary" : "outline"}
             className="h-9"
