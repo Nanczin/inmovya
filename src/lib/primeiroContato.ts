@@ -20,6 +20,7 @@ import {
   telefoneWhatsApp,
 } from "@/lib/esteiras";
 import { lerChaveGemini, perguntarGemini } from "@/lib/iaGratis";
+import { getStageForStatus } from "@/lib/negociosStages";
 
 // ---------- Configuração (fica neste navegador: é este computador que envia) ----------
 export interface ConfigPrimeiroContato {
@@ -160,6 +161,7 @@ export interface LeadContato {
   origem: string | null;
   tags: string[] | null;
   observacoes: string | null;
+  status: string | null;
   created_at: string;
   primeiro_contato_status: string | null;
   primeiro_contato_tentativas: number | null;
@@ -186,6 +188,7 @@ const fonteDoLead = (lead: Pick<LeadContato, "origem" | "tags">) => {
 };
 
 const TAG_CONTATO = "1º contato automático";
+const ETAPA_APOS_CONTATO = "Primeiro impacto"; // coluna em Negócios
 const TENTATIVAS_MAX = 3;
 const INTERVALO_MIN_S = 60; // entre um 1º contato e outro (evita bloqueio quando chegam vários juntos)
 const INTERVALO_MAX_S = 120;
@@ -354,7 +357,11 @@ async function atenderLead(lead: LeadContato, userId: string, cfg: ConfigPrimeir
     const { msg } = resultado;
     const agora = new Date().toISOString();
     const tags = Array.from(new Set([...(lead.tags || []), TAG_CONTATO]));
+    // Negócios: sai da Validação (entrada) para Primeiro impacto; quem já foi movido para frente fica onde está
+    const etapaAtual = getStageForStatus(lead.status);
+    const mover = !etapaAtual || etapaAtual.phase === "entrada";
     await marcar(lead.id, {
+      ...(mover ? { status: ETAPA_APOS_CONTATO } : {}),
       primeiro_contato_status: "enviado",
       primeiro_contato_em: agora,
       primeiro_contato_msg: msg.texto,
@@ -366,11 +373,14 @@ async function atenderLead(lead: LeadContato, userId: string, cfg: ConfigPrimeir
       lead_id: lead.id,
       type: "note",
       title: "1º contato automático enviado no WhatsApp",
-      description: `${msg.texto}\n\n— escrito por: ${msg.via}${msg.aviso ? ` (${msg.aviso})` : ""}`,
+      description: `${msg.texto}\n\n— escrito por: ${msg.via}${msg.aviso ? ` (${msg.aviso})` : ""}${
+        mover ? `\nEtapa em Negócios: ${lead.status || "sem etapa"} → ${ETAPA_APOS_CONTATO}` : ""
+      }`,
       author: "Agente",
     } as any);
     if (erroHistorico) console.error("1º contato: histórico não gravado", erroHistorico);
-    registrar({ ...base, status: "enviado", detalhe: msg.aviso ? `${msg.via} — ${msg.aviso}` : msg.via, texto: msg.texto, via: msg.via, em: agora });
+    const detalhe = [msg.aviso ? `${msg.via} — ${msg.aviso}` : msg.via, mover && `movido em Negócios para ${ETAPA_APOS_CONTATO}`].filter(Boolean).join(" · ");
+    registrar({ ...base, status: "enviado", detalhe, texto: msg.texto, via: msg.via, em: agora });
     return "enviado";
   } catch (e: any) {
     const erro = e?.message || "falha no envio";
@@ -453,7 +463,7 @@ async function rodada(cfg: ConfigPrimeiroContato) {
   const desde = cfg.ativadoEm && cfg.ativadoEm > limite ? cfg.ativadoEm : limite;
   const { data, error } = await supabase
     .from("leads")
-    .select("id, nome, telefone, origem, tags, observacoes, created_at, primeiro_contato_status, primeiro_contato_tentativas, primeiro_contato_em")
+    .select("id, nome, telefone, origem, tags, observacoes, status, created_at, primeiro_contato_status, primeiro_contato_tentativas, primeiro_contato_em")
     .eq("user_id", user.id)
     .gte("created_at", desde)
     .or("primeiro_contato_status.is.null,primeiro_contato_status.eq.erro,primeiro_contato_status.eq.enviando")
