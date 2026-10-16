@@ -12,6 +12,7 @@ import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
 import { TaskNotificationPoller } from "./components/TaskNotificationPoller";
 import { NewLeadNotifier } from "./components/NewLeadNotifier";
+import { PrimeiroContatoRunner } from "./components/PrimeiroContatoRunner";
 
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
               <Sonner />
               <TaskNotificationPoller />
               <NewLeadNotifier />
+              <PrimeiroContatoRunner />
               <BrowserRouter>
                 <Routes>
                   <Route path="/" element={<Index />} />

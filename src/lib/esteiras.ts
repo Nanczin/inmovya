@@ -433,12 +433,31 @@ export const setSegundoPlano = (v: boolean) => {
   }
 };
 
+// Uma janela do WhatsApp por vez: esteira, disparo da Oferta Ativa e 1º contato automático
+// entram nesta fila e cada um espera o anterior terminar (nunca abrem duas janelas juntas).
+let filaWhatsApp: Promise<unknown> = Promise.resolve();
+export const naVezDoWhatsApp = <T,>(tarefa: () => Promise<T>): Promise<T> => {
+  const p = filaWhatsApp.then(tarefa, tarefa);
+  filaWhatsApp = p.catch(() => undefined);
+  return p;
+};
+
 export const enviarPeloWhatsApp = (
   phone: string,
   text: string,
   attachments: any[] = [],
   background = false,
   intervalo?: { min: number; max: number } // segundos entre as mensagens do mesmo lead (da esteira)
+) =>
+  naVezDoWhatsApp(() => enviarAgora(phone, text, attachments, background, intervalo));
+
+/** Envia sem entrar na fila: só para quem JÁ está dentro de naVezDoWhatsApp (senão trava esperando a si mesmo). */
+export const enviarAgora = (
+  phone: string,
+  text: string,
+  attachments: any[],
+  background: boolean,
+  intervalo?: { min: number; max: number }
 ) =>
   new Promise<void>((resolve, reject) => {
     const token = crypto.randomUUID();
@@ -469,6 +488,9 @@ export const enviarPeloWhatsApp = (
 
 /** Só colar em lote: o Scale abre cada conversa na aba do WhatsApp e cola o texto, sem enviar e sem esperar. */
 export const colarEmLotePeloScale = (items: { id: string; phone: string; name: string; text: string; attachments?: any[] }[]) =>
+  naVezDoWhatsApp(() => colarAgora(items));
+
+const colarAgora = (items: { id: string; phone: string; name: string; text: string; attachments?: any[] }[]) =>
   new Promise<{ id: string; ok: boolean; error?: string }[]>((resolve, reject) => {
     const token = crypto.randomUUID();
     const timeout = window.setTimeout(() => {

@@ -64,6 +64,7 @@ import {
   moverParaPasso,
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
+import { PrimeiroContatoPainel } from "@/components/esteiras/PrimeiroContatoPainel";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/whatsappOcupado";
 import {
@@ -921,11 +922,16 @@ export function EsteirasModule() {
       </div>
 
       <Tabs value={aba} onValueChange={setAba} className="min-w-0">
-        <TabsList className="w-full sm:w-auto grid grid-cols-3 sm:inline-flex">
+        <TabsList className="w-full sm:w-auto grid grid-cols-2 h-auto sm:inline-flex sm:h-10">
           <TabsTrigger value="hoje">Hoje ({fila.length})</TabsTrigger>
           <TabsTrigger value="esteiras">Esteiras ({esteiras.length})</TabsTrigger>
+          <TabsTrigger value="primeiro">1º contato (IA)</TabsTrigger>
           <TabsTrigger value="importar">Backup e importação</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="primeiro" className="mt-4">
+          <PrimeiroContatoPainel />
+        </TabsContent>
 
         {/* HOJE */}
         <TabsContent value="hoje" className="mt-4 space-y-4">

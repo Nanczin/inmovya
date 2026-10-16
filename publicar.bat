@@ -2,28 +2,37 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 echo.
-echo === 1/4 Testando o build (se der erro, nada e publicado) ===
-call npm run build
-if errorlevel 1 goto erro
-
-echo.
-echo === 2/4 Salvando as alteracoes (commit) ===
-git add src/components/NewLeadNotifier.tsx src/hooks/useNotifications.tsx src/App.tsx src/sw.ts supabase/functions/notify-new-lead/index.ts supabase/notify-new-lead.sql publicar.bat
-if errorlevel 1 goto erro
-git commit -m "Aviso de lead novo: alerta na tela, som e push no celular" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01842oxAqK7HiWiMDnu7rM1r"
-if errorlevel 1 goto erro
-
-echo.
-echo === 3/4 Sincronizando com o GitHub ===
+echo === 1/5 Baixando o que ja esta no GitHub ===
 git pull --rebase --autostash origin main
 if errorlevel 1 goto erro
 
 echo.
-echo === 4/4 Enviando para o GitHub (a Vercel publica sozinha) ===
+echo === 2/5 Testando o build (se der erro, nada e publicado) ===
+call npm run build
+if errorlevel 1 goto erro
+
+echo.
+echo === 3/5 Salvando as alteracoes (commit) ===
+git add -A
+git diff --cached --quiet
+if not errorlevel 1 (
+    echo Nenhuma alteracao nova para salvar.
+    goto enviar
+)
+set "MSG="
+set /p MSG="Descreva a alteracao (Enter = Atualizacao): "
+if "%MSG%"=="" set "MSG=Atualizacao"
+git commit -m "%MSG%"
+if errorlevel 1 goto erro
+
+:enviar
+echo.
+echo === 4/5 Enviando para o GitHub ===
 git push origin main
 if errorlevel 1 goto erro
 
 echo.
+echo === 5/5 Pronto - a Vercel publica sozinha ===
 echo ============================================
 echo  PUBLICADO! Em 1-2 minutos a Vercel atualiza
 echo  https://inmovya-main.vercel.app
