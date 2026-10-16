@@ -10,6 +10,8 @@ import { getMeuNome, setMeuNome } from "@/lib/esteiras";
 import { lerChaveGemini, salvarChaveGemini, testarChaveGemini } from "@/lib/iaGratis";
 import {
   ConfigPrimeiroContato,
+  PassoTeste,
+  testarEnvio,
   INSTRUCOES_PADRAO,
   MENSAGEM_RESERVA_PADRAO,
   agendarRodada,
@@ -43,6 +45,9 @@ export function PrimeiroContatoPainel() {
   const [exemplo, setExemplo] = useState<{ texto: string; via: string; aviso?: string } | null>(null);
   const [gerando, setGerando] = useState(false);
   const [, setRelogio] = useState(0);
+  const [telTeste, setTelTeste] = useState("");
+  const [testando, setTestando] = useState(false);
+  const [passosTeste, setPassosTeste] = useState<PassoTeste[]>([]);
 
   useEffect(() => {
     lerChaveGemini().then((k) => {
@@ -268,6 +273,46 @@ export function PrimeiroContatoPainel() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Teste */}
+      <div className="rounded-lg border bg-white p-4 space-y-2">
+        <h3 className="font-semibold text-sm">Testar envio</h3>
+        <p className="text-xs text-muted-foreground">
+          Faz o caminho completo (lê a conversa → escreve com a IA → envia) para um número seu e mostra em qual passo parou. Não grava nada no Inmovya.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Input value={telTeste} placeholder="Seu WhatsApp com DDD, ex.: 11 99999-9999" onChange={(e) => setTelTeste(e.target.value)} className="sm:w-72" />
+          <Button
+            variant="outline"
+            disabled={testando || !telTeste.trim()}
+            onClick={async () => {
+              setTestando(true);
+              setPassosTeste([]);
+              try {
+                await testarEnvio(telTeste, setPassosTeste);
+              } finally {
+                setTestando(false);
+              }
+            }}
+          >
+            {testando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+            Testar envio
+          </Button>
+        </div>
+        {passosTeste.length > 0 && (
+          <ul className="text-sm space-y-1">
+            {passosTeste.map((p) => (
+              <li key={p.passo} className="flex gap-2">
+                <span className="shrink-0">{p.ok === null ? "⏳" : p.ok ? "✅" : "❌"}</span>
+                <span className="min-w-0 break-words">
+                  <b>{p.passo}</b>
+                  {p.detalhe && <span className="text-muted-foreground"> — {p.detalhe}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Histórico */}

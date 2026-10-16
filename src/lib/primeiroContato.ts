@@ -115,7 +115,11 @@ interface Estado {
   atual: string; // lead sendo atendido agora
 }
 
-let estado: Estado = { log: lerLog(), aviso: "", verificadoEm: null, proximoEnvioEm: 0, atual: "" };
+// "enviando" que sobrou de uma página fechada/recarregada no meio do envio
+const logInicial = lerLog().map((r) =>
+  r.status === "enviando" ? { ...r, status: "erro" as const, detalhe: `${r.detalhe} — interrompido (página recarregada ou fechada); tento de novo sozinho` } : r
+);
+let estado: Estado = { log: logInicial, aviso: "", verificadoEm: null, proximoEnvioEm: 0, atual: "" };
 const ouvintes = new Set<() => void>();
 const avisar = () => {
   estado = { ...estado };
@@ -328,6 +332,82 @@ async function adiarD1ParaAmanha(leadId: string): Promise<string | null> {
   return (e as any)?.nome || "da coluna";
 }
 
+// ---------- Enviar ----------
+// A extensão tenta por até ~8 min antes de desistir; esperar tudo isso evita mandar de novo enquanto ela ainda tenta.
+const ESPERA_ENVIO_MS = 10 * 60_000;
+
+/**
+ * Envia na janelinha em segundo plano; se a EXTENSÃO responder que falhou, tenta de novo numa aba normal.
+ * Se a extensão não responder (tempo esgotado), NÃO tenta de novo aqui: ela pode ter enviado — a próxima
+ * tentativa (5 min depois) relê a conversa antes.
+ */
+async function enviarComSegundaTentativa(tel: string, texto: string, avisar: (s: string) => void) {
+  try {
+    await enviarAgora(tel, texto, [], true, undefined, ESPERA_ENVIO_MS);
+    return "janelinha" as const;
+  } catch (e1: any) {
+    if (e1?.semResposta) throw new Error(`a extensão não respondeu em ${ESPERA_ENVIO_MS / 60_000} min (o computador pode ter dormido/bloqueado a tela)`);
+    avisar(`a janelinha falhou (${e1?.message || "erro"}) — tentando numa aba normal...`);
+    try {
+      await enviarAgora(tel, texto, [], false, undefined, ESPERA_ENVIO_MS);
+      return "aba normal" as const;
+    } catch (e2: any) {
+      throw new Error(`janelinha: ${e1?.message || "erro"} · aba normal: ${e2?.message || "erro"}`);
+    }
+  }
+}
+
+// ---------- Teste (não grava nada no Inmovya) ----------
+export interface PassoTeste {
+  passo: string;
+  ok: boolean | null; // null = em andamento
+  detalhe?: string;
+}
+
+/** Faz o caminho completo do 1º contato para um número (ler conversa → IA → enviar), mostrando cada passo. */
+export async function testarEnvio(telefone: string, onPasso: (passos: PassoTeste[]) => void) {
+  const passos: PassoTeste[] = [];
+  const marcarPasso = (passo: string, ok: boolean | null, detalhe?: string) => {
+    const i = passos.findIndex((p) => p.passo === passo);
+    if (i >= 0) passos[i] = { passo, ok, detalhe };
+    else passos.push({ passo, ok, detalhe });
+    onPasso([...passos]);
+  };
+  const tel = telefoneWhatsApp(telefone);
+  if (!tel || tel.length < 12) return marcarPasso("Telefone", false, "número inválido (use DDD + número)");
+  marcarPasso("Telefone", true, tel);
+
+  marcarPasso("Inmovya Scale", null);
+  const ext = await checarExtensao();
+  if (!ext) return marcarPasso("Inmovya Scale", false, "não encontrado neste Chrome");
+  marcarPasso("Inmovya Scale", extensaoAtualizada("1.4.0"), extensaoAtualizada("1.4.0") ? "conectado" : "versão antiga: atualize em chrome://extensions");
+
+  await naVezDoWhatsApp(async () => {
+    marcarPasso("Ler a conversa no WhatsApp", null, "abrindo a janelinha...");
+    let conversa: MensagemWA[] = [];
+    try {
+      conversa = await lerConversaAgora(tel);
+      const suas = conversa.filter((m) => m.dir === "out").length;
+      marcarPasso("Ler a conversa no WhatsApp", true, `${conversa.length} mensagem(ns) lida(s), ${suas} sua(s)${suas ? " — no agente real, este número seria pulado" : ""}`);
+    } catch (e: any) {
+      return marcarPasso("Ler a conversa no WhatsApp", false, e?.message || "falhou");
+    }
+
+    const cfg = getConfigPrimeiroContato();
+    marcarPasso("Escrever a mensagem", null);
+    const msg = await gerarMensagem({ nome: "Teste", origem: "Instagram", tags: ["Meta Ads"], observacoes: null }, cfg, conversa);
+    marcarPasso("Escrever a mensagem", true, `${msg.via}${msg.aviso ? ` (${msg.aviso})` : ""}: ${msg.texto}`);
+
+    marcarPasso("Enviar no WhatsApp", null, "enviando na janelinha...");
+    try {
+      const como = await enviarComSegundaTentativa(tel, msg.texto, (aviso) => marcarPasso("Enviar no WhatsApp", null, aviso));
+      marcarPasso("Enviar no WhatsApp", true, `enviado (${como})`);
+    } catch (e: any) {
+      marcarPasso("Enviar no WhatsApp", false, e?.message || "falhou");
+    }
+  });
+}
+
 // ---------- Atender um lead ----------
 async function atenderLead(lead: LeadContato, userId: string, cfg: ConfigPrimeiroContato): Promise<"enviado" | "pulado" | "erro" | "ignorado"> {
   const nome = lead.nome || "Lead sem nome";
@@ -365,7 +445,9 @@ async function atenderLead(lead: LeadContato, userId: string, cfg: ConfigPrimeir
       registrar({ ...base, status: "enviando", detalhe: cfg.usarIA ? "escrevendo a mensagem com IA..." : "enviando...", em: new Date().toISOString() });
       const msg = await gerarMensagem(lead, cfg, conversa);
       registrar({ ...base, status: "enviando", detalhe: "enviando no WhatsApp...", texto: msg.texto, via: msg.via, em: new Date().toISOString() });
-      await enviarAgora(tel, msg.texto, [], true);
+      await enviarComSegundaTentativa(tel, msg.texto, (aviso) =>
+        registrar({ ...base, status: "enviando", detalhe: aviso, texto: msg.texto, via: msg.via, em: new Date().toISOString() })
+      );
       return { msg } as const;
     });
 

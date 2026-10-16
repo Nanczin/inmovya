@@ -457,15 +457,16 @@ export const enviarAgora = (
   text: string,
   attachments: any[],
   background: boolean,
-  intervalo?: { min: number; max: number }
+  intervalo?: { min: number; max: number },
+  timeoutMs?: number // quanto esperar a extensão responder (padrão: ~2 min + anexos)
 ) =>
   new Promise<void>((resolve, reject) => {
     const token = crypto.randomUUID();
     const gap = intervalo || getIntervaloMensagens();
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
-      reject(new Error("Tempo esgotado aguardando a confirmação da extensão."));
-    }, 120000 + attachments.length * 60000 + (text.split("===").length + attachments.length) * gap.max * 1000);
+      reject(Object.assign(new Error("Tempo esgotado aguardando a confirmação da extensão."), { semResposta: true }));
+    }, timeoutMs ?? 120000 + attachments.length * 60000 + (text.split("===").length + attachments.length) * gap.max * 1000);
     const onResult = (event: CustomEvent) => {
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);
