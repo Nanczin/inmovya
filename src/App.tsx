@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider } from "next-themes";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { NotificationsProvider } from "@/hooks/useNotifications";
@@ -19,6 +20,7 @@ import { ConferenciaRunner } from "./components/ConferenciaRunner";
 const queryClient = new QueryClient();
 
 const App = () => (
+  <ThemeProvider attribute="class" defaultTheme="light" enableSystem storageKey="inmovya-tema" disableTransitionOnChange>
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
       <NotificationsProvider>
@@ -45,6 +47,7 @@ const App = () => (
       </NotificationsProvider>
     </AuthProvider>
   </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;
