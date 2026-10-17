@@ -123,10 +123,10 @@ All colors MUST be HSL.
     --sidebar-accent: 223 38% 13%;
     --sidebar-border: 223 34% 12%;
 
-    --chart-1: 217 88% 64%;
-    --chart-2: 156 62% 48%;
-    --chart-3: 38 92% 58%;
-    --chart-4: 262 70% 72%;
+    --chart-1: 217 88% 62%;
+    --chart-2: 156 62% 38%;
+    --chart-3: 30 85% 40%;
+    --chart-4: 262 55% 62%;
     --chart-5: 195 80% 58%;
     --chart-muted: 223 20% 32%;
   }

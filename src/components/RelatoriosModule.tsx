@@ -1,1482 +1,576 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { PowerBIFunnel, type ManualFunnelMetrics } from './PowerBIFunnel';
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
+import { Bar, BarChart, CartesianGrid, Line, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis, LabelList } from "recharts";
+import { ArrowDownRight, ArrowUpRight, Minus, Table2, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import {
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  Phone,
-  Users,
-  DollarSign,
-  Calendar,
-  Download,
-  Filter,
-  Eye,
-  ArrowUp,
-  ArrowDown,
-  Target,
-  Clock,
-  Send
-} from "lucide-react";
+import { useLeads } from "@/context/LeadsContext";
+import { getFunilTier, getStageForStatus, normalizeStatus, PERDIDO_STAGE_ID } from "@/lib/negociosStages";
 
-const metricasGrafico = [
-  { id: "ligacoes", nome: "Ligações", cor: "#2563eb" },
-  { id: "interacoes", nome: "Interações", cor: "#7c3aed" },
-  { id: "leads", nome: "Novos leads", cor: "#0891b2" },
-  { id: "emails", nome: "Emails disparados", cor: "#db2777" },
-  { id: "disparos", nome: "Disparos realizados", cor: "#0284c7" },
-  { id: "negociacoes", nome: "Negociações", cor: "#06b6d4" },
-  { id: "visitas", nome: "Visitas", cor: "#f59e0b" },
-  { id: "documentacao", nome: "Documentação", cor: "#10b981" },
-  { id: "vendas", nome: "Vendas", cor: "#22c55e" }
+// ---------- período ----------
+type PeriodoId = "7" | "30" | "mes";
+const PERIODOS: { id: PeriodoId; nome: string }[] = [
+  { id: "7", nome: "7 dias" },
+  { id: "30", nome: "30 dias" },
+  { id: "mes", nome: "Este mês" },
 ];
 
-async function carregarTodasAsPaginas<T>(consulta: (inicio: number, fim: number) => PromiseLike<{ data: T[] | null; error: any }>) {
-  const pageSize = 1000;
-  const result: T[] = [];
-  for (let inicio = 0; ; inicio += pageSize) {
-    const { data, error } = await consulta(inicio, inicio + pageSize - 1);
-    if (error) throw error;
-    const page = data || [];
-    result.push(...page);
-    if (page.length < pageSize) break;
-  }
-  return result;
+const inicioDoDia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const somarDias = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const chaveDia = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+/** Janela atual e a anterior com o MESMO número de dias (comparação justa). */
+function janelas(p: PeriodoId) {
+  const hoje = inicioDoDia(new Date());
+  const fim = somarDias(hoje, 1); // exclusivo
+  const inicio = p === "mes" ? new Date(hoje.getFullYear(), hoje.getMonth(), 1) : somarDias(hoje, -(Number(p) - 1));
+  const dias = Math.round((fim.getTime() - inicio.getTime()) / 86400000);
+  const inicioAnt = somarDias(inicio, -dias);
+  return { inicio, fim, inicioAnt, fimAnt: inicio, dias };
 }
 
+const dentro = (iso: string | undefined | null, a: Date, b: Date) => {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return t >= a.getTime() && t < b.getTime();
+};
+
+// ---------- cores do tema (o gráfico lê as variáveis do CSS) ----------
+function lerCores() {
+  const st = getComputedStyle(document.documentElement);
+  const v = (n: string) => `hsl(${st.getPropertyValue(n).trim()})`;
+  return {
+    atual: v("--chart-1"),
+    anterior: v("--chart-muted"),
+    verde: v("--chart-2"),
+    texto: v("--muted-foreground"),
+    tinta: v("--foreground"),
+    grade: v("--border"),
+    fundo: v("--card"),
+  };
+}
+function useCores() {
+  const { resolvedTheme } = useTheme();
+  const [cores, setCores] = useState(lerCores);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setCores(lerCores()));
+    return () => cancelAnimationFrame(id);
+  }, [resolvedTheme]);
+  return cores;
+}
+
+// ---------- peças ----------
+const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
+const fmtPct = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: v < 10 ? 1 : 0 })}%`;
+
+function Variacao({ atual, anterior, pontos = false }: { atual: number; anterior: number; pontos?: boolean }) {
+  // pontos = diferença em pontos percentuais (para taxas)
+  const diff = pontos ? atual - anterior : anterior > 0 ? ((atual - anterior) / anterior) * 100 : atual > 0 ? 100 : 0;
+  const igual = Math.abs(diff) < 0.5;
+  const Icone = igual ? Minus : diff > 0 ? ArrowUpRight : ArrowDownRight;
+  const cor = igual ? "text-muted-foreground" : diff > 0 ? "text-success" : "text-destructive";
+  const texto = pontos
+    ? `${diff > 0 ? "+" : ""}${diff.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} p.p.`
+    : anterior === 0 && atual > 0
+    ? "novo"
+    : `${diff > 0 ? "+" : ""}${Math.round(diff)}%`;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-xs font-bold ${cor}`}>
+      <Icone className="w-3.5 h-3.5" /> {igual ? "igual" : texto}
+    </span>
+  );
+}
+
+function Indicador({ titulo, valor, sufixo, atual, anterior, pontos, detalhe }: { titulo: string; valor: string; sufixo?: string; atual: number; anterior: number; pontos?: boolean; detalhe?: string }) {
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-card">
+      <div className="text-sm text-muted-foreground font-medium">{titulo}</div>
+      <div className="mt-1.5 flex items-baseline gap-1.5">
+        <span className="text-3xl font-extrabold tracking-tight tabular-nums">{valor}</span>
+        {sufixo && <span className="text-sm text-muted-foreground">{sufixo}</span>}
+      </div>
+      <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+        <Variacao atual={atual} anterior={anterior} pontos={pontos} />
+        <span>vs período anterior{detalhe ? ` · ${detalhe}` : ""}</span>
+      </div>
+    </div>
+  );
+}
+
+function Painel({ titulo, subtitulo, children, tabela }: { titulo: string; subtitulo?: string; children: React.ReactNode; tabela?: React.ReactNode }) {
+  const [verTabela, setVerTabela] = useState(false);
+  return (
+    <section className="rounded-2xl border bg-card p-4 sm:p-5 shadow-card min-w-0">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h3 className="font-bold leading-tight">{titulo}</h3>
+          {subtitulo && <p className="text-xs text-muted-foreground mt-0.5">{subtitulo}</p>}
+        </div>
+        {tabela && (
+          <button
+            type="button"
+            onClick={() => setVerTabela((v) => !v)}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+            title={verTabela ? "Ver gráfico" : "Ver tabela"}
+            aria-label={verTabela ? "Ver gráfico" : "Ver tabela"}
+          >
+            {verTabela ? <BarChart3 className="w-4 h-4" /> : <Table2 className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
+      {verTabela ? tabela : children}
+    </section>
+  );
+}
+
+function Legenda({ itens }: { itens: { nome: string; cor: string; tipo?: "barra" | "linha" }[] }) {
+  return (
+    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mb-2">
+      {itens.map((i) => (
+        <span key={i.nome} className="inline-flex items-center gap-1.5">
+          {i.tipo === "linha" ? (
+            <span className="w-4 h-0.5 rounded-full" style={{ background: i.cor }} />
+          ) : (
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: i.cor }} />
+          )}
+          {i.nome}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DicaGrafico({ active, payload, label, formatar }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border bg-popover px-3 py-2 shadow-elegant text-xs">
+      <div className="font-semibold mb-1">{formatar ? formatar(label, payload) : label}</div>
+      {payload.map((p: any) => (
+        <div key={p.dataKey} className="flex items-center justify-between gap-4">
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span className="w-2 h-2 rounded-sm" style={{ background: p.color || p.stroke || p.fill }} />
+            {p.name}
+          </span>
+          <span className="font-bold tabular-nums">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const TabelaSimples = ({ colunas, linhas }: { colunas: string[]; linhas: (string | number)[][] }) => (
+  <div className="overflow-x-auto max-h-72">
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-muted-foreground border-b">
+          {colunas.map((c) => (
+            <th key={c} className="py-1.5 pr-3 font-semibold">
+              {c}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {linhas.map((l, i) => (
+          <tr key={i} className="border-b last:border-0">
+            {l.map((v, j) => (
+              <td key={j} className={`py-1.5 pr-3 ${j > 0 ? "tabular-nums" : ""}`}>
+                {v}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+type Ligacao = { data_ligacao: string; status: string | null; resultado: string | null };
+
+async function todasAsPaginas<T>(consulta: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: any }>) {
+  const out: T[] = [];
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await consulta(de, de + 999);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
+// nomes curtos para os resultados da Oferta Ativa
+const nomeResultado = (r: string) => {
+  const n = normalizeStatus(r);
+  if (n.includes("caixa postal") || n.includes("nao atendeu")) return "Não atendeu / caixa postal";
+  if (n.includes("interessado") && !n.includes("nao")) return "Interessado";
+  if (n.includes("sem interesse") || n.includes("nao interessado") || n.includes("nao tem interesse")) return "Sem interesse";
+  if (n.includes("numero") && (n.includes("errado") || n.includes("invalido") || n.includes("inexistente"))) return "Número errado";
+  if (!n || n === "processado") return "Sem classificação";
+  return r.length > 28 ? `${r.slice(0, 27)}…` : r;
+};
+
 export function RelatoriosModule() {
-  const [periodoSelecionado, setPeriodoSelecionado] = useState("7dias");
-  const [dataInicioPersonalizada, setDataInicioPersonalizada] = useState<string>("");
-  const [dataFimPersonalizada, setDataFimPersonalizada] = useState<string>("");
-  const [manualMetrics, setManualMetrics] = useState<ManualFunnelMetrics>({
-    ligacoes: 0,
-    visitas: 0,
-    documentacao: 0,
-    negociacao: 0,
-    venda: 0,
-    interacaoAjuste: 0
-  });
-  const [dailyManualMetrics, setDailyManualMetrics] = useState<Record<string, ManualFunnelMetrics>>({});
-  const [classificacoesOferta, setClassificacoesOferta] = useState<Record<string, number>>({});
-  const [metricas, setMetricas] = useState({
-    conversao: {
-      atual: 0,
-      anterior: 0,
-      meta: 25.0
-    },
-    ligacoes: {
-      hoje: 0,
-      ontem: 0,
-      meta: 200
-    },
-    leads: {
-      novos: 0,
-      qualificados: 0,
-      convertidos: 0
-    },
-    receita: {
-      estimada: 0,
-      realizada: 0,
-      meta: 1200000
-    },
-    emails: {
-      disparados: 0,
-      sucesso: 0,
-      falharam: 0
-    },
-    disparos: {
-      realizados: 0
-    },
-    interacoes: {
-      total: 0
+  const { leads } = useLeads();
+  const cores = useCores();
+  const [periodo, setPeriodo] = useState<PeriodoId>(() => {
+    try {
+      return (localStorage.getItem("inmovya_relatorio_periodo") as PeriodoId) || "30";
+    } catch {
+      return "30";
     }
   });
-  const [campanhasPerformance, setCampanhasPerformance] = useState<any[]>([]);
-  const [topLeads, setTopLeads] = useState<any[]>([]);
-  const [numerosLigados, setNumerosLigados] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [metricaGrafico, setMetricaGrafico] = useState("ligacoes");
-  const [serieTemporal, setSerieTemporal] = useState<any[]>([]);
-  const [graficoCarregando, setGraficoCarregando] = useState(false);
-  const { toast } = useToast();
-  const ligacoesComAjuste = metricas.ligacoes.hoje + manualMetrics.ligacoes;
+  const [ligacoes, setLigacoes] = useState<Ligacao[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const j = useMemo(() => janelas(periodo), [periodo]);
 
+  const escolher = (p: PeriodoId) => {
+    setPeriodo(p);
+    try {
+      localStorage.setItem("inmovya_relatorio_periodo", p);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Ligações guardadas por 60 dias (o histórico mais antigo é apagado para não ocupar o banco)
   useEffect(() => {
-    const limparHistoricoExpirado = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - 60);
-        cutoff.setHours(0, 0, 0, 0);
-        const cutoffIso = cutoff.toISOString();
-        const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
-
-        const [callsResult, emailsResult, manualResult] = await Promise.all([
-          supabase.from('ligacoes').delete().eq('user_id', user.id).lt('data_ligacao', cutoffIso),
-          supabase.from('email_logs').delete().eq('user_id', user.id).lt('sent_at', cutoffIso),
-          supabase.from('powerbi_funnel_metrics').select('id, period, created_at, updated_at').eq('user_id', user.id)
-        ]);
-
-        if (callsResult.error) throw callsResult.error;
-        if (emailsResult.error) throw emailsResult.error;
-        if (manualResult.error) throw manualResult.error;
-
-        const expiredManualIds = (manualResult.data || [])
-          .filter(row => {
-            if (row.period?.startsWith('dia:')) return row.period.slice(4) < cutoffKey;
-            const storedAt = row.updated_at || row.created_at;
-            return !!storedAt && new Date(storedAt) < cutoff;
-          })
-          .map(row => row.id);
-
-        if (expiredManualIds.length > 0) {
-          const { error } = await supabase
-            .from('powerbi_funnel_metrics')
-            .delete()
-            .eq('user_id', user.id)
-            .in('id', expiredManualIds);
-          if (error) throw error;
-        }
-      } catch (error) {
-        console.error('Erro ao aplicar retenção de 60 dias nos relatórios:', error);
-      }
-    };
-
-    limparHistoricoExpirado();
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const corte = somarDias(inicioDoDia(new Date()), -60).toISOString();
+      await Promise.all([
+        supabase.from("ligacoes").delete().eq("user_id", user.id).lt("data_ligacao", corte),
+        supabase.from("email_logs").delete().eq("user_id", user.id).lt("sent_at", corte),
+      ]).catch(() => {});
+    })();
   }, []);
 
   useEffect(() => {
-    if (periodoSelecionado !== "personalizado" || (dataInicioPersonalizada && dataFimPersonalizada)) {
-      carregarMetricas();
-    }
-  }, [periodoSelecionado, dataInicioPersonalizada, dataFimPersonalizada]);
-
-  useEffect(() => {
-    if (periodoSelecionado !== "personalizado" || (dataInicioPersonalizada && dataFimPersonalizada)) {
-      carregarSerieTemporal();
-    } else {
-      setSerieTemporal([]);
-    }
-  }, [periodoSelecionado, dataInicioPersonalizada, dataFimPersonalizada]);
-
-  const carregarSerieTemporal = async () => {
-    setGraficoCarregando(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const range = getPeriodoDatas();
-      const inicio = new Date(range.inicio);
-      const fim = new Date(range.fim);
-      const [leadsData, callsData, emailsData, disparosData] = await Promise.all([
-        carregarTodasAsPaginas((from, to) => supabase.from('leads').select('created_at, status').eq('user_id', user.id)
-          .gte('created_at', inicio.toISOString()).lte('created_at', fim.toISOString()).range(from, to)),
-        carregarTodasAsPaginas((from, to) => supabase.from('ligacoes').select('data_ligacao, status, resultado').eq('user_id', user.id)
-          .gte('data_ligacao', inicio.toISOString()).lte('data_ligacao', fim.toISOString()).range(from, to)),
-        carregarTodasAsPaginas((from, to) => supabase.from('email_logs').select('sent_at, status').eq('user_id', user.id)
-          .gte('sent_at', inicio.toISOString()).lte('sent_at', fim.toISOString()).range(from, to)),
-        carregarTodasAsPaginas((from, to) => supabase.from('whatsapp_campaign_messages').select('data_envio').eq('user_id', user.id)
-          .eq('status', 'Entregue').gte('data_envio', inicio.toISOString()).lte('data_envio', fim.toISOString()).range(from, to))
-      ]);
-
-      const porDia = new Map<string, any>();
-      const cursor = new Date(inicio);
-      while (cursor <= fim) {
-        const chave = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-        porDia.set(chave, {
-          data: chave,
-          label: cursor.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
-          ligacoes: 0,
-          interacoes: 0,
-          leads: 0,
-          qualificados: 0,
-          convertidos: 0,
-          emails: 0,
-          emailsSucesso: 0,
-          disparos: 0,
-          receita: 0,
-          negociacoes: 0,
-          visitas: 0,
-          documentacao: 0,
-          vendas: 0
-        });
-        cursor.setDate(cursor.getDate() + 1);
+    let vivo = true;
+    (async () => {
+      setCarregando(true);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        const dados = await todasAsPaginas<Ligacao>((de, ate) =>
+          supabase
+            .from("ligacoes")
+            .select("data_ligacao, status, resultado")
+            .eq("user_id", user.id)
+            .gte("data_ligacao", j.inicioAnt.toISOString())
+            .lt("data_ligacao", j.fim.toISOString())
+            .range(de, ate) as any
+        );
+        if (vivo) setLigacoes(dados);
+      } catch (e) {
+        console.error("Relatórios: erro ao carregar ligações", e);
+      } finally {
+        if (vivo) setCarregando(false);
       }
-      const getChaveLocal = (value: string) => {
-        const date = new Date(value);
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      };
-      callsData.forEach(call => {
-        const point = porDia.get(getChaveLocal(call.data_ligacao));
-        if (!point) return;
-        point.ligacoes += 1;
-        if (call.status === 'interacao' && call.resultado !== 'Deny List') point.interacoes += 1;
-      });
-      leadsData.forEach(lead => {
-        const point = porDia.get(getChaveLocal(lead.created_at));
-        if (!point) return;
-        point.leads += 1;
-        if (['qualificado', 'interessado', 'em_contato'].includes(lead.status)) point.qualificados += 1;
-        if (lead.status === 'convertido') {
-          point.convertidos += 1;
-          point.receita += 450000;
-        }
-      });
-      emailsData.forEach(email => {
-        const point = porDia.get(getChaveLocal(email.sent_at));
-        if (!point) return;
-        point.emails += 1;
-        if (email.status === 'success') point.emailsSucesso += 1;
-      });
-      disparosData.forEach(disparo => {
-        if (!disparo.data_envio) return;
-        const point = porDia.get(getChaveLocal(disparo.data_envio));
-        if (point) point.disparos += 1;
-      });
-      setSerieTemporal(Array.from(porDia.values()));
-    } catch (error) {
-      console.error('Erro ao carregar série temporal:', error);
-      setSerieTemporal([]);
-      toast({ title: 'Erro no gráfico', description: 'Não foi possível carregar a evolução das métricas.', variant: 'destructive' });
-    } finally {
-      setGraficoCarregando(false);
-    }
-  };
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [j]);
 
-  const carregarMetricas = async () => {
-    setIsLoading(true);
-    try {
-      await Promise.all([
-        carregarDadosLeads(),
-        carregarDadosLigacoes(),
-        carregarDadosEmails(),
-        carregarDadosDisparos(),
-        carregarCampanhas(),
-        carregarTopLeads()
-      ]);
-    } catch (error) {
-      console.error('Erro ao carregar métricas:', error);
-      toast({
-        title: "Erro ao carregar dados",
-        description: "Não foi possível carregar as métricas do dashboard.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // ---------- leads ----------
+  const leadsAtual = useMemo(() => leads.filter((l) => dentro(l.created_at, j.inicio, j.fim)), [leads, j]);
+  const leadsAnt = useMemo(() => leads.filter((l) => dentro(l.created_at, j.inicioAnt, j.fimAnt)), [leads, j]);
 
-  const getPeriodoDatas = () => {
-    const hoje = new Date();
-    let dataInicio = new Date();
-    let dataFim = new Date(); // Default: agora
-
-    switch (periodoSelecionado) {
-      case "hoje":
-        dataInicio.setHours(0, 0, 0, 0);
-        break;
-      case "ontem":
-        dataInicio.setDate(hoje.getDate() - 1);
-        dataInicio.setHours(0, 0, 0, 0);
-        dataFim.setDate(hoje.getDate() - 1);
-        dataFim.setHours(23, 59, 59, 999);
-        break;
-      case "7dias":
-        dataInicio.setDate(hoje.getDate() - 6);
-        dataInicio.setHours(0, 0, 0, 0);
-        break;
-      case "30dias":
-        dataInicio.setDate(hoje.getDate() - 29);
-        dataInicio.setHours(0, 0, 0, 0);
-        break;
-      case "90dias":
-        dataInicio.setDate(hoje.getDate() - 89);
-        dataInicio.setHours(0, 0, 0, 0);
-        break;
-      case "ano":
-        dataInicio.setMonth(0, 1);
-        dataInicio.setHours(0, 0, 0, 0);
-        break;
-      case "personalizado":
-        if (dataInicioPersonalizada) {
-          dataInicio = new Date(dataInicioPersonalizada + "T00:00:00");
-        }
-        if (dataFimPersonalizada) {
-          dataFim = new Date(dataFimPersonalizada + "T23:59:59");
-        }
-        break;
-      default:
-        dataInicio.setDate(hoje.getDate() - 6);
-        dataInicio.setHours(0, 0, 0, 0);
-    }
-
+  // funil: posição ATUAL dos leads que chegaram no período (quem está no 50% já passou pelo 20%)
+  const funil = (lista: typeof leads) => {
+    const ordem = ["20", "50", "70", "vendeu"];
+    const nivel = (status?: string) => {
+      const t = getFunilTier(status);
+      return t ? ordem.indexOf(t.stageId) : -1;
+    };
+    // em atendimento: saiu da Validação e não foi perdido
+    const contatados = lista.filter((l) => {
+      const st = getStageForStatus(l.status);
+      return !!st && st.phase !== "entrada" && st.id !== PERDIDO_STAGE_ID;
+    }).length;
     return {
-      inicio: dataInicio.toISOString(),
-      fim: periodoSelecionado === 'ontem' || periodoSelecionado === 'personalizado'
-        ? dataFim.toISOString()
-        : new Date().toISOString()
+      chegaram: lista.length,
+      contatados,
+      p20: lista.filter((l) => nivel(l.status) >= 0).length,
+      p50: lista.filter((l) => nivel(l.status) >= 1).length,
+      p70: lista.filter((l) => nivel(l.status) >= 2).length,
+      fechado: lista.filter((l) => nivel(l.status) >= 3).length,
     };
   };
+  const fA = useMemo(() => funil(leadsAtual), [leadsAtual]);
+  const fB = useMemo(() => funil(leadsAnt), [leadsAnt]);
+  const etapasFunil = [
+    { nome: "Chegaram", a: fA.chegaram, b: fB.chegaram },
+    { nome: "Em atendimento", a: fA.contatados, b: fB.contatados },
+    { nome: "20%", a: fA.p20, b: fB.p20 },
+    { nome: "50%", a: fA.p50, b: fB.p50 },
+    { nome: "70%", a: fA.p70, b: fB.p70 },
+    { nome: "Fechado", a: fA.fechado, b: fB.fechado },
+  ];
 
-  const carregarDadosLeads = async () => {
-    const { inicio, fim } = getPeriodoDatas();
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    // Buscar leads do período atual
-    const leadsAtuais = await carregarTodasAsPaginas((from, to) => supabase
-      .from('leads')
-      .select('*')
-      .eq('user_id', user.id)
-      .gte('created_at', inicio)
-      .lte('created_at', fim)
-      .range(from, to));
-
-    // Buscar leads do período anterior para comparação
-    const dataInicioAnterior = new Date(inicio);
-    const diasPeriodo = Math.max(1, Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (1000 * 60 * 60 * 24)));
-
-    dataInicioAnterior.setDate(dataInicioAnterior.getDate() - diasPeriodo);
-
-    const leadsAnteriores = await carregarTodasAsPaginas((from, to) => supabase
-      .from('leads')
-      .select('*')
-      .eq('user_id', user.id)
-      .gte('created_at', dataInicioAnterior.toISOString())
-      .lt('created_at', inicio)
-      .range(from, to));
-
-    // Calcular métricas período atual
-    // "Novos leads" representa todos os leads cadastrados dentro do período,
-    // inclusive aqueles que já avançaram de status depois do cadastro.
-    const leadsNovos = leadsAtuais?.length || 0;
-    const leadsQualificados = leadsAtuais?.filter(lead =>
-      lead.status === 'qualificado' ||
-      lead.status === 'interessado' ||
-      lead.status === 'em_contato'
-    ).length || 0;
-    const leadsConvertidos = leadsAtuais?.filter(lead => lead.status === 'convertido').length || 0;
-    const totalLeadsAtuais = leadsAtuais?.length || 0;
-
-    // Calcular métricas período anterior
-    const leadsConvertidosAnteriores = leadsAnteriores?.filter(lead => lead.status === 'convertido').length || 0;
-    const totalLeadsAnteriores = leadsAnteriores?.length || 0;
-
-    const taxaConversaoAtual = totalLeadsAtuais > 0 ? (leadsConvertidos / totalLeadsAtuais) * 100 : 0;
-    const taxaConversaoAnterior = totalLeadsAnteriores > 0 ? (leadsConvertidosAnteriores / totalLeadsAnteriores) * 100 : 0;
-
-    // Calcular receita estimada baseada em conversões
-    const receitaEstimada = leadsConvertidos * 450000; // Valor médio por conversão
-    const receitaRealizada = Math.floor(receitaEstimada * 0.7); // 70% da estimada como realizada
-
-    setMetricas(prev => ({
-      ...prev,
-      leads: {
-        novos: leadsNovos,
-        qualificados: leadsQualificados,
-        convertidos: leadsConvertidos
-      },
-      conversao: {
-        atual: Number(taxaConversaoAtual.toFixed(1)),
-        anterior: Number(taxaConversaoAnterior.toFixed(1)),
-        meta: 25.0
-      },
-      receita: {
-        estimada: receitaEstimada,
-        realizada: receitaRealizada,
-        meta: 1200000
-      }
-    }));
-  };
-
-  const carregarDadosLigacoes = async () => {
-    const { inicio, fim } = getPeriodoDatas();
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    // Ligações do período atual
-    const ligacoesPeriodo = await carregarTodasAsPaginas((from, to) => supabase
-      .from('ligacoes')
-      .select('*')
-      .eq('user_id', user.id)
-      .gte('data_ligacao', inicio)
-      .lte('data_ligacao', fim)
-      .range(from, to));
-
-    // Ligações do período anterior para comparação
-    const diasPeriodo = Math.max(1, Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (1000 * 60 * 60 * 24)));
-    const dataInicioAnterior = new Date(inicio);
-    dataInicioAnterior.setDate(dataInicioAnterior.getDate() - diasPeriodo);
-
-    const ligacoesAnteriores = await carregarTodasAsPaginas((from, to) => supabase
-      .from('ligacoes')
-      .select('*')
-      .eq('user_id', user.id)
-      .gte('data_ligacao', dataInicioAnterior.toISOString())
-      .lt('data_ligacao', inicio)
-      .range(from, to));
-
-    // Para comparação "hoje vs ontem" quando período for "hoje"
-    let ligacoesHoje = 0;
-    let ligacoesOntem = 0;
-
-    if (periodoSelecionado === "hoje") {
-      ligacoesHoje = ligacoesPeriodo?.length || 0;
-      ligacoesOntem = ligacoesAnteriores?.length || 0;
-    } else {
-      // Para outros períodos, usar contagem do período atual vs anterior
-      ligacoesHoje = ligacoesPeriodo?.length || 0;
-      ligacoesOntem = ligacoesAnteriores?.length || 0;
-    }
-
-    // Calcular classificacoes da oferta ativa (resultado)
-    const classificacoes = ligacoesPeriodo?.reduce((acc: Record<string, number>, ligacao) => {
-      const resultado = ligacao.resultado || 'Sem Classificação';
-      if (resultado !== 'Cliente não atendeu - reagendar ligação') {
-        acc[resultado] = (acc[resultado] || 0) + 1;
-      }
-      return acc;
-    }, {}) || {};
-    setClassificacoesOferta(classificacoes);
-    
-    setNumerosLigados(ligacoesPeriodo?.map(l => ({
-      numero: l.numero_telefone,
-      status: l.status,
-      resultado: l.resultado,
-      data: l.data_ligacao
-    })).sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()) || []);
-
-    const metaLigacoesSalva = localStorage.getItem('meta_ligacoes_diarias');
-    const metaLigacoes = metaLigacoesSalva ? parseInt(metaLigacoesSalva, 10) : 200;
-
-    const interacoesPeriodo = ligacoesPeriodo?.filter(l => l.status === 'interacao' && l.resultado !== 'Deny List').length || 0;
-
-    setMetricas(prev => ({
-      ...prev,
-      ligacoes: {
-        hoje: ligacoesHoje,
-        ontem: ligacoesOntem,
-        meta: metaLigacoes
-      },
-      interacoes: {
-        total: interacoesPeriodo
-      }
-    }));
-  };
-
-  const carregarDadosEmails = async () => {
-    const { inicio, fim } = getPeriodoDatas();
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const emailLogs = await carregarTodasAsPaginas((from, to) => supabase
-      .from('email_logs')
-      .select('*')
-      .eq('user_id', user.id)
-      .gte('sent_at', inicio)
-      .lte('sent_at', fim)
-      .range(from, to));
-
-    const totalDisparados = emailLogs?.length || 0;
-    const emailsSucesso = emailLogs?.filter(log => log.status === 'success').length || 0;
-    const emailsFalharam = emailLogs?.filter(log => log.status === 'failed').length || 0;
-
-    setMetricas(prev => ({
-      ...prev,
-      emails: {
-        disparados: totalDisparados,
-        sucesso: emailsSucesso,
-        falharam: emailsFalharam
-      }
-    }));
-  };
-
-  const carregarDadosDisparos = async () => {
-    const { inicio, fim } = getPeriodoDatas();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const disparosRealizados = await carregarTodasAsPaginas((from, to) => supabase
-      .from('whatsapp_campaign_messages')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('status', 'Entregue')
-      .gte('data_envio', inicio)
-      .lte('data_envio', fim)
-      .range(from, to));
-
-    setMetricas(prev => ({
-      ...prev,
-      disparos: {
-        realizados: disparosRealizados.length
-      }
-    }));
-  };
-
-  const carregarCampanhas = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: campanhas, error } = await supabase
-      .from('campanhas')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    if (error) throw error;
-
-    // Simular dados de performance das campanhas
-    const performance = campanhas?.map(campanha => ({
-      id: campanha.id,
-      nome: campanha.nome,
-      ligacoes: Math.floor(Math.random() * 100) + 20,
-      conectadas: Math.floor(Math.random() * 50) + 10,
-      status: campanha.status
-    })) || [];
-
-    setCampanhasPerformance(performance);
-  };
-
-  const carregarTopLeads = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: leads, error } = await supabase
-      .from('leads')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    if (error) throw error;
-
-    const leadsComScore = leads?.map((lead, index) => ({
-      nome: lead.nome,
-      interesse: lead.origem || 'Website',
-      score: Math.floor(Math.random() * 40) + 60, // Score simulado entre 60-100
-      status: lead.status === 'convertido' ? 'Convertido' :
-        lead.status === 'qualificado' ? 'Qualificado' : 'Interessado'
-    })) || [];
-
-    setTopLeads(leadsComScore);
-  };
-
-  const exportarRelatorio = async () => {
-    const dataAtual = new Date().toISOString().split('T')[0];
-    const nomeArquivo = `relatorio-${periodoSelecionado}-${dataAtual}.csv`;
-
-    try {
-      // Buscar dados reais das campanhas para exportação
-      const { data: campanhasReais, error: errorCampanhas } = await supabase
-        .from('campanhas')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      // Buscar emails logs reais
-      const { inicio } = getPeriodoDatas();
-      const { data: emailsReais, error: errorEmails } = await supabase
-        .from('email_logs')
-        .select('*')
-        .gte('sent_at', inicio);
-
-      // Buscar ligações reais
-      const { data: ligacoesReais, error: errorLigacoes } = await supabase
-        .from('ligacoes')
-        .select('*')
-        .gte('data_ligacao', inicio);
-
-      if (errorCampanhas || errorEmails || errorLigacoes) {
-        throw new Error('Erro ao buscar dados para exportação');
-      }
-
-      // Dados das métricas reais
-      const csvContent = [
-        // Cabeçalho
-        ["Relatório de Performance - Dados Reais", "", "", ""],
-        ["Período", periodoSelecionado, "", ""],
-        ["Data de Exportação", dataAtual, "", ""],
-        ["Data Início do Período", new Date(getPeriodoDatas().inicio).toLocaleDateString('pt-BR'), "", ""],
-        ["", "", "", ""],
-        ["MÉTRICAS PRINCIPAIS", "", "", ""],
-        ["Métrica", "Valor Atual", "Valor Anterior", "Meta"],
-        ["Taxa de Conversão (%)", metricas.conversao.atual, metricas.conversao.anterior, metricas.conversao.meta],
-        ["Ligações no Período", metricas.ligacoes.hoje, metricas.ligacoes.ontem, metricas.ligacoes.meta],
-        ["Interações Registradas", metricas.interacoes.total + manualMetrics.interacaoAjuste, "-", "-"],
-        ["Leads Novos", metricas.leads.novos, "-", "-"],
-        ["Leads Qualificados", metricas.leads.qualificados, "-", "-"],
-        ["Leads Convertidos", metricas.leads.convertidos, "-", "-"],
-        ["Emails Disparados", metricas.emails.disparados, "-", "-"],
-        ["Emails Sucesso", metricas.emails.sucesso, "-", "-"],
-        ["Emails Falharam", metricas.emails.falharam, "-", "-"],
-        ["Receita Estimada (R$)", metricas.receita.estimada.toLocaleString(), "-", metricas.receita.meta.toLocaleString()],
-        ["Receita Realizada (R$)", metricas.receita.realizada.toLocaleString(), "-", metricas.receita.meta.toLocaleString()],
-        ["", "", "", ""],
-        ["CAMPANHAS CADASTRADAS", "", "", ""],
-        ["Nome", "Status", "Tipo", "Data Criação"],
-        ...campanhasReais?.map(campanha => [
-          `"${campanha.nome}"`,
-          campanha.status,
-          campanha.tipo,
-          new Date(campanha.created_at).toLocaleDateString('pt-BR')
-        ]) || [],
-        ["", "", "", ""],
-        ["LOGS DE EMAIL (Últimos 50)", "", "", ""],
-        ["Destinatário", "Status", "Provedor", "Data Envio"],
-        ...emailsReais?.slice(0, 50).map(email => [
-          email.recipient,
-          email.status,
-          email.provider,
-          new Date(email.sent_at).toLocaleDateString('pt-BR')
-        ]) || [],
-        ["", "", "", ""],
-        ["LIGAÇÕES REGISTRADAS", "", "", ""],
-        ["Telefone", "Status", "Resultado", "Data"],
-        ...ligacoesReais?.slice(0, 50).map(ligacao => [
-          ligacao.numero_telefone,
-          ligacao.status,
-          ligacao.resultado || 'Não informado',
-          new Date(ligacao.data_ligacao).toLocaleDateString('pt-BR')
-        ]) || []
-      ].map(row => row.join(",")).join("\n");
-
-      // Criar e baixar arquivo
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", nomeArquivo);
-      link.style.visibility = "hidden";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      toast({
-        title: "✅ Relatório Exportado",
-        description: `Dados reais exportados: ${campanhasReais?.length || 0} campanhas, ${emailsReais?.length || 0} emails, ${ligacoesReais?.length || 0} ligações`,
+  // série diária com o período anterior alinhado pelo dia (dia 1 com dia 1)
+  const serieDiaria = <T,>(itensA: T[], itensB: T[], data: (x: T) => string | undefined) => {
+    const contar = (lista: T[]) => {
+      const m = new Map<string, number>();
+      lista.forEach((x) => {
+        const d = data(x);
+        if (!d) return;
+        const k = chaveDia(new Date(d));
+        m.set(k, (m.get(k) || 0) + 1);
       });
-    } catch (error) {
-      console.error('Erro na exportação:', error);
-      toast({
-        title: "Erro na Exportação",
-        description: "Não foi possível exportar os dados reais. Tente novamente.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const gerarRelatorioPDF = async () => {
-    const dataAtual = new Date().toLocaleString("pt-BR");
-    const nomeArquivo = `relatorio-completo-${periodoSelecionado}-${new Date().toISOString().split('T')[0]}.pdf`;
-
-    try {
-      toast({
-        title: "🔄 Gerando Relatório PDF",
-        description: `Coletando dados reais do período: ${periodoSelecionado}`,
-      });
-
-      // Buscar todos os dados reais do período
-      const { inicio, fim } = getPeriodoDatas();
-      const agora = new Date().toISOString();
-
-      const [
-        { data: leadsData, error: leadsError },
-        { data: ligacoesData, error: ligacoesError },
-        { data: emailsData, error: emailsError },
-        { data: campanhasData, error: campanhasError }
-      ] = await Promise.all([
-        supabase.from('leads').select('*').gte('created_at', inicio).lte('created_at', fim),
-        supabase.from('ligacoes').select('*').gte('data_ligacao', inicio).lte('data_ligacao', fim),
-        supabase.from('email_logs').select('*').gte('sent_at', inicio).lte('sent_at', fim),
-        supabase.from('campanhas').select('*').order('created_at', { ascending: false })
-      ]);
-
-      if (leadsError || ligacoesError || emailsError || campanhasError) {
-        throw new Error('Erro ao buscar dados do banco');
-      }
-
-      // Calcular métricas detalhadas
-      const relatorioCompleto = {
-        periodo: periodoSelecionado,
-        dataInicio: new Date(inicio).toLocaleDateString('pt-BR'),
-        dataGeracao: dataAtual,
-
-        // Métricas de Leads
-        leads: {
-          total: leadsData?.length || 0,
-          novos: leadsData?.filter(l => l.status === 'novo').length || 0,
-          qualificados: leadsData?.filter(l => ['qualificado', 'interessado', 'em_contato'].includes(l.status)).length || 0,
-          convertidos: leadsData?.filter(l => l.status === 'convertido').length || 0,
-          porOrigem: leadsData?.reduce((acc: any, lead) => {
-            const origem = lead.origem || 'Não informado';
-            acc[origem] = (acc[origem] || 0) + 1;
-            return acc;
-          }, {}) || {},
-          taxaConversao: leadsData?.length > 0 ?
-            ((leadsData?.filter(l => l.status === 'convertido').length / leadsData?.length) * 100).toFixed(1) : '0'
-        },
-
-        // Métricas de Ligações
-        ligacoes: {
-          total: ligacoesData?.length || 0,
-          realizadas: ligacoesData?.filter(l => l.status === 'realizada' || l.status === 'conectada').length || 0,
-          interacoes: (ligacoesData?.filter(l => l.status === 'interacao' && l.resultado !== 'Deny List').length || 0) + manualMetrics.interacaoAjuste,
-          naoAtendidas: ligacoesData?.filter(l => l.status === 'nao_atendeu').length || 0,
-          ocupadas: ligacoesData?.filter(l => l.status === 'ocupado').length || 0,
-          duracaoMedia: ligacoesData?.length > 0 ?
-            Math.round(ligacoesData?.reduce((acc, l) => acc + (l.duracao || 0), 0) / ligacoesData?.length) : 0,
-          porResultado: ligacoesData?.reduce((acc: any, ligacao) => {
-            const resultado = ligacao.resultado || 'Não informado';
-            if (resultado !== 'Cliente não atendeu - reagendar ligação') {
-              acc[resultado] = (acc[resultado] || 0) + 1;
-            }
-            return acc;
-          }, {}) || {}
-        },
-
-        // Métricas de Email
-        emails: {
-          total: emailsData?.length || 0,
-          enviados: emailsData?.filter(e => e.status === 'success').length || 0,
-          falharam: emailsData?.filter(e => e.status === 'failed').length || 0,
-          taxaSucesso: emailsData?.length > 0 ?
-            ((emailsData?.filter(e => e.status === 'success').length / emailsData?.length) * 100).toFixed(1) : '0',
-          porProvedor: emailsData?.reduce((acc: any, email) => {
-            const provider = email.provider || 'Não informado';
-            acc[provider] = (acc[provider] || 0) + 1;
-            return acc;
-          }, {}) || {}
-        },
-
-        // Campanhas Ativas
-        campanhas: {
-          total: campanhasData?.length || 0,
-          ativas: campanhasData?.filter(c => c.status === 'ativa').length || 0,
-          pausadas: campanhasData?.filter(c => c.status === 'pausada').length || 0,
-          concluidas: campanhasData?.filter(c => c.status === 'concluida').length || 0,
-          lista: campanhasData?.slice(0, 10).map(c => ({
-            nome: c.nome,
-            status: c.status,
-            tipo: c.tipo,
-            dataInicio: c.data_inicio ? new Date(c.data_inicio).toLocaleDateString('pt-BR') : 'Não definida'
-          })) || []
-        }
+      return m;
+    };
+    const mA = contar(itensA);
+    const mB = contar(itensB);
+    return Array.from({ length: j.dias }, (_, i) => {
+      const dA = somarDias(j.inicio, i);
+      const dB = somarDias(j.inicioAnt, i);
+      return {
+        dia: dA.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+        diaAnterior: dB.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+        atual: mA.get(chaveDia(dA)) || 0,
+        anterior: mB.get(chaveDia(dB)) || 0,
       };
-
-      // Gerar conteúdo HTML para o PDF
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; color: #333; }
-            .header { text-align: center; border-bottom: 2px solid #ccc; padding-bottom: 20px; margin-bottom: 30px; }
-            .section { margin-bottom: 30px; }
-            .metric-grid { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px; }
-            .metric-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; min-width: 200px; }
-            .metric-value { font-size: 24px; font-weight: bold; color: #2563eb; }
-            .metric-label { font-size: 12px; color: #666; margin-bottom: 5px; }
-            .table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            .table th { background-color: #f5f5f5; font-weight: bold; }
-            .highlight { background-color: #e3f2fd; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Relatório Completo - Inmovya</h1>
-            <p>Período: ${relatorioCompleto.periodo} | ${relatorioCompleto.dataInicio} até ${new Date().toLocaleDateString('pt-BR')}</p>
-            <p>Gerado em: ${relatorioCompleto.dataGeracao}</p>
-          </div>
-
-          <div class="section">
-            <h2>📊 Métricas Principais</h2>
-            <div class="metric-grid">
-              <div class="metric-card highlight">
-                <div class="metric-label">Taxa de Conversão</div>
-                <div class="metric-value">${relatorioCompleto.leads.taxaConversao}%</div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-label">Total de Leads</div>
-                <div class="metric-value">${relatorioCompleto.leads.total}</div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-label">Ligações Realizadas</div>
-                <div class="metric-value">${relatorioCompleto.ligacoes.total}</div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-label">Emails Enviados</div>
-                <div class="metric-value">${relatorioCompleto.emails.enviados}</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h2>👥 Análise de Leads</h2>
-            <table class="table">
-              <tr><th>Métrica</th><th>Valor</th><th>Percentual</th></tr>
-              <tr><td>Leads Novos</td><td>${relatorioCompleto.leads.novos}</td><td>${((relatorioCompleto.leads.novos / relatorioCompleto.leads.total) * 100).toFixed(1)}%</td></tr>
-              <tr><td>Leads Qualificados</td><td>${relatorioCompleto.leads.qualificados}</td><td>${((relatorioCompleto.leads.qualificados / relatorioCompleto.leads.total) * 100).toFixed(1)}%</td></tr>
-              <tr><td>Leads Convertidos</td><td>${relatorioCompleto.leads.convertidos}</td><td>${relatorioCompleto.leads.taxaConversao}%</td></tr>
-            </table>
-
-            <h3>Leads por Origem</h3>
-            <table class="table">
-              <tr><th>Origem</th><th>Quantidade</th></tr>
-              ${Object.entries(relatorioCompleto.leads.porOrigem).map(([origem, qtd]) =>
-        `<tr><td>${origem}</td><td>${qtd}</td></tr>`
-      ).join('')}
-            </table>
-          </div>
-
-          <div class="section">
-            <h2>📞 Análise de Ligações</h2>
-            <table class="table">
-              <tr><th>Métrica</th><th>Valor</th></tr>
-              <tr><td>Total de Ligações</td><td>${relatorioCompleto.ligacoes.total}</td></tr>
-              <tr><td>Ligações Realizadas</td><td>${relatorioCompleto.ligacoes.realizadas}</td></tr>
-              <tr><td>Interações Registradas</td><td>${relatorioCompleto.ligacoes.interacoes}</td></tr>
-              <tr><td>Não Atendidas</td><td>${relatorioCompleto.ligacoes.naoAtendidas}</td></tr>
-              <tr><td>Duração Média (min)</td><td>${relatorioCompleto.ligacoes.duracaoMedia}</td></tr>
-            </table>
-          </div>
-
-          <div class="section">
-            <h2>📧 Análise de Emails</h2>
-            <table class="table">
-              <tr><th>Métrica</th><th>Valor</th></tr>
-              <tr><td>Total de Emails</td><td>${relatorioCompleto.emails.total}</td></tr>
-              <tr><td>Emails Enviados com Sucesso</td><td>${relatorioCompleto.emails.enviados}</td></tr>
-              <tr><td>Emails que Falharam</td><td>${relatorioCompleto.emails.falharam}</td></tr>
-              <tr><td>Taxa de Sucesso</td><td>${relatorioCompleto.emails.taxaSucesso}%</td></tr>
-            </table>
-          </div>
-
-          <div class="section">
-            <h2>🏢 Campanhas</h2>
-            <div style="display: flex; gap: 20px;">
-              <div style="flex: 1;">
-                <h3>Campanhas (${relatorioCompleto.campanhas.total} total)</h3>
-                <ul>
-                  <li>Ativas: ${relatorioCompleto.campanhas.ativas}</li>
-                  <li>Pausadas: ${relatorioCompleto.campanhas.pausadas}</li>
-                  <li>Concluídas: ${relatorioCompleto.campanhas.concluidas}</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h2>📈 Recomendações</h2>
-            <ul>
-              <li><strong>Conversão:</strong> ${parseFloat(relatorioCompleto.leads.taxaConversao) > 20 ? 'Taxa excelente! Continue o trabalho.' : 'Foque em melhorar a qualificação dos leads.'}</li>
-              <li><strong>Ligações:</strong> ${relatorioCompleto.ligacoes.realizadas > relatorioCompleto.ligacoes.naoAtendidas ? 'Boa taxa de conexão.' : 'Considere otimizar horários de ligação.'}</li>
-              <li><strong>Email:</strong> ${parseFloat(relatorioCompleto.emails.taxaSucesso) > 90 ? 'Excelente deliverability!' : 'Revisar configurações de email para reduzir falhas.'}</li>
-            </ul>
-          </div>
-        </body>
-        </html>
-      `;
-
-      // Simular geração do PDF (implementação real precisaria de uma biblioteca como jsPDF ou html2pdf)
-      console.log("Relatório PDF Completo:", relatorioCompleto);
-      console.log("HTML para PDF:", htmlContent);
-
-      // Criar arquivo HTML temporário para visualização
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `relatorio-completo-${periodoSelecionado}.html`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "✅ Relatório Completo Gerado",
-        description: `📊 ${relatorioCompleto.leads.total} leads, ${relatorioCompleto.ligacoes.total} ligações, ${relatorioCompleto.emails.total} emails analisados | Taxa conversão: ${relatorioCompleto.leads.taxaConversao}%`,
-      });
-
-    } catch (error) {
-      console.error("Erro ao gerar relatório:", error);
-      toast({
-        title: "❌ Erro na Geração",
-        description: "Não foi possível gerar o relatório completo. Verifique os dados.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const gerarAnalisePreditiva = () => {
-    const previsoes = {
-      proximoMes: {
-        ligacoes: Math.round(metricas.ligacoes.hoje * 30 * 1.1), // Crescimento de 10%
-        conversao: (metricas.conversao.atual * 1.05).toFixed(1), // Melhoria de 5%
-        receita: Math.round(metricas.receita.estimada * 1.15), // Crescimento de 15%
-        leadsNovos: Math.round(metricas.leads.novos * 30 * 1.08) // Crescimento de 8%
-      },
-      tendencias: [
-        "Taxa de conversão em alta - tendência de crescimento de 5%",
-        "Meta de ligações será atingida em 18 dias no ritmo atual",
-        "Receita projeta superar meta em 15% baseado no pipeline atual",
-        "Campanhas com IA mostram 23% mais eficiência",
-        "Horário ideal para ligações: 14h-16h (maior taxa de conexão)"
-      ],
-      recomendacoes: [
-        "Aumentar investimento em campanhas de melhor performance",
-        "Otimizar horários de ligação baseado nos dados históricos",
-        "Implementar follow-up automático para leads não convertidos",
-        "Personalizar scripts por tipo de empreendimento"
-      ]
-    };
-
-    toast({
-      title: "🔄 Processando Análise Preditiva",
-      description: "Analisando dados históricos com IA...",
-    });
-
-    setTimeout(() => {
-      toast({
-        title: "🔮 Análise Preditiva Concluída",
-        description: `Previsões para próximo mês: ${previsoes.proximoMes.ligacoes.toLocaleString()} ligações, ${previsoes.proximoMes.conversao}% conversão, R$ ${(previsoes.proximoMes.receita / 1000).toFixed(0)}K receita`,
-      });
-
-      console.log("Análise Preditiva Gerada:", previsoes);
-    }, 1500);
-  };
-
-  const compararPeriodos = () => {
-    // Usar os dados já carregados no estado 'metricas'
-    // Como a lógica de carregar comparações já é feita no useEffect, podemos usar os dados diretos
-
-    // Simplificado para usar o que temos no estado, que já contém 'atual' e 'anterior'/'meta' para algumas métricas
-    const ligacoesAtual = metricas.ligacoes.hoje;
-    const ligacoesAnterior = metricas.ligacoes.ontem;
-
-    // Infelizmente o estado simples atual não tem leads anteriores separados, vamos focar no que temos
-
-    const calcularVariacaoSimples = (atual: number, anterior: number) => {
-      if (anterior === 0) return atual > 0 ? "+100%" : "0%";
-      const variacao = ((atual - anterior) / anterior) * 100;
-      return variacao > 0 ? `+${variacao.toFixed(1)}%` : `${variacao.toFixed(1)}%`;
-    };
-
-    toast({
-      title: "� Comparação de Ligações",
-      description: `Período Atual: ${ligacoesAtual} vs Anterior: ${ligacoesAnterior} (${calcularVariacaoSimples(ligacoesAtual, ligacoesAnterior)})`,
     });
   };
+  const leadsPorDia = useMemo(() => serieDiaria(leadsAtual, leadsAnt, (l) => l.created_at), [leadsAtual, leadsAnt, j]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Convertido": return "bg-success text-success-foreground";
-      case "Interessado": return "bg-accent text-accent-foreground";
-      case "Qualificado": return "bg-primary text-primary-foreground";
-      default: return "bg-muted text-muted-foreground";
-    }
-  };
-
-  const calcularVariacao = (atual: number, anterior: number) => {
-    const variacao = ((atual - anterior) / anterior) * 100;
-    return {
-      valor: Math.abs(variacao).toFixed(1),
-      tipo: variacao >= 0 ? 'positiva' : 'negativa'
+  // origem
+  const porOrigem = useMemo(() => {
+    const nome = (o?: string) => {
+      const n = normalizeStatus(o);
+      if (!n) return "Sem origem";
+      if (n.includes("roleta") || n.includes("bitrix")) return "Roleta / Bitrix";
+      if (n.includes("instagram") || n.includes("facebook") || n.includes("meta")) return "Meta Ads";
+      if (n.includes("google")) return "Google";
+      if (n.includes("oferta") || n.includes("ligac") || n.includes("mailing")) return "Oferta ativa";
+      return o!.trim();
     };
-  };
-
-  const metricaAtiva = metricasGrafico.find(item => item.id === metricaGrafico) || metricasGrafico[0];
-  const rangeAtual = getPeriodoDatas();
-  const chaveDataLocal = (value: string) => {
-    const date = new Date(value);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  };
-  const rangeStartKey = chaveDataLocal(rangeAtual.inicio);
-  const rangeEndKey = chaveDataLocal(rangeAtual.fim);
-  const diasNoPeriodo = Math.max(1, Math.ceil(
-    (new Date(rangeAtual.fim).getTime() - new Date(rangeAtual.inicio).getTime()) / (1000 * 60 * 60 * 24)
-  ));
-  const metaLigacoesPeriodo = metricas.ligacoes.meta * diasNoPeriodo;
-  const serieGrafico = (() => {
-    const adjusted = serieTemporal.map(point => ({ ...point }));
-    if (!adjusted.length) return adjusted;
-    adjusted.forEach(point => {
-      const daily = dailyManualMetrics[point.data];
-      if (!daily) return;
-      point.ligacoes += daily.ligacoes;
-      point.interacoes = Math.max(0, point.interacoes + daily.interacaoAjuste);
-      point.negociacoes = Math.max(0, point.negociacoes + daily.negociacao);
-      point.visitas = Math.max(0, point.visitas + daily.visitas);
-      point.documentacao = Math.max(0, point.documentacao + daily.documentacao);
-      point.vendas = Math.max(0, point.vendas + daily.venda);
+    const m = new Map<string, { origem: string; atual: number; anterior: number }>();
+    leadsAtual.forEach((l) => {
+      const k = nome(l.origem);
+      m.set(k, { origem: k, atual: (m.get(k)?.atual || 0) + 1, anterior: m.get(k)?.anterior || 0 });
     });
-    return adjusted;
-  })();
-  const chavePeriodoManual = periodoSelecionado === 'personalizado'
-    ? `personalizado:${dataInicioPersonalizada || 'inicio'}:${dataFimPersonalizada || 'fim'}`
-    : periodoSelecionado;
-  const formatarValorGrafico = (value: number) => metricaAtiva.moeda
-    ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value)
-    : new Intl.NumberFormat('pt-BR').format(value);
+    leadsAnt.forEach((l) => {
+      const k = nome(l.origem);
+      m.set(k, { origem: k, atual: m.get(k)?.atual || 0, anterior: (m.get(k)?.anterior || 0) + 1 });
+    });
+    const lista = Array.from(m.values()).sort((a, b) => b.atual - a.atual || b.anterior - a.anterior);
+    if (lista.length <= 6) return lista;
+    const resto = lista.slice(5).reduce((t, x) => ({ origem: "Outras", atual: t.atual + x.atual, anterior: t.anterior + x.anterior }), { origem: "Outras", atual: 0, anterior: 0 });
+    return [...lista.slice(0, 5), resto];
+  }, [leadsAtual, leadsAnt]);
+
+  // ---------- ligações ----------
+  const ligA = useMemo(() => ligacoes.filter((l) => dentro(l.data_ligacao, j.inicio, j.fim)), [ligacoes, j]);
+  const ligB = useMemo(() => ligacoes.filter((l) => dentro(l.data_ligacao, j.inicioAnt, j.fimAnt)), [ligacoes, j]);
+  const ligPorDia = useMemo(() => serieDiaria(ligA, ligB, (l) => l.data_ligacao), [ligA, ligB, j]);
+  const interessados = (lista: Ligacao[]) => lista.filter((l) => nomeResultado(l.resultado || "") === "Interessado").length;
+  const resultados = useMemo(() => {
+    const m = new Map<string, { nome: string; atual: number; anterior: number }>();
+    ligA.forEach((l) => {
+      const k = nomeResultado(l.resultado || "");
+      m.set(k, { nome: k, atual: (m.get(k)?.atual || 0) + 1, anterior: m.get(k)?.anterior || 0 });
+    });
+    ligB.forEach((l) => {
+      const k = nomeResultado(l.resultado || "");
+      m.set(k, { nome: k, atual: m.get(k)?.atual || 0, anterior: (m.get(k)?.anterior || 0) + 1 });
+    });
+    return Array.from(m.values())
+      .sort((a, b) => b.atual - a.atual)
+      .map((r) => ({ ...r, pctA: pct(r.atual, ligA.length), pctB: pct(r.anterior, ligB.length) }));
+  }, [ligA, ligB]);
+
+  const taxaFunilA = pct(fA.p20, fA.chegaram);
+  const taxaFunilB = pct(fB.p20, fB.chegaram);
+  const taxaIntA = pct(interessados(ligA), ligA.length);
+  const taxaIntB = pct(interessados(ligB), ligB.length);
+
+  const eixo = { stroke: cores.grade, tick: { fill: cores.texto, fontSize: 11 }, tickLine: false, axisLine: false } as const;
+  const rotuloPeriodo = periodo === "mes" ? "o mesmo nº de dias antes" : `os ${periodo} dias anteriores`;
+
+  const GraficoDiario = ({ dados, nome }: { dados: typeof leadsPorDia; nome: string }) => (
+    <>
+      <Legenda
+        itens={[
+          { nome: `${nome} no período`, cor: cores.atual },
+          { nome: "Período anterior", cor: cores.anterior, tipo: "linha" },
+        ]}
+      />
+      <div className="h-56">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={dados} margin={{ top: 8, right: 4, left: -18, bottom: 0 }} barCategoryGap={dados.length > 20 ? 2 : "20%"}>
+            <CartesianGrid vertical={false} stroke={cores.grade} strokeDasharray="0" />
+            <XAxis dataKey="dia" {...eixo} interval="preserveStartEnd" minTickGap={18} />
+            <YAxis {...eixo} allowDecimals={false} width={40} />
+            <Tooltip
+              cursor={{ fill: cores.grade, opacity: 0.5 }}
+              content={<DicaGrafico formatar={(label: string, p: any[]) => `${label} (antes: ${p[0]?.payload?.diaAnterior})`} />}
+            />
+            <Bar dataKey="atual" name="Período atual" fill={cores.atual} radius={[4, 4, 0, 0]} maxBarSize={28} />
+            <Line dataKey="anterior" name="Período anterior" stroke={cores.anterior} strokeWidth={2} dot={false} type="monotone" activeDot={{ r: 4 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </>
+  );
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Relatórios e Análises</h2>
-          <p className="text-muted-foreground">Dashboard completo de performance e métricas {isLoading && '(Carregando...)'}</p>
-        </div>
-        <div className="flex gap-4">
-          <Select value={periodoSelecionado} onValueChange={setPeriodoSelecionado} disabled={isLoading}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Selecionar período" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="hoje">Hoje</SelectItem>
-              <SelectItem value="ontem">Ontem</SelectItem>
-              <SelectItem value="7dias">Últimos 7 dias</SelectItem>
-              <SelectItem value="30dias">Últimos 30 dias</SelectItem>
-              <SelectItem value="90dias">Últimos 90 dias</SelectItem>
-              <SelectItem value="ano">Este ano</SelectItem>
-              <SelectItem value="personalizado">Período personalizado</SelectItem>
-            </SelectContent>
-          </Select>
-          {periodoSelecionado === "personalizado" && (
-            <div className="flex gap-2">
-              <Input 
-                type="date" 
-                value={dataInicioPersonalizada} 
-                onChange={(e) => setDataInicioPersonalizada(e.target.value)}
-                className="w-[140px]"
-              />
-              <Input 
-                type="date" 
-                value={dataFimPersonalizada} 
-                onChange={(e) => setDataFimPersonalizada(e.target.value)}
-                className="w-[140px]"
-              />
-            </div>
-          )}
-          <Button variant="success" onClick={exportarRelatorio} disabled={isLoading}>
-            <Download className="w-4 h-4 mr-2" />
-            Exportar
-          </Button>
+    <div className="max-w-6xl mx-auto space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Comparando com {rotuloPeriodo}
+          {carregando && " · carregando ligações…"}
+        </p>
+        <div className="flex rounded-lg border bg-card p-0.5" role="tablist" aria-label="Período">
+          {PERIODOS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="tab"
+              aria-selected={periodo === p.id}
+              onClick={() => escolher(p.id)}
+              className={`px-3 h-8 rounded-md text-sm font-semibold ${periodo === p.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {p.nome}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* KPIs Principais */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Indicador titulo="Leads novos" valor={leadsAtual.length.toLocaleString("pt-BR")} atual={leadsAtual.length} anterior={leadsAnt.length} />
+        <Indicador titulo="Chegaram ao 20%" valor={fmtPct(taxaFunilA)} atual={taxaFunilA} anterior={taxaFunilB} pontos detalhe={`${fA.p20} leads`} />
+        <Indicador titulo="Ligações feitas" valor={ligA.length.toLocaleString("pt-BR")} atual={ligA.length} anterior={ligB.length} />
+        <Indicador titulo="Ligações com interesse" valor={fmtPct(taxaIntA)} atual={taxaIntA} anterior={taxaIntB} pontos detalhe={`${interessados(ligA)} interessados`} />
+      </div>
 
+      <h2 className="text-lg font-extrabold tracking-tight pt-2">Leads e funil</h2>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Painel
+          titulo="Leads novos por dia"
+          subtitulo={`${leadsAtual.length} agora · ${leadsAnt.length} antes`}
+          tabela={<TabelaSimples colunas={["Dia", "Agora", "Antes"]} linhas={leadsPorDia.map((d) => [d.dia, d.atual, d.anterior])} />}
+        >
+          <GraficoDiario dados={leadsPorDia} nome="Leads" />
+        </Painel>
 
-        <Card className="shadow-card">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-lg bg-gradient-accent text-accent-foreground">
-                <Phone className="w-6 h-6" />
-              </div>
-              <div className="text-right">
-                {calcularVariacao(ligacoesComAjuste, metricas.ligacoes.ontem).tipo === 'positiva' ? (
-                  <ArrowUp className="w-4 h-4 text-success inline" />
-                ) : (
-                  <ArrowDown className="w-4 h-4 text-destructive inline" />
-                )}
-                <span className={`text-sm ml-1 ${calcularVariacao(ligacoesComAjuste, metricas.ligacoes.ontem).tipo === 'positiva'
-                  ? 'text-success' : 'text-destructive'
-                  }`}>
-                  {calcularVariacao(ligacoesComAjuste, metricas.ligacoes.ontem).valor}%
-                </span>
-              </div>
-            </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{ligacoesComAjuste}</div>
-            <div className="text-sm text-muted-foreground mb-3">Ligações no período</div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs">
-                <span>Meta: {metaLigacoesPeriodo}</span>
-                <span>{((ligacoesComAjuste / metaLigacoesPeriodo) * 100).toFixed(0)}%</span>
-              </div>
-              <Progress value={(ligacoesComAjuste / metaLigacoesPeriodo) * 100} className="h-1" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-lg bg-success text-success-foreground">
-                <Users className="w-6 h-6" />
-              </div>
-              <div className="text-right">
-                <ArrowUp className="w-4 h-4 text-success inline" />
-                <span className="text-sm ml-1 text-success">+12.3%</span>
-              </div>
-            </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.leads.novos}</div>
-            <div className="text-sm text-muted-foreground mb-3">Novos Leads</div>
-            <div className="text-xs space-y-1">
-              <div>Qualificados: {metricas.leads.qualificados}</div>
-              <div>Ultima semana: <span className="text-success">Em alta</span></div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-lg bg-gradient-secondary text-secondary-foreground">
-                <DollarSign className="w-6 h-6" />
-              </div>
-              <div className="text-right">
-                {metricas.emails.falharam > 0 ? (
-                  <ArrowDown className="w-4 h-4 text-destructive inline" />
-                ) : (
-                  <ArrowUp className="w-4 h-4 text-success inline" />
-                )}
-                <span className={`text-sm ml-1 ${metricas.emails.falharam > 0 ? 'text-destructive' : 'text-success'}`}>
-                  {metricas.emails.falharam > 0 ? `${metricas.emails.falharam} falhas` : 'Sucesso'}
-                </span>
-              </div>
-            </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.emails.disparados}</div>
-            <div className="text-sm text-muted-foreground mb-3">Emails Disparados</div>
-            <div className="text-xs space-y-1">
-              <div>Sucesso: {metricas.emails.sucesso}</div>
-              <div>Falharam: {metricas.emails.falharam}</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-lg bg-sky-600 text-white">
-                <Send className="w-6 h-6" />
-              </div>
-              <Badge variant="secondary">WhatsApp</Badge>
-            </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.disparos.realizados}</div>
-            <div className="text-sm text-muted-foreground mb-3">Disparos realizados</div>
-            <div className="text-xs text-muted-foreground">Envios confirmados no período</div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 rounded-lg bg-success text-success-foreground">
-                <TrendingUp className="w-6 h-6" />
-              </div>
-              <div className="text-right">
-                <span className="text-sm ml-1 text-success">Em tempo real</span>
-              </div>
-            </div>
-            <div className="text-3xl font-bold text-foreground mb-1">{metricas.interacoes.total + manualMetrics.interacaoAjuste}</div>
-            <div className="text-sm text-muted-foreground mb-3">Interações</div>
-            <div className="text-xs space-y-1">
-              <div>Registradas: <span className="font-medium">{metricas.interacoes.total}</span></div>
-              <div>Ajuste manual: <span className="font-semibold text-success">{manualMetrics.interacaoAjuste}</span></div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {[
-          { label: 'Visitas', value: manualMetrics.visitas, icon: Eye },
-          { label: 'Documentação', value: manualMetrics.documentacao, icon: Calendar },
-          { label: 'Negociações', value: manualMetrics.negociacao, icon: Target },
-          { label: 'Vendas', value: manualMetrics.venda, icon: DollarSign }
-        ].map(({ label, value, icon: Icon }) => (
-          <Card key={label} className="shadow-card">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-2 rounded-lg bg-blue-600 text-white">
-                  <Icon className="w-6 h-6" />
+        <Painel
+          titulo="Até onde os leads chegaram"
+          subtitulo="Etapa atual dos leads que chegaram no período (quem está no 50% já passou pelo 20%)"
+          tabela={
+            <TabelaSimples
+              colunas={["Etapa", "Agora", "% agora", "% antes"]}
+              linhas={etapasFunil.map((e) => [e.nome, e.a, fmtPct(pct(e.a, fA.chegaram)), fmtPct(pct(e.b, fB.chegaram))])}
+            />
+          }
+        >
+          <div className="space-y-2.5">
+            {etapasFunil.map((e, i) => {
+              const pA = pct(e.a, fA.chegaram);
+              const pB = pct(e.b, fB.chegaram);
+              return (
+                <div key={e.nome} className="grid grid-cols-[92px_1fr_88px] items-center gap-3 text-sm">
+                  <span className="font-semibold truncate">{e.nome}</span>
+                  <div className="relative h-6 rounded-md bg-muted overflow-hidden" title={`Antes: ${fmtPct(pB)} (${e.b})`}>
+                    <div className="h-full rounded-md" style={{ width: `${Math.max(pA, e.a ? 1.5 : 0)}%`, background: i === etapasFunil.length - 1 ? cores.verde : cores.atual }} />
+                    {i > 0 && fB.chegaram > 0 && (
+                      <div className="absolute top-0 bottom-0 w-0.5 bg-foreground/60" style={{ left: `calc(${pB}% - 1px)` }} aria-hidden />
+                    )}
+                  </div>
+                  <span className="text-right tabular-nums">
+                    <b>{e.a}</b> <span className="text-muted-foreground text-xs">{i > 0 ? fmtPct(pA) : ""}</span>
+                  </span>
                 </div>
-                <Badge variant="secondary">Manual</Badge>
-              </div>
-              <div className="text-3xl font-bold text-foreground mb-1">{value}</div>
-              <div className="text-sm text-muted-foreground">{label}</div>
-            </CardContent>
-          </Card>
-        ))}
-
-        <PowerBIFunnel
-          periodo={periodoSelecionado}
-          onPeriodoChange={setPeriodoSelecionado}
-          dataInicioPersonalizada={dataInicioPersonalizada}
-          dataFimPersonalizada={dataFimPersonalizada}
-          onDataInicioChange={setDataInicioPersonalizada}
-          onDataFimChange={setDataFimPersonalizada}
-          storagePeriod={chavePeriodoManual}
-          rangeStart={rangeStartKey}
-          rangeEnd={rangeEndKey}
-          leadsCount={metricas.leads.novos}
-          interacoesCount={metricas.interacoes.total}
-          onMetricsChange={setManualMetrics}
-          onDailyMetricsChange={setDailyManualMetrics}
-        />
+              );
+            })}
+            <p className="text-[11px] text-muted-foreground pt-1 flex items-center gap-1.5">
+              <span className="w-0.5 h-3 bg-foreground/60 inline-block" /> marca onde estava no período anterior
+            </p>
+          </div>
+        </Painel>
       </div>
 
-      <Card className="shadow-card border-violet-500/20">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <TrendingUp className="h-5 w-5 text-violet-600" />
-            Detalhamento de interações
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Total unificado do período selecionado.
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 sm:grid-cols-1">
-            <div className="rounded-lg border bg-violet-50/50 p-4">
-              <div className="text-sm text-muted-foreground">Interações totais</div>
-              <div className="mt-1 text-2xl font-bold text-violet-700">
-                {metricas.interacoes.total + manualMetrics.interacaoAjuste}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                {metricas.interacoes.total} registradas + {manualMetrics.interacaoAjuste} de ajuste
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-card">
-        <CardHeader className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-blue-600" />
-                Evolução das métricas
-              </CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">Acompanhe os resultados reais ao longo do tempo.</p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Select value={metricaGrafico} onValueChange={setMetricaGrafico}>
-                <SelectTrigger className="w-full sm:w-[230px]">
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Selecionar métrica" />
-                </SelectTrigger>
-                <SelectContent>
-                  {metricasGrafico.map(item => (
-                    <SelectItem key={item.id} value={item.id}>{item.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={periodoSelecionado} onValueChange={setPeriodoSelecionado}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <Calendar className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Selecionar período" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hoje">Hoje</SelectItem>
-                  <SelectItem value="ontem">Ontem</SelectItem>
-                  <SelectItem value="7dias">Últimos 7 dias</SelectItem>
-                  <SelectItem value="30dias">Últimos 30 dias</SelectItem>
-                  <SelectItem value="90dias">Últimos 90 dias</SelectItem>
-                  <SelectItem value="ano">Este ano</SelectItem>
-                  <SelectItem value="personalizado">Período personalizado</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {periodoSelecionado === "personalizado" && (
-            <div className="grid gap-2 sm:grid-cols-2 sm:max-w-md sm:ml-auto">
-              <div>
-                <Label className="mb-1 block text-xs">Data inicial</Label>
-                <Input
-                  type="date"
-                  value={dataInicioPersonalizada}
-                  max={dataFimPersonalizada || undefined}
-                  onChange={event => setDataInicioPersonalizada(event.target.value)}
-                />
-              </div>
-              <div>
-                <Label className="mb-1 block text-xs">Data final</Label>
-                <Input
-                  type="date"
-                  value={dataFimPersonalizada}
-                  min={dataInicioPersonalizada || undefined}
-                  max={new Date().toISOString().split('T')[0]}
-                  onChange={event => setDataFimPersonalizada(event.target.value)}
-                />
-              </div>
-            </div>
-          )}
-        </CardHeader>
-        <CardContent>
-          {graficoCarregando ? (
-            <div className="flex h-[340px] items-center justify-center text-muted-foreground">Carregando gráfico...</div>
-          ) : serieGrafico.length === 0 ? (
-            <div className="flex h-[340px] items-center justify-center text-muted-foreground">Nenhum dado disponível neste período.</div>
-          ) : (
-            <div className="h-[340px] w-full">
+      <Painel
+        titulo="De onde vieram os leads"
+        subtitulo="Agora e no período anterior"
+        tabela={<TabelaSimples colunas={["Origem", "Agora", "Antes"]} linhas={porOrigem.map((o) => [o.origem, o.atual, o.anterior])} />}
+      >
+        {porOrigem.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">Nenhum lead novo neste período.</p>
+        ) : (
+          <>
+            <Legenda
+              itens={[
+                { nome: "Agora", cor: cores.atual },
+                { nome: "Período anterior", cor: cores.anterior },
+              ]}
+            />
+            <div style={{ height: Math.max(120, porOrigem.length * 52) }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={serieGrafico} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="label" minTickGap={24} tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={value => metricaAtiva.moeda ? `${Math.round(value / 1000)} mil` : String(value)} />
-                  <Tooltip
-                    formatter={(value: number) => [formatarValorGrafico(value), metricaAtiva.nome]}
-                    labelFormatter={(_, payload) => payload?.[0]?.payload?.data
-                      ? new Date(`${payload[0].payload.data}T12:00:00`).toLocaleDateString('pt-BR')
-                      : ''}
-                    contentStyle={{ borderRadius: 8, borderColor: 'hsl(var(--border))' }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey={metricaAtiva.id}
-                    name={metricaAtiva.nome}
-                    stroke={metricaAtiva.cor}
-                    strokeWidth={3}
-                    dot={serieGrafico.length <= 31}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
+                <BarChart data={porOrigem} layout="vertical" margin={{ top: 0, right: 36, left: 8, bottom: 0 }} barGap={2} barCategoryGap="22%">
+                  <CartesianGrid horizontal={false} stroke={cores.grade} />
+                  <XAxis type="number" {...eixo} allowDecimals={false} />
+                  <YAxis type="category" dataKey="origem" {...eixo} width={120} tick={{ fill: cores.tinta, fontSize: 12 }} />
+                  <Tooltip cursor={{ fill: cores.grade, opacity: 0.4 }} content={<DicaGrafico />} />
+                  <Bar dataKey="atual" name="Agora" fill={cores.atual} radius={[0, 4, 4, 0]} maxBarSize={16}>
+                    <LabelList dataKey="atual" position="right" fill={cores.tinta} fontSize={11} fontWeight={700} />
+                  </Bar>
+                  <Bar dataKey="anterior" name="Período anterior" fill={cores.anterior} radius={[0, 4, 4, 0]} maxBarSize={16} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </>
+        )}
+      </Painel>
 
+      <h2 className="text-lg font-extrabold tracking-tight pt-2">Ligações da Oferta Ativa</h2>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Painel
+          titulo="Ligações por dia"
+          subtitulo={`${ligA.length} agora · ${ligB.length} antes`}
+          tabela={<TabelaSimples colunas={["Dia", "Agora", "Antes"]} linhas={ligPorDia.map((d) => [d.dia, d.atual, d.anterior])} />}
+        >
+          <GraficoDiario dados={ligPorDia} nome="Ligações" />
+        </Painel>
 
-      {/* Bottom Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Top Leads */}
-        <Card className="shadow-card lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Últimos Leads Cadastrados
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <Painel
+          titulo="Resultado das ligações"
+          subtitulo="% das ligações do período"
+          tabela={
+            <TabelaSimples
+              colunas={["Resultado", "Agora", "% agora", "% antes"]}
+              linhas={resultados.map((r) => [r.nome, r.atual, fmtPct(r.pctA), fmtPct(r.pctB)])}
+            />
+          }
+        >
+          {resultados.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">Nenhuma ligação neste período.</p>
+          ) : (
             <div className="space-y-3">
-              {topLeads.map((lead, index) => (
-                <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-gradient-card">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">
-                      {index + 1}
-                    </div>
-                    <div>
-                      <div className="font-medium">{lead.nome}</div>
-                      <div className="text-sm text-muted-foreground">{lead.interesse}</div>
-                    </div>
+              {resultados.slice(0, 6).map((r) => (
+                <div key={r.nome}>
+                  <div className="flex items-baseline justify-between gap-3 text-sm mb-1">
+                    <span className="font-semibold truncate">{r.nome}</span>
+                    <span className="tabular-nums shrink-0">
+                      <b>{fmtPct(r.pctA)}</b> <span className="text-xs text-muted-foreground">({r.atual}) · antes {fmtPct(r.pctB)}</span>
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="text-xs text-muted-foreground">Status</div>
-                      <Badge className={getStatusColor(lead.status)}>
-                        {lead.status}
-                      </Badge>
-                    </div>
+                  <div className="relative h-2.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${r.pctA}%`, background: r.nome === "Interessado" ? cores.verde : cores.atual }} />
+                    {ligB.length > 0 && <div className="absolute top-0 bottom-0 w-0.5 bg-foreground/60" style={{ left: `calc(${r.pctB}% - 1px)` }} aria-hidden />}
                   </div>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5" />
-              Ações Rápidas
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button variant="hero" className="w-full justify-start h-16" onClick={gerarRelatorioPDF}>
-              <div className="text-left">
-                <div className="font-medium">Relatório Completo</div>
-                <div className="text-sm opacity-90">PDF com todas as métricas</div>
-              </div>
-            </Button>
-
-
-
-            <Button variant="outline" className="w-full justify-start h-16" onClick={compararPeriodos}>
-              <div className="text-left">
-                <div className="font-medium">Comparar Períodos</div>
-                <div className="text-sm opacity-90">Análise comparativa detalhada</div>
-              </div>
-            </Button>
-          </CardContent>
-        </Card>
+          )}
+        </Painel>
       </div>
-
-      {/* Classificações Oferta Ativa */}
-      <Card className="shadow-card mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Phone className="w-5 h-5" />
-            Classificações da Oferta Ativa
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {Object.keys(classificacoesOferta).length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {Object.entries(classificacoesOferta).sort((a, b) => b[1] - a[1]).map(([classificacao, quantidade]) => (
-                <div key={classificacao} className="flex justify-between items-center p-3 rounded-lg bg-muted/50 border">
-                  <span className="text-sm font-medium truncate" title={classificacao}>{classificacao}</span>
-                  <Badge variant="secondary" className="text-sm px-2 py-1 ml-2">{quantidade}</Badge>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-muted-foreground">
-              Nenhuma classificação encontrada neste período.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Números Ligados */}
-      <Card className="shadow-card mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Phone className="w-5 h-5" />
-            Números Ligados no Período
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {numerosLigados.length > 0 ? (
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-              {numerosLigados.map((ligacao, index) => (
-                <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-gradient-card border">
-                  <div>
-                    <div className="font-medium">{ligacao.numero || 'Não informado'}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(ligacao.data).toLocaleString('pt-BR')}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge variant="outline">{ligacao.status === 'realizada' ? 'Realizada' : ligacao.status}</Badge>
-                    {ligacao.resultado && <Badge className="bg-primary/20 text-primary">{ligacao.resultado}</Badge>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-muted-foreground">
-              Nenhuma ligação registrada neste período.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <p className="text-[11px] text-muted-foreground">As ligações ficam guardadas por 60 dias.</p>
     </div>
   );
 }
