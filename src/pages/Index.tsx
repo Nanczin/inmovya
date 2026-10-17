@@ -14,7 +14,7 @@ import { MailingModule } from "@/components/MailingModule";
 import { LigacoesModule } from "@/components/LigacoesModule";
 import { TemplatesModule } from "@/components/TemplatesModule";
 import { RelatoriosModule } from "@/components/RelatoriosModule";
-import { SettingsModule } from "@/components/SettingsModule";
+import { ConfiguracoesModule } from "@/components/ConfiguracoesModule";
 import { AgendaModule } from "@/components/AgendaModule";
 import { FunilModule } from "@/components/FunilModule";
 import { NegociosModule } from "@/components/NegociosModule";
@@ -119,7 +119,7 @@ const Index = () => {
       case "whatsapp":
         return <WhatsappModule />;
       case "settings":
-        return <SettingsModule />;
+        return <ConfiguracoesModule />;
       default:
         return <Dashboard />;
     }
@@ -136,7 +136,7 @@ const Index = () => {
           <Header activeModule={activeModule} onNavigate={handleNavigation} />
 
           <main className="flex-1 overflow-auto">
-            <div className="h-full p-4 md:p-6">
+            <div className="h-full p-3 sm:p-4 md:p-6">
               {renderModule()}
             </div>
           </main>

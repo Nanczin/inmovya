@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { GlobalSearch } from "@/components/GlobalSearch";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { NotificationsDialog } from "@/components/dialogs/NotificationsDialog";
 import { EditProfileDialog } from "@/components/dialogs/EditProfileDialog";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,17 +19,21 @@ interface HeaderProps {
   onNavigate?: (module: string, params?: any) => void;
 }
 const moduleNames: Record<string, string> = {
-  dashboard: "Dashboard Principal",
-  leads: "Gerenciamento de Leads",
+  dashboard: "Início",
+  agenda: "Agenda",
+  leads: "Leads",
   negocios: "Negócios",
   esteiras: "Esteiras",
-  funil: "Funil de Vendas",
-  campanhas: "Campanhas Ativas",
-  materiais: "Materiais de Venda",
-  vozes: "Vozes Sintéticas",
-  mailing: "Listas de Contatos",
-  ligacoes: "Histórico de Ligações",
-  relatorios: "Relatórios e Análises",
+  funil: "Funil",
+  campanhas: "Campanhas",
+  materiais: "Materiais",
+  vozes: "Vozes",
+  mailing: "Mailing",
+  "email-marketing": "Email Marketing",
+  ligacoes: "Ligações",
+  templates: "Templates",
+  whatsapp: "WhatsApp",
+  relatorios: "Relatórios",
   settings: "Configurações"
 };
 export function Header({
@@ -75,11 +80,11 @@ export function Header({
   };
   return <>
     {/* Desktop Header */}
-    <header className="hidden md:flex h-16 items-center justify-between border-b bg-background px-4 lg:px-6">
+    <header className="hidden md:flex h-14 items-center justify-between border-b bg-card/70 backdrop-blur supports-[backdrop-filter]:bg-card/60 px-4 lg:px-6 sticky top-0 z-30">
       {/* Left section */}
-      <div className="flex items-center gap-2 lg:gap-4 flex-1 max-w-2xl min-w-0">
-        <SidebarTrigger className="lg:hidden flex-shrink-0" />
-
+      <div className="flex items-center gap-2 lg:gap-3 flex-1 max-w-2xl min-w-0">
+        <SidebarTrigger className="flex-shrink-0 text-muted-foreground" />
+        <h1 className="text-[15px] font-bold text-foreground truncate">{moduleNames[activeModule] || "Inmovya"}</h1>
       </div>
 
       {/* Center section - Search (Hidden on tablet, visible on desktop) */}
@@ -99,6 +104,8 @@ export function Header({
 
 
 
+
+        <ThemeToggle />
 
         {/* Notifications */}
         <Button
@@ -144,7 +151,7 @@ export function Header({
     </header>
 
     {/* Mobile-only Header */}
-    <header className="md:hidden flex h-16 items-center justify-between border-b bg-background px-4">
+    <header className="md:hidden flex h-14 items-center justify-between border-b bg-card px-3 sticky top-0 z-30">
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <SidebarTrigger />
         <h2 className="text-lg font-semibold text-foreground truncate">
@@ -153,6 +160,7 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-1">
+        <ThemeToggle />
         <Button variant="ghost" size="icon" onClick={() => setIsSearchOpen(true)}>
           <Search className="w-5 h-5" />
         </Button>

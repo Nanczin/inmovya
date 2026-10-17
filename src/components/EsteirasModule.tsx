@@ -99,6 +99,8 @@ import {
   Clock,
   Workflow,
   ClipboardPaste,
+  ChevronDown,
+  CalendarClock,
 } from "lucide-react";
 
 type LeadEsteira = Lead & {
@@ -903,31 +905,22 @@ export function EsteirasModule() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Workflow className="w-6 h-6" /> Esteiras
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            As esteiras ficam no Inmovya. O Inmovya Scale só envia as mensagens no WhatsApp Web.
-          </p>
-        </div>
-        <div
-          className={`text-xs rounded-full px-3 py-1 border w-fit ${
-            extensaoOk ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"
-          }`}
-        >
-          {extensaoOk === null ? "Verificando Inmovya Scale..." : extensaoOk ? "Inmovya Scale conectado" : "Inmovya Scale não encontrado neste navegador"}
-        </div>
-      </div>
-
       <Tabs value={aba} onValueChange={setAba} className="min-w-0">
-        <TabsList className="w-full sm:w-auto grid grid-cols-2 h-auto sm:inline-flex sm:h-10">
-          <TabsTrigger value="hoje">Hoje ({fila.length})</TabsTrigger>
-          <TabsTrigger value="esteiras">Esteiras ({esteiras.length})</TabsTrigger>
-          <TabsTrigger value="primeiro">1º contato (IA)</TabsTrigger>
-          <TabsTrigger value="importar">Backup e importação</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList className="h-10">
+            <TabsTrigger value="hoje" className="font-semibold">Hoje <span className="ml-1.5 tabular-nums text-muted-foreground">{fila.length}</span></TabsTrigger>
+            <TabsTrigger value="esteiras" className="font-semibold">Esteiras</TabsTrigger>
+            <TabsTrigger value="primeiro" className="font-semibold">1º contato</TabsTrigger>
+            <TabsTrigger value="importar" className="font-semibold">Backup</TabsTrigger>
+          </TabsList>
+          <span
+            className={`inline-flex items-center gap-1.5 text-xs font-medium ${extensaoOk ? "text-success" : extensaoOk === null ? "text-muted-foreground" : "text-warning"}`}
+            title={extensaoOk ? "O Inmovya Scale envia as mensagens no WhatsApp Web" : "Abra o Inmovya no Chrome com a extensão ativa"}
+          >
+            <span className={`w-2 h-2 rounded-full ${extensaoOk ? "bg-success" : extensaoOk === null ? "bg-muted-foreground" : "bg-warning"}`} />
+            {extensaoOk === null ? "Procurando o Inmovya Scale…" : extensaoOk ? "Inmovya Scale conectado" : "Inmovya Scale não encontrado"}
+          </span>
+        </div>
 
         <TabsContent value="primeiro" className="mt-4">
           <PrimeiroContatoPainel />
@@ -941,70 +934,75 @@ export function EsteirasModule() {
             </div>
           ) : (
             <>
-              <div className="flex flex-col lg:flex-row lg:items-end gap-3 rounded-lg border bg-white p-3">
-                <div className="text-xs text-muted-foreground flex-1 min-w-0">
-                  <div>
-                    Entre um lead e outro: <b>2 a 3 minutos</b> (aleatório)
-                  </div>
-                  <label className="flex items-center gap-2 my-1 cursor-pointer select-none w-fit">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4"
-                      disabled={rodando}
-                      checked={segundoPlano}
-                      onChange={(e) => {
-                        setSegundoPlano(e.target.checked);
-                        setSegundoPlanoState(e.target.checked);
-                      }}
-                    />
-                    <span>
-                      <b>Rodar em segundo plano</b> — o WhatsApp abre numa janelinha no canto, sem tirar sua tela; pode trocar de aba, só não feche esta.
-                      {segundoPlano && !extensaoAtualizada("1.3.0") && <span className="text-amber-700"> (atualize o Inmovya Scale para 1.3.0)</span>}
+              <div className="rounded-2xl border bg-card p-4 shadow-card flex flex-col lg:flex-row lg:items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-extrabold tabular-nums tracking-tight">{selecionados.length}</span>
+                    <span className="text-sm text-muted-foreground">
+                      de {filaAuto.length} mensage{filaAuto.length === 1 ? "m" : "ns"} prontas para hoje
                     </span>
-                  </label>
-                  <div className="my-1">Pausas e intervalo entre as mensagens de cada lead: configure em cada esteira (aba Esteiras).</div>
-                  <button type="button" className="underline text-blue-700 hover:text-blue-900" onClick={() => setVerAgendados((v) => !v)}>
-                    {proximosDias} lead(s) agendado(s) para os próximos dias {verAgendados ? "▲" : "▼"}
-                  </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground">
+                    <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setVerAgendados((v) => !v)}>
+                      <CalendarClock className="w-3.5 h-3.5" /> {proximosDias} agendado{proximosDias === 1 ? "" : "s"} para os próximos dias
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${verAgendados ? "rotate-180" : ""}`} />
+                    </button>
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer select-none" title="O WhatsApp abre numa janelinha no canto, sem tirar sua tela. Pode trocar de aba, só não feche o Inmovya.">
+                      <Switch
+                        className="scale-75 -mx-1"
+                        disabled={rodando}
+                        checked={segundoPlano}
+                        onCheckedChange={(v) => {
+                          setSegundoPlano(v);
+                          setSegundoPlanoState(v);
+                        }}
+                      />
+                      Em segundo plano
+                      {segundoPlano && !extensaoAtualizada("1.3.0") && <span className="text-warning">(atualize o Scale)</span>}
+                    </label>
+                    <span title="Pausas e intervalo entre mensagens: configure em cada esteira">2 a 3 min entre leads</span>
+                  </div>
                 </div>
+                <div className="flex flex-wrap gap-2">
                 {rodando ? (
-                  <Button variant="destructive" className="h-10" onClick={() => (pararRef.current = true)}>
+                  <Button variant="destructive" className="h-11" onClick={() => (pararRef.current = true)}>
                     <Square className="w-4 h-4 mr-1" /> Parar {contagem > 0 ? `(${emPausa ? "pausa — retoma" : "próximo"} em ${Math.floor(contagem / 60)}:${String(contagem % 60).padStart(2, "0")})` : ""}
                   </Button>
                 ) : (
                   <>
                   {segundaRodada.length > 0 && (
-                    <Button variant="outline" className="h-10" onClick={liberarSegundaRodada} title="Quem já recebeu hoje recebe o próximo passo ainda hoje">
-                      <Clock className="w-4 h-4 mr-1" /> 2ª rodada hoje ({segundaRodada.length})
+                    <Button variant="outline" className="h-11" onClick={liberarSegundaRodada} title="Quem já recebeu hoje recebe o próximo passo ainda hoje">
+                      <Clock className="w-4 h-4 mr-1" /> 2ª rodada ({segundaRodada.length})
                     </Button>
                   )}
                   <Button
                     variant="outline"
-                    className="h-10 border-blue-300 text-blue-700"
+                    className="h-11"
                     disabled={!selecionados.length || colando || rodando}
                     onClick={colarTodos}
                     title="Para cada lead marcado, sem intervalo: envia as mídias do passo e deixa o texto escrito na conversa (sem enviar). Depois você abre cada conversa e aperta Enter."
                   >
-                    {colando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ClipboardPaste className="w-4 h-4 mr-1" />} Só colar todos ({selecionados.length})
+                    {colando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ClipboardPaste className="w-4 h-4 mr-1" />} Só colar
                   </Button>
-                  <Button className="h-10 bg-green-600 hover:bg-green-700 text-white" disabled={!selecionados.length} onClick={rodar}>
-                    <Play className="w-4 h-4 mr-1" /> Rodar envio ({selecionados.length})
+                  <Button className="h-11 px-5 bg-success hover:bg-success/90 text-success-foreground font-bold" disabled={!selecionados.length} onClick={rodar}>
+                    <Play className="w-4 h-4 mr-1.5" /> Enviar {selecionados.length}
                   </Button>
                   </>
                 )}
+                </div>
               </div>
 
               {verAgendados && (
-                <div className="rounded-lg border bg-white p-3 space-y-1 max-h-96 overflow-y-auto">
-                  <h3 className="text-sm font-semibold mb-1">Agendados</h3>
+                <div className="rounded-2xl border bg-card p-3 space-y-1 max-h-96 overflow-y-auto">
+                  <h3 className="text-sm font-bold mb-1 px-1">Agendados</h3>
                   {agendados.length === 0 && <p className="text-xs text-muted-foreground">Nenhum lead agendado.</p>}
                   {agendados.map((a) => (
                     <div key={a.lead.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 border-b last:border-0 py-1.5 text-sm">
-                      <span className="w-24 shrink-0 text-xs font-medium text-blue-800">
+                      <span className="w-24 shrink-0 text-xs font-semibold text-primary capitalize">
                         {a.quando.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
                       </span>
                       <span className="font-medium truncate flex-1 min-w-0">{a.lead.nome}</span>
-                      <span className="text-[11px] rounded border px-1.5 py-0.5 bg-slate-50 truncate">
+                      <span className="text-[11px] rounded-md px-1.5 py-0.5 bg-muted text-muted-foreground truncate">
                         {a.esteira.nome}
                         {(a.lead.esteira_passo || 0) >= a.total
                           ? ` · sem resposta → ${a.esteira.ao_concluir_etapa || "sai do funil"}${etiquetasDaEsteira(a.esteira).length ? ` + ${etiquetasDaEsteira(a.esteira).join(", ")}` : ""}`
@@ -1031,7 +1029,7 @@ export function EsteirasModule() {
                     type="button"
                     disabled={rodando}
                     onClick={() => setFiltroEsteira("todas")}
-                    className={`text-xs rounded-full border px-3 py-1 ${filtroEsteira === "todas" ? "bg-blue-800 text-white border-blue-800" : "bg-white hover:bg-slate-50"}`}
+                    className={`text-xs font-semibold rounded-full px-3 py-1.5 transition-colors ${filtroEsteira === "todas" ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}
                   >
                     Todas ({Object.values(contagemPorEsteira).reduce((a: number, b: number) => a + b, 0)})
                   </button>
@@ -1043,24 +1041,22 @@ export function EsteirasModule() {
                         type="button"
                         disabled={rodando}
                         onClick={() => setFiltroEsteira(e.id)}
-                        className={`text-xs rounded-full border px-3 py-1 ${filtroEsteira === e.id ? "bg-blue-800 text-white border-blue-800" : "bg-white hover:bg-slate-50"}`}
+                        className={`text-xs font-semibold rounded-full px-3 py-1.5 transition-colors ${filtroEsteira === e.id ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}
                       >
                         {e.nome} ({contagemPorEsteira[e.id] || 0})
                       </button>
                     ))}
-                  <span className="text-[11px] text-muted-foreground self-center ml-1">
-                    Escolha uma esteira para rodar só ela agora e as outras em outro horário.
-                  </span>
+
                 </div>
               )}
 
               {momentosDaEsteira.length > 1 && (
-                <div className="flex flex-wrap gap-1.5 pl-3 border-l-2 border-blue-200">
+                <div className="flex flex-wrap gap-1.5 pl-3 border-l-2 border-primary/30">
                   <button
                     type="button"
                     disabled={rodando}
                     onClick={() => setFiltroPasso("todos")}
-                    className={`text-[11px] rounded-full border px-2.5 py-0.5 ${filtroPasso === "todos" ? "bg-blue-100 text-blue-900 border-blue-300" : "bg-white hover:bg-slate-50"}`}
+                    className={`text-[11px] font-semibold rounded-full px-2.5 py-1 ${filtroPasso === "todos" ? "bg-primary/15 text-primary" : "bg-card border hover:bg-muted"}`}
                   >
                     Todos os momentos ({momentosDaEsteira.reduce((a, m) => a + m.n, 0)})
                   </button>
@@ -1070,7 +1066,7 @@ export function EsteirasModule() {
                       type="button"
                       disabled={rodando}
                       onClick={() => setFiltroPasso(passo.id)}
-                      className={`text-[11px] rounded-full border px-2.5 py-0.5 ${filtroPasso === passo.id ? "bg-blue-100 text-blue-900 border-blue-300" : "bg-white hover:bg-slate-50"}`}
+                      className={`text-[11px] font-semibold rounded-full px-2.5 py-1 ${filtroPasso === passo.id ? "bg-primary/15 text-primary" : "bg-card border hover:bg-muted"}`}
                     >
                       {passo.titulo || `Passo ${passo.ordem + 1}`} ({n})
                     </button>
@@ -1079,8 +1075,9 @@ export function EsteirasModule() {
               )}
 
               {fila.length === 0 && (
-                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  Nenhum envio de esteira para hoje.
+                <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+                  <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-success/60" />
+                  <span className="block font-semibold text-foreground">Tudo enviado por hoje.</span>
                   {esteiras.length === 0 && " Importe suas esteiras do Scale ou crie uma na aba Esteiras."}
                 </div>
               )}
@@ -1092,7 +1089,7 @@ export function EsteirasModule() {
                     const todosMarcados = marcaveis.length > 0 && marcaveis.every((i) => !desmarcados.has(i.lead.id));
                     const algum = marcaveis.some((i) => !desmarcados.has(i.lead.id));
                     return (
-                      <label className="flex items-center gap-2 text-sm font-medium px-3 cursor-pointer select-none w-fit">
+                      <label className="flex items-center gap-2 text-sm font-semibold px-3 pt-1 cursor-pointer select-none w-fit">
                         <input
                           type="checkbox"
                           className="h-4 w-4"
@@ -1113,12 +1110,12 @@ export function EsteirasModule() {
                       </label>
                     );
                   })()}
-                  <p className="text-xs text-muted-foreground">
-                    Confira as mensagens antes de rodar (clique no texto para personalizar). Desmarque quem não deve receber hoje.{" "}
+                  <p className="text-xs text-muted-foreground px-3 -mt-1">
+                    Clique no texto para personalizar.{" "}
                     <button
                       type="button"
                       disabled={rodando}
-                      className="underline text-purple-700"
+                      className="underline hover:text-foreground"
                       onClick={() => {
                         const todos = filaAuto.map((i) => i.lead.id);
                         const marcarTodos = todos.some((id) => !doisHoje.has(id));
@@ -1135,7 +1132,7 @@ export function EsteirasModule() {
                     const st = estado[item.lead.id]?.s || "pendente";
                     const aberto = abertos.has(item.lead.id);
                     return (
-                      <div key={item.lead.id} className="rounded-lg border bg-white p-3">
+                      <div key={item.lead.id} className={`group rounded-xl border bg-card p-3 transition-colors ${st === "enviado" ? "opacity-60" : "hover:border-primary/30"}`}>
                         <div className="flex items-start gap-3">
                           <input
                             type="checkbox"
@@ -1153,14 +1150,14 @@ export function EsteirasModule() {
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               <span className="font-semibold text-sm truncate">{item.lead.nome}</span>
-                              <span className="text-xs text-muted-foreground">{item.lead.telefone || "sem telefone"}</span>
-                              <span className="text-[11px] rounded border px-1.5 py-0.5 bg-slate-50">
-                                {item.esteira.nome} · {item.passo.titulo || `Passo ${item.passo.ordem + 1}`} ({item.passos.indexOf(item.passo) + 1}/{item.passos.length})
+                              {!item.telefone && <span className="text-xs text-destructive">sem telefone</span>}
+                              <span className="text-[11px] font-semibold rounded-md px-1.5 py-0.5 bg-primary/10 text-primary">
+                                {item.esteira.nome} · {item.passo.titulo || `Passo ${item.passo.ordem + 1}`} <span className="tabular-nums opacity-70">{item.passos.indexOf(item.passo) + 1}/{item.passos.length}</span>
                               </span>
                               {st === "enviando" && <Loader2 className="w-4 h-4 animate-spin text-blue-600" />}
                               {st === "enviado" && !estado[item.lead.id]?.colado && <CheckCircle2 className="w-4 h-4 text-green-600" />}
                               {st === "enviado" && estado[item.lead.id]?.colado && (
-                                <span className="text-[11px] rounded bg-green-50 text-green-700 border border-green-200 px-1.5 py-0.5">colado na conversa</span>
+                                <span className="text-[11px] font-semibold rounded-md bg-success/15 text-success px-1.5 py-0.5">colado na conversa</span>
                               )}
                               {st === "erro" && (
                                 <span className="text-xs text-red-600 flex items-center gap-1">
@@ -1173,7 +1170,7 @@ export function EsteirasModule() {
                                 disabled={rodando || st === "enviado"}
                                 onClick={() => alternarDois(item.lead.id)}
                                 title="Este lead faz 2 esteiras hoje? Se sim, depois do 1º envio ele recebe o próximo passo ainda hoje e só depois do 2º vai para o próximo dia."
-                                className={`text-[11px] rounded px-1.5 py-0.5 border ${doisHoje.has(item.lead.id) ? "bg-purple-600 text-white border-purple-600" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                                className={`text-[11px] font-semibold rounded-md px-1.5 py-0.5 ${doisHoje.has(item.lead.id) ? "bg-chart-4 text-white" : "text-muted-foreground opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-muted"}`}
                               >
                                 {doisHoje.has(item.lead.id)
                                   ? enviadoHoje(item.lead.esteira_ultimo_envio)
@@ -1182,12 +1179,12 @@ export function EsteirasModule() {
                                   : "2 esteiras hoje?"}
                               </button>
                               {!!item.passo.anexos?.length && (
-                                <span className="text-[11px] rounded bg-slate-100 px-1.5 py-0.5 inline-flex items-center gap-1" title={item.passo.anexos.map((a) => a.name).join(", ")}>
+                                <span className="text-[11px] rounded-md bg-muted px-1.5 py-0.5 inline-flex items-center gap-1" title={item.passo.anexos.map((a) => a.name).join(", ")}>
                                   <Paperclip className="w-3 h-3" /> {item.passo.anexos.length}
                                 </span>
                               )}
                               {item.passo.so_colar && (
-                                <span className="text-[11px] rounded bg-amber-100 text-amber-800 px-1.5 py-0.5">personalizar</span>
+                                <span className="text-[11px] font-semibold rounded-md bg-warning/15 text-warning px-1.5 py-0.5">personalizar</span>
                               )}
                             </div>
                             {aberto ? (
@@ -1213,10 +1210,11 @@ export function EsteirasModule() {
                             ) : (
                               <button
                                 type="button"
-                                className="mt-1 text-left text-xs text-slate-600 whitespace-pre-wrap break-words w-full"
+                                className="mt-1.5 text-left text-[13px] text-muted-foreground hover:text-foreground line-clamp-2 break-words w-full"
                                 onClick={() => setAbertos((x) => new Set(x).add(item.lead.id))}
+                                title="Clique para ver ou editar"
                               >
-                                {`${textoDo(item).replace(/\s+/g, " ").slice(0, 140)}${textoDo(item).length > 140 ? "… (ver / editar)" : " (editar)"}`}
+                                {textoDo(item).replace(/\s+/g, " ")}
                               </button>
                             )}
                           </div>
@@ -1224,21 +1222,22 @@ export function EsteirasModule() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="shrink-0 h-8 text-xs text-blue-700 hover:text-blue-800"
+                              className="shrink-0 h-8 w-8 p-0 text-primary"
                               onClick={() => colarNaConversa(item)}
-                              title="Abre a conversa no WhatsApp, envia as mídias do passo e deixa o texto escrito, sem enviar. Você confere e aperta Enter."
+                              title="Só colar: abre a conversa, envia as mídias do passo e deixa o texto escrito, sem enviar"
+                              aria-label="Só colar"
                             >
-                              <ClipboardPaste className="w-3.5 h-3.5 mr-1" /> Só colar
+                              <ClipboardPaste className="w-4 h-4" />
                             </Button>
                           )}
                           {!rodando && st !== "enviado" && (
-                            <Button size="sm" variant="ghost" className="shrink-0 h-8 text-xs" onClick={() => pularHoje(item)} title="Adiar para amanhã">
-                              <Clock className="w-3.5 h-3.5 mr-1" /> Amanhã
+                            <Button size="sm" variant="ghost" className="shrink-0 h-8 w-8 p-0" onClick={() => pularHoje(item)} title="Deixar para amanhã" aria-label="Deixar para amanhã">
+                              <Clock className="w-4 h-4" />
                             </Button>
                           )}
                           {!rodando && st !== "enviado" && (
-                            <Button size="sm" variant="ghost" className="shrink-0 h-8 text-xs text-red-600 hover:text-red-700" onClick={() => tirarLead(item.lead.id, item.lead.nome)} title="Tirar da esteira">
-                              <Trash2 className="w-3.5 h-3.5 mr-1" /> Tirar
+                            <Button size="sm" variant="ghost" className="shrink-0 h-8 w-8 p-0 text-muted-foreground hover:text-destructive" onClick={() => tirarLead(item.lead.id, item.lead.nome)} title="Tirar da esteira" aria-label="Tirar da esteira">
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           )}
                         </div>
@@ -1254,7 +1253,7 @@ export function EsteirasModule() {
                   {filaManual.map((item) => {
                     const st = estado[item.lead.id]?.s;
                     return (
-                      <div key={item.lead.id} className="rounded-lg border bg-white p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                      <div key={item.lead.id} className="rounded-2xl border bg-card p-4 flex flex-col sm:flex-row sm:items-center gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold truncate">
                             {item.lead.nome} <span className="font-normal text-xs text-muted-foreground">· {item.esteira.nome} · {item.passo.titulo}</span>
@@ -1297,7 +1296,7 @@ export function EsteirasModule() {
                     key={e.id}
                     type="button"
                     onClick={() => setEsteiraSel(e.id)}
-                    className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${esteiraSel === e.id ? "border-blue-500 bg-blue-50" : "bg-white hover:bg-slate-50"}`}
+                    className={`w-full text-left rounded-xl border px-3 py-2.5 text-sm ${esteiraSel === e.id ? "border-primary bg-primary/10" : "bg-card hover:bg-muted"}`}
                   >
                     <div className="font-medium truncate">{e.nome}</div>
                     <div className="text-xs text-muted-foreground">
@@ -1316,7 +1315,7 @@ export function EsteirasModule() {
 
             {rascunho ? (
               <div className="flex-1 min-w-0 space-y-4">
-                <div className="grid sm:grid-cols-2 gap-3 rounded-lg border bg-white p-3">
+                <div className="grid sm:grid-cols-2 gap-3 rounded-2xl border bg-card p-4">
                   <div className="grid gap-1">
                     <Label className="text-xs">Nome da esteira</Label>
                     <Input value={rascunho.esteira.nome} onChange={(ev) => setRascunho({ ...rascunho, esteira: { ...rascunho.esteira, nome: ev.target.value } })} />
@@ -1436,7 +1435,7 @@ export function EsteirasModule() {
                           <div className="grid gap-1">
                             <span className="text-[11px] text-muted-foreground">Etapa final</span>
                             <Select value={finalValida ? String(e.etapa_final) : "ultimo"} onValueChange={(v) => mudar({ etapa_final: v === "ultimo" ? null : v })}>
-                              <SelectTrigger className="h-9 bg-white">
+                              <SelectTrigger className="h-9 bg-card">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent className="max-h-[50vh]">
@@ -1454,7 +1453,7 @@ export function EsteirasModule() {
                             <Input
                               type="number"
                               min={0}
-                              className="h-9 bg-white"
+                              className="h-9 bg-card"
                               value={dias}
                               onChange={(ev) => mudar({ ao_concluir_dias: Math.max(0, parseInt(ev.target.value) || 0) })}
                             />
@@ -1462,7 +1461,7 @@ export function EsteirasModule() {
                           <div className="grid gap-1">
                             <span className="text-[11px] text-muted-foreground">Mover para</span>
                             <Select value={e.ao_concluir_etapa || "nenhuma"} onValueChange={(v) => mudar({ ao_concluir_etapa: v === "nenhuma" ? null : v })}>
-                              <SelectTrigger className="h-9 bg-white">
+                              <SelectTrigger className="h-9 bg-card">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent className="max-h-[50vh]">
@@ -1536,7 +1535,7 @@ export function EsteirasModule() {
 
                 <div className="space-y-3">
                   {rascunho.passos.map((p, idx) => (
-                    <div key={p.id} className="rounded-lg border bg-white p-3 space-y-2">
+                    <div key={p.id} className="rounded-2xl border bg-card p-4 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-semibold rounded bg-slate-100 px-2 py-0.5">{idx + 1}</span>
                         <Input className="h-8 flex-1 min-w-[140px]" value={p.titulo} placeholder={`D${idx + 1}`} onChange={(ev) => mudarPasso(idx, "titulo", ev.target.value)} />
@@ -1614,7 +1613,7 @@ export function EsteirasModule() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <Button className="bg-blue-800 hover:bg-blue-900 text-white" onClick={salvarEsteira} disabled={salvando}>
+                  <Button onClick={salvarEsteira} disabled={salvando}>
                     <Save className="w-4 h-4 mr-1" /> {salvando ? "Salvando..." : "Salvar esteira"}
                   </Button>
                   <Button variant="outline" className="text-red-600" onClick={excluirEsteira}>
@@ -1622,7 +1621,7 @@ export function EsteirasModule() {
                   </Button>
                 </div>
 
-                <div className="rounded-lg border bg-white p-3">
+                <div className="rounded-2xl border bg-card p-4">
                   <h3 className="text-sm font-semibold mb-2">Leads nesta esteira ({leadsDaEsteiraSel.length})</h3>
                   <div className="mb-3">
                     <Input
@@ -1727,7 +1726,7 @@ export function EsteirasModule() {
 
         {/* IMPORTAR */}
         <TabsContent value="importar" className="mt-4 space-y-4">
-          <div className="rounded-lg border bg-white p-4 space-y-3 max-w-2xl">
+          <div className="rounded-2xl border bg-card p-5 space-y-3 max-w-2xl shadow-card">
             <h3 className="font-semibold">Backup das esteiras</h3>
             <p className="text-sm">
               Baixa um arquivo com todas as esteiras, passos, mensagens, colunas, etiquetas e a posição de cada lead. Guarde o arquivo (ex.: no Google Drive)
@@ -1758,7 +1757,7 @@ export function EsteirasModule() {
                   Voltar também os leads para o passo e a data em que estavam
                 </label>
                 <div className="flex gap-2">
-                  <Button className="bg-blue-800 hover:bg-blue-900 text-white" onClick={restaurarBackup} disabled={restaurando}>
+                  <Button onClick={restaurarBackup} disabled={restaurando}>
                     {restaurando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
                     {restaurando ? "Restaurando..." : "Restaurar agora"}
                   </Button>
@@ -1770,7 +1769,7 @@ export function EsteirasModule() {
             )}
           </div>
 
-          <div className="rounded-lg border bg-white p-4 space-y-3 max-w-2xl">
+          <div className="rounded-2xl border bg-card p-5 space-y-3 max-w-2xl shadow-card">
             <h3 className="font-semibold">Importar do Inmovya Scale</h3>
             <p className="text-sm">
               Traz para o Inmovya as categorias (esteiras), as mensagens D1, D2… e o passo em que cada lead está no Inmovya Scale. Os leads são
@@ -1789,7 +1788,7 @@ export function EsteirasModule() {
           </div>
 
           {plano && (
-            <div className="rounded-lg border bg-white p-4 space-y-3 max-w-2xl">
+            <div className="rounded-2xl border bg-card p-5 space-y-3 max-w-2xl shadow-card">
               <h3 className="font-semibold">O que será importado</h3>
               <ul className="text-sm space-y-1">
                 {plano.esteiras.map((e) => (
@@ -1814,7 +1813,7 @@ export function EsteirasModule() {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">Importar de novo atualiza as mesmas esteiras, sem duplicar.</p>
-              <Button className="bg-blue-800 hover:bg-blue-900 text-white" onClick={importar} disabled={importando}>
+              <Button onClick={importar} disabled={importando}>
                 {importando ? "Importando..." : "Importar agora"}
               </Button>
             </div>
