@@ -194,10 +194,13 @@ export function PrimeiroContatoPainel() {
     }
   };
 
-  const limparTudo = async () => {
-    const ids = fila.filter((l) => l.situacao !== "atendendo").map((l) => l.id);
+  const limparTudo = async (soSelecionados = false) => {
+    const ids = fila.filter((l) => l.situacao !== "atendendo" && (!soSelecionados || selecionados.has(l.id))).map((l) => l.id);
     if (!ids.length) return;
-    if (!window.confirm(`Limpar a fila do 1º contato? ${ids.length} lead(s) que ainda não receberam saem da lista e não serão chamados. Quem já recebeu não muda.`)) return;
+    const pergunta = soSelecionados
+      ? `Limpar ${ids.length} lead(s) selecionado(s) da fila? Eles saem da lista e não serão chamados.`
+      : `Limpar a fila do 1º contato? ${ids.length} lead(s) que ainda não receberam saem da lista e não serão chamados. Quem já recebeu não muda.`;
+    if (!window.confirm(pergunta)) return;
     setMexendo("limpar");
     try {
       await limparFila(ids);
@@ -299,7 +302,7 @@ export function PrimeiroContatoPainel() {
           <h3 className="font-semibold text-sm">Leads que ainda não receberam ({fila.length})</h3>
           <span className="text-xs text-muted-foreground">últimos 7 dias · selecione para atender ou tirar da fila</span>
           {fila.some((l) => l.situacao !== "atendendo") && (
-            <Button size="sm" variant="outline" className="h-8 ml-auto text-destructive hover:text-destructive" disabled={!!mexendo} onClick={limparTudo}>
+            <Button size="sm" variant="outline" className="h-8 ml-auto text-destructive hover:text-destructive" disabled={!!mexendo} onClick={() => limparTudo(false)}>
               {mexendo === "limpar" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
               Limpar fila
             </Button>
@@ -340,6 +343,10 @@ export function PrimeiroContatoPainel() {
               <Button size="sm" variant="outline" className="h-8" disabled={!selecionados.size || !!mexendo} onClick={() => acaoSelecionados("tirar")}>
                 {mexendo === "tirar" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
                 Tirar da fila ({selecionados.size})
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-destructive hover:text-destructive" disabled={!selecionados.size || !!mexendo} onClick={() => limparTudo(true)}>
+                {mexendo === "limpar" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+                Limpar selecionados ({selecionados.size})
               </Button>
             </div>
           </div>
