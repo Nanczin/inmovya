@@ -1,7 +1,7 @@
 /**
  * Meta Lead Ads (Google Sheets) → Inmovya
  * Envia para o Inmovya cada linha nova que a Meta grava nesta planilha.
- * Roda sozinho a cada 5 minutos depois de executar a função "instalar" uma vez.
+ * Roda sozinho a cada 1 minuto depois de executar a função "instalar" uma vez.
  */
 
 const INMOVYA_URL = 'https://hhtzdxtythejyykrpgqw.supabase.co/functions/v1/lead-intake';
@@ -75,11 +75,11 @@ function enviarNovosLeads() {
   }
 }
 
-/** Execute UMA vez: liga o envio automático a cada 5 minutos e já envia o que estiver pendente. */
+/** Execute UMA vez: liga o envio automático a cada 1 minuto e já envia o que estiver pendente. */
 function instalar() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'enviarNovosLeads') ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('enviarNovosLeads').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('enviarNovosLeads').timeBased().everyMinutes(1).create();
   enviarNovosLeads();
 }
