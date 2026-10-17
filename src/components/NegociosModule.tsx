@@ -8,10 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow, ShieldCheck } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow, ShieldCheck, MoreHorizontal, Clock, UserPlus, Users } from "lucide-react";
+import { LeadPainel } from "@/components/leads/LeadPainel";
 import { ConferenciaWhatsAppDialog } from "@/components/ConferenciaWhatsAppDialog";
 import { LeadTimeline } from "@/components/LeadTimeline";
-import { colocarNaEsteira, tirarDaEsteira, moverParaPasso, cortarNaEtapaFinal } from "@/lib/esteiras";
+import { colocarNaEsteira, tirarDaEsteira, moverParaPasso, cortarNaEtapaFinal, empreendimentoDoLead } from "@/lib/esteiras";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,10 +55,24 @@ const formatChegou = (date?: string) => {
 
 const origemBadgeClass = (origem?: string) => {
   const o = normalizeStatus(origem);
-  if (o.includes("instagram")) return "bg-blue-50 text-blue-700 border-blue-200";
-  if (o.includes("facebook")) return "bg-indigo-50 text-indigo-700 border-indigo-200";
-  if (o.includes("google")) return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-slate-50 text-slate-600 border-slate-200";
+  if (o.includes("instagram") || o.includes("facebook") || o.includes("meta")) return "bg-primary/10 text-primary";
+  if (o.includes("google")) return "bg-warning/15 text-warning";
+  if (o.includes("roleta") || o.includes("bitrix")) return "bg-success/[0.12] text-success";
+  return "bg-muted text-muted-foreground";
+};
+
+// próximo lembrete pendente do lead (vem da agenda)
+const proximoLembrete = (lead: Lead) => {
+  const t = [...(lead.tasks || [])].filter((x: any) => x.due_date).sort((a: any, b: any) => a.due_date.localeCompare(b.due_date))[0];
+  if (!t) return null;
+  const d = new Date(t.due_date);
+  const hoje = new Date();
+  const atrasado = d.getTime() < hoje.getTime();
+  const mesmoDia = d.toDateString() === hoje.toDateString();
+  const amanha = new Date(hoje.getTime() + 86400000).toDateString() === d.toDateString();
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const quando = mesmoDia ? `hoje ${hora}` : amanha ? `amanhã ${hora}` : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return { titulo: t.title as string, quando, atrasado };
 };
 
 export function NegociosModule({ onNavigate }: NegociosModuleProps) {
@@ -69,6 +84,10 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [timelineLeadId, setTimelineLeadId] = useState<string | null>(null);
+  const [painelLeadId, setPainelLeadId] = useState<string | null>(null);
+  // Novo negócio parte de um lead: escolher um existente ou cadastrar
+  const [modoNovo, setModoNovo] = useState<"existente" | "novo">("existente");
+  const [buscaLead, setBuscaLead] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Seleção múltipla para mover vários negócios de uma vez
@@ -318,7 +337,8 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     window.open(`https://web.whatsapp.com/send?phone=${full}`, "_blank");
   };
 
-  const openLead = (lead: Lead) => onNavigate?.("leads", { id: lead.id });
+  // clicar no card abre a ficha do lead aqui mesmo (painel lateral)
+  const openLead = (lead: Lead) => setPainelLeadId(lead.id);
 
   const handleCreate = async () => {
     if (!newDeal.nome.trim() || !newDeal.telefone.trim() || !newDeal.email.trim()) {
@@ -342,7 +362,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         },
       ]);
       if (error) throw error;
-      toast({ title: "Negócio criado", description: `${newDeal.nome} em ${stage.name}` });
+      toast({ title: "Lead cadastrado", description: `${newDeal.nome} em ${stage.name}` });
       setIsNewOpen(false);
       setNewDeal({ nome: "", telefone: "", email: "", origem: "", observacoes: "", stageId: VALIDACAO_STAGE_ID });
       refreshLeads();
@@ -356,7 +376,30 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
   const openNewInStage = (stageId: string) => {
     setNewDeal((d) => ({ ...d, stageId }));
+    setModoNovo("existente");
+    setBuscaLead("");
     setIsNewOpen(true);
+  };
+
+  const leadsParaEscolher = useMemo(() => {
+    if (!isNewOpen) return [];
+    const termo = normalizeStatus(buscaLead);
+    const dig = buscaLead.replace(/\D/g, "");
+    const alvo = NEGOCIO_STAGES.find((s) => s.id === newDeal.stageId);
+    return (leads || [])
+      .filter((l) => getStageForStatus(l.status)?.id !== alvo?.id)
+      .filter((l) => {
+        if (!termo && !dig) return true;
+        const hay = normalizeStatus(`${l.nome} ${l.observacoes || ""}`);
+        return (termo && hay.includes(termo)) || (dig.length >= 3 && (l.telefone || "").replace(/\D/g, "").includes(dig));
+      })
+      .slice(0, 8);
+  }, [isNewOpen, buscaLead, leads, newDeal.stageId]);
+
+  const escolherLead = async (lead: Lead) => {
+    const stage = stageById(newDeal.stageId);
+    setIsNewOpen(false);
+    await moveLead(lead.id, stage);
   };
 
   // Padronização: leads com status antigo/alternativo (ex.: "75%", "Novo")
@@ -411,6 +454,9 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
   const renderCard = (lead: Lead, isValidacao: boolean) => {
     const isSelected = selectedIds.has(lead.id);
+    const empreendimento = empreendimentoDoLead(lead.observacoes, lead.nome);
+    const lembrete = proximoLembrete(lead);
+    const est = infoEsteira(lead);
     return (
     <div
       key={lead.id}
@@ -419,91 +465,84 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         e.dataTransfer.setData("leadId", lead.id);
         e.dataTransfer.effectAllowed = "move";
       }}
-      onClick={selectMode ? () => toggleSelected(lead.id) : undefined}
-      className={`shrink-0 min-w-0 bg-white rounded-lg border shadow-sm p-3 hover:shadow-md transition-shadow ${
-        selectMode ? "cursor-pointer select-none" : "cursor-grab active:cursor-grabbing"
-      } ${isSelected ? "border-blue-500 ring-2 ring-blue-400/60 bg-blue-50/40" : "border-slate-200"}`}
+      onClick={() => (selectMode ? toggleSelected(lead.id) : openLead(lead))}
+      className={`group shrink-0 min-w-0 bg-card rounded-xl border p-3 shadow-[0_1px_2px_hsl(var(--foreground)/0.05)] hover:shadow-card hover:border-primary/30 transition-[box-shadow,border-color] ${
+        selectMode ? "cursor-pointer select-none" : "cursor-pointer active:cursor-grabbing"
+      } ${isSelected ? "border-primary ring-2 ring-primary/30" : ""}`}
     >
-      <div className="flex items-start gap-1 min-w-0">
+      <div className="flex items-start gap-1.5 min-w-0">
         {selectMode && (
-          <span className="shrink-0 -ml-0.5 mr-0.5 text-blue-700" aria-hidden>
-            {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-slate-400" />}
+          <span className="shrink-0 -ml-0.5 text-primary" aria-hidden>
+            {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-muted-foreground" />}
           </span>
         )}
-        <button
-          type="button"
-          onClick={(e) => {
-            if (selectMode) return; // no modo seleção o clique marca o card
-            e.stopPropagation();
-            openLead(lead);
-          }}
-          className="flex-1 min-w-0 font-semibold text-[13px] text-slate-900 leading-tight text-left hover:underline truncate block"
-          title={lead.nome}
-        >
-          {lead.nome || "Sem nome"}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setTimelineLeadId(lead.id);
-          }}
-          className="shrink-0 -mt-0.5 -mr-1 p-1 rounded text-slate-400 hover:text-blue-800 hover:bg-blue-50"
-          title="Ver histórico (timeline)"
-          aria-label="Ver histórico do lead"
-        >
-          <History className="w-3.5 h-3.5" />
-        </button>
-        {!selectMode && esteirasLista.length > 0 && (
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-[13.5px] leading-tight truncate" title={lead.nome}>
+            {lead.nome || "Sem nome"}
+          </div>
+          <div className="text-xs text-muted-foreground truncate mt-0.5" title={empreendimento || undefined}>
+            {empreendimento || "Buscando imóveis"}
+          </div>
+        </div>
+        {!selectMode && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 onClick={(e) => e.stopPropagation()}
-                className="shrink-0 -mt-0.5 -mr-1 p-1 rounded text-slate-400 hover:text-green-700 hover:bg-green-50"
-                title="Escolher esteira"
-                aria-label="Escolher esteira do lead"
+                className="shrink-0 -mt-1 -mr-1.5 p-1 rounded-md text-muted-foreground opacity-60 group-hover:opacity-100 hover:bg-muted hover:text-foreground"
+                title="Mais ações"
+                aria-label="Mais ações do lead"
               >
-                <Workflow className="w-3.5 h-3.5" />
+                <MoreHorizontal className="w-4 h-4" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuLabel className="text-xs">Esteira deste lead</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {esteirasLista.map((est) => {
-                const atual = (lead as any).esteira_id === est.id;
-                const ps = cortarNaEtapaFinal(est as any, passosLista.filter((p) => p.esteira_id === est.id).sort((a, b) => a.ordem - b.ordem));
-                const passoAtual = atual ? (lead as any).esteira_passo || 0 : -1;
-                return (
-                  <DropdownMenuSub key={est.id}>
-                    <DropdownMenuSubTrigger className="text-sm">
-                      {atual ? "✓ " : ""}
-                      {est.nome}
-                      {est.etapa ? <span className="ml-auto pl-2 text-[10px] text-muted-foreground">{est.etapa}</span> : null}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="max-h-[60vh] overflow-y-auto">
-                      <DropdownMenuLabel className="text-[11px] text-muted-foreground">Em qual dia da esteira?</DropdownMenuLabel>
-                      {ps.length === 0 && (
-                        <DropdownMenuItem disabled className="text-sm">
-                          Esteira sem passos
-                        </DropdownMenuItem>
-                      )}
-                      {ps.map((p, i) => (
-                        <DropdownMenuItem key={p.id} disabled={i === passoAtual} onSelect={() => setLeadPasso(lead, est.id, i)} className="text-sm">
-                          {i === passoAtual ? "✓ " : ""}
-                          {p.titulo || `Passo ${i + 1}`}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                );
-              })}
-              {(lead as any).esteira_id && (
+              <DropdownMenuItem onSelect={() => handleWhatsApp(lead)}>
+                <MessageCircle className="w-4 h-4 mr-2" /> Abrir WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTimelineLeadId(lead.id)}>
+                <History className="w-4 h-4 mr-2" /> Histórico
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNavigate?.("leads", { id: lead.id })}>
+                <ExternalLink className="w-4 h-4 mr-2" /> Ficha completa em Leads
+              </DropdownMenuItem>
+              {esteirasLista.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => setLeadEsteira(lead, null)} className="text-sm text-red-600">
-                    Tirar da esteira
-                  </DropdownMenuItem>
+                  <DropdownMenuLabel className="text-xs">Esteira</DropdownMenuLabel>
+                  {esteirasLista.map((e) => {
+                    const atual = (lead as any).esteira_id === e.id;
+                    const ps = cortarNaEtapaFinal(e as any, passosLista.filter((p) => p.esteira_id === e.id).sort((a, b) => a.ordem - b.ordem));
+                    const passoAtual = atual ? (lead as any).esteira_passo || 0 : -1;
+                    return (
+                      <DropdownMenuSub key={e.id}>
+                        <DropdownMenuSubTrigger className="text-sm">
+                          <Workflow className={`w-4 h-4 mr-2 ${atual ? "text-success" : ""}`} />
+                          {e.nome}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-[60vh] overflow-y-auto">
+                          <DropdownMenuLabel className="text-[11px] text-muted-foreground">Em qual dia da esteira?</DropdownMenuLabel>
+                          {ps.length === 0 && (
+                            <DropdownMenuItem disabled className="text-sm">
+                              Esteira sem passos
+                            </DropdownMenuItem>
+                          )}
+                          {ps.map((p, i) => (
+                            <DropdownMenuItem key={p.id} disabled={i === passoAtual} onSelect={() => setLeadPasso(lead, e.id, i)} className="text-sm">
+                              {i === passoAtual ? "✓ " : ""}
+                              {p.titulo || `Passo ${i + 1}`}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    );
+                  })}
+                  {(lead as any).esteira_id && (
+                    <DropdownMenuItem onSelect={() => setLeadEsteira(lead, null)} className="text-sm text-destructive">
+                      Tirar da esteira
+                    </DropdownMenuItem>
+                  )}
                 </>
               )}
             </DropdownMenuContent>
@@ -511,66 +550,68 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1 mt-2 min-w-0">
-        {lead.origem && (
-          <span className={`max-w-full truncate text-[10px] px-1.5 py-0.5 rounded border ${origemBadgeClass(lead.origem)}`} title={lead.origem}>{lead.origem}</span>
-        )}
-      </div>
+      {(lead.origem || lembrete) && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 min-w-0">
+          {lead.origem && (
+            <span className={`max-w-[50%] truncate text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${origemBadgeClass(lead.origem)}`} title={lead.origem}>
+              {lead.origem}
+            </span>
+          )}
+          {lembrete && (
+            <span
+              className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full truncate max-w-full ${
+                lembrete.atrasado ? "bg-destructive/10 text-destructive" : "bg-muted text-foreground/80"
+              }`}
+              title={lembrete.titulo}
+            >
+              <Clock className="w-3 h-3 shrink-0" /> {lembrete.atrasado ? "atrasado" : lembrete.quando}
+            </span>
+          )}
+        </div>
+      )}
 
-      {lead.telefone && (
-        <div className="flex items-center gap-1.5 text-[12px] text-slate-700 mt-2 min-w-0">
-          <Phone className="w-3 h-3 shrink-0" />
-          <span className="truncate">{lead.telefone}</span>
-        </div>
+      {est && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!selectMode) onNavigate?.("esteiras");
+          }}
+          className={`mt-2.5 w-full flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-left ${
+            est.hoje ? "bg-success/[0.12] text-success" : "bg-muted text-muted-foreground"
+          }`}
+          title="Abrir Esteiras"
+        >
+          <Workflow className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">
+            {est.passo.startsWith("sem resposta") ? `${est.nome} · ${est.passo}` : `${est.nome} · ${est.passo} · ${est.hoje ? "envia hoje" : est.quando}`}
+          </span>
+        </button>
       )}
-      {lead.email && <div className="text-[11px] text-slate-500 truncate mt-1" title={lead.email}>{lead.email}</div>}
-      {lead.observacoes && (
-        <div className="text-[11px] text-slate-500 mt-2 line-clamp-2 break-words" title={lead.observacoes}>
-          {lead.observacoes}
+
+      {selectMode ? null : isValidacao ? (
+        <div className="grid grid-cols-2 gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" className="h-8 min-w-0 px-1 gap-1 text-[12px]" onClick={() => handleValidar(lead)}>
+            <Check className="w-3.5 h-3.5 shrink-0" /> Validar
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 min-w-0 px-1 gap-1 text-[12px]" onClick={() => handleDescartar(lead)}>
+            <X className="w-3.5 h-3.5 shrink-0" /> Descartar
+          </Button>
         </div>
-      )}
-      {(() => {
-        const est = infoEsteira(lead);
-        if (!est) return null;
-        return (
+      ) : (
+        <div className="flex items-center justify-between mt-2.5 text-[10.5px] text-muted-foreground">
+          <span>Chegou {formatChegou(lead.created_at).split(",")[0]}</span>
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              if (!selectMode) onNavigate?.("esteiras");
+              handleWhatsApp(lead);
             }}
-            className={`mt-2 w-full flex items-center gap-1 rounded border px-1.5 py-1 text-[10.5px] text-left ${
-              est.hoje ? "bg-green-50 border-green-200 text-green-800" : "bg-slate-50 border-slate-200 text-slate-600"
-            }`}
-            title="Abrir Esteiras"
+            className="p-1 -m-1 rounded-md hover:bg-success/10 text-success"
+            title="WhatsApp"
+            aria-label="WhatsApp"
           >
-            <Workflow className="w-3 h-3 shrink-0" />
-            <span className="truncate">
-              {est.nome} · {est.passo}{est.passo.startsWith("sem resposta") ? ` em ${est.quando}` : ` (${est.idx + 1}/${est.total || 1}) · ${est.hoje ? "envio hoje" : `próx. ${est.quando}`}`}
-            </span>
-          </button>
-        );
-      })()}
-      <div className="text-[11px] text-slate-500 mt-2">Chegou {formatChegou(lead.created_at)}</div>
-
-      {selectMode ? null : isValidacao ? (
-        <div className="grid grid-cols-2 gap-1.5 mt-3">
-          <Button size="sm" className="h-8 min-w-0 px-1 gap-1 whitespace-nowrap bg-blue-800 hover:bg-blue-900 text-white text-[11px]" onClick={() => handleValidar(lead)}>
-            <Check className="w-3 h-3 shrink-0" />
-            <span className="truncate">Validar</span>
-          </Button>
-          <Button size="sm" variant="outline" className="h-8 min-w-0 px-1 gap-1 whitespace-nowrap text-[11px]" onClick={() => handleDescartar(lead)}>
-            <X className="w-3 h-3 shrink-0" />
-            <span className="truncate">Descartar</span>
-          </Button>
-        </div>
-      ) : (
-        <div className="flex justify-end gap-1 mt-2">
-          <button type="button" onClick={() => handleWhatsApp(lead)} className="p-1 rounded hover:bg-green-50 text-green-600" title="WhatsApp">
-            <MessageCircle className="w-3.5 h-3.5" />
-          </button>
-          <button type="button" onClick={() => openLead(lead)} className="p-1 rounded hover:bg-slate-100 text-slate-500" title="Abrir lead">
-            <ExternalLink className="w-3.5 h-3.5" />
+            <MessageCircle className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -584,10 +625,9 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     return (
       <div
         key={stage.id}
-        className={`flex-shrink-0 w-[calc(100vw-56px)] max-w-[280px] sm:w-[240px] snap-start rounded-lg bg-slate-100/80 border-t-2 flex flex-col max-h-[calc(100dvh-260px)] min-h-[160px] transition-colors ${
-          dragOverStage === stage.id ? "ring-2 ring-blue-400 bg-blue-50" : ""
+        className={`flex-shrink-0 w-[calc(100vw-56px)] max-w-[290px] sm:w-[256px] snap-start rounded-2xl bg-muted/55 dark:bg-muted/40 flex flex-col max-h-[calc(100dvh-230px)] min-h-[160px] transition-colors ${
+          dragOverStage === stage.id ? "ring-2 ring-primary/50 bg-primary/5" : ""
         }`}
-        style={{ borderTopColor: accent }}
         onDragOver={(e) => {
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
@@ -604,36 +644,35 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         <div className="px-2.5 pt-2.5 pb-2">
           <div className="flex items-center justify-between gap-1">
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-semibold text-[13px] text-slate-900 truncate" title={stage.name}>{stage.name}</span>
-              <span className="text-[10px] font-medium bg-white border border-slate-200 rounded-full px-1.5 leading-4 text-slate-600">
-                {stageLeads.length}
-              </span>
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: accent }} aria-hidden />
+              <span className="font-bold text-[13px] truncate" title={stage.name}>{stage.name}</span>
+              <span className="text-[11px] font-semibold text-muted-foreground tabular-nums">{stageLeads.length}</span>
             </div>
             {selectMode ? (
               stageLeads.length > 0 && (
                 <button
                   type="button"
                   onClick={() => toggleColumn(stageLeads)}
-                  className="text-[11px] font-medium text-blue-700 hover:underline shrink-0"
+                  className="text-[11px] font-semibold text-primary hover:underline shrink-0"
                 >
                   {stageLeads.every((l) => selectedIds.has(l.id)) ? "Desmarcar" : "Todos"}
                 </button>
               )
             ) : !isValidacao && (
-              <button type="button" onClick={() => openNewInStage(stage.id)} className="text-slate-400 hover:text-slate-700" title={`Novo negócio em ${stage.name}`}>
+              <button type="button" onClick={() => openNewInStage(stage.id)} className="p-0.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-card" title={`Novo negócio em ${stage.name}`}>
                 <Plus className="w-4 h-4" />
               </button>
             )}
           </div>
           {isValidacao && (
-            <p className="text-[11px] text-slate-500 mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
+            <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
           )}
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden pl-2 pr-1.5 pb-2 flex flex-col gap-2 [scrollbar-gutter:stable] [scrollbar-width:thin]">
           {stageLeads.map((lead) => renderCard(lead, isValidacao))}
           {stageLeads.length === 0 && (
-            <div className="h-24 flex items-center justify-center text-center text-[11px] text-slate-400 border border-dashed border-slate-300 rounded-md px-2">
-              Arraste um negócio para cá
+            <div className="h-20 flex items-center justify-center text-center text-[11px] text-muted-foreground border border-dashed rounded-xl px-2">
+              Arraste um lead para cá
             </div>
           )}
         </div>
@@ -644,38 +683,38 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   return (
     <div className="flex flex-col gap-4 h-full min-w-0">
       {/* Cabeçalho */}
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Negócios</h1>
-          <p className="text-sm text-muted-foreground">
-            {selectMode
-              ? "Toque nos cards para selecionar e escolha a etapa na barra de baixo."
-              : "Arraste os cards entre as etapas ou use “Selecionar vários” para mover em lote."}
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar lead por nome, telefone ou empreendimento" className="pl-9 h-10 bg-card" />
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar negócio..." className="pl-8 h-9 w-full sm:w-56" />
-          </div>
-          {normalizationTotal > 0 && (
-            <Button variant="outline" className="h-9 border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setIsNormalizeOpen(true)}>
-              <Wand2 className="w-4 h-4 mr-1" /> Padronizar etapas ({normalizationTotal})
-            </Button>
-          )}
-          <Button variant="outline" className="h-9" onClick={() => setConferenciaAberta(true)}>
-            <ShieldCheck className="w-4 h-4 mr-1" /> Conferir com WhatsApp
-          </Button>
-          <ConferenciaWhatsAppDialog open={conferenciaAberta} onOpenChange={setConferenciaAberta} />
+        <div className="flex gap-2 sm:ml-auto">
           <Button
             variant={selectMode ? "secondary" : "outline"}
-            className="h-9"
+            className="h-10"
             onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
           >
             {selectMode ? <X className="w-4 h-4 mr-1" /> : <CheckSquare className="w-4 h-4 mr-1" />}
-            {selectMode ? "Cancelar seleção" : "Selecionar vários"}
+            {selectMode ? "Cancelar seleção" : "Selecionar"}
           </Button>
-          <Button className="h-9 bg-blue-800 hover:bg-blue-900 text-white" onClick={() => openNewInStage(VALIDACAO_STAGE_ID)}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-10 w-10 relative" title="Mais opções">
+                <MoreHorizontal className="w-4 h-4" />
+                {normalizationTotal > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-warning" />}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60">
+              <DropdownMenuItem onSelect={() => setConferenciaAberta(true)}>
+                <ShieldCheck className="w-4 h-4 mr-2" /> Conferir com o WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setIsNormalizeOpen(true)} disabled={normalizationTotal === 0}>
+                <Wand2 className="w-4 h-4 mr-2" /> Padronizar etapas{normalizationTotal > 0 ? ` (${normalizationTotal})` : ""}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <ConferenciaWhatsAppDialog open={conferenciaAberta} onOpenChange={setConferenciaAberta} />
+          <Button className="h-10" onClick={() => openNewInStage(PRIMEIRO_IMPACTO_STAGE_ID)}>
             <Plus className="w-4 h-4 mr-1" /> Novo negócio
           </Button>
         </div>
@@ -683,11 +722,11 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
 
       {/* Fases + indicadores */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-        <div className="flex flex-wrap gap-1 bg-muted/50 border rounded-lg p-1 w-fit">
+        <div className="flex flex-wrap gap-1 bg-muted/70 rounded-lg p-1 w-fit">
           <button
             type="button"
             onClick={() => setActivePhase("all")}
-            className={`text-xs px-3 py-1.5 rounded-md ${activePhase === "all" ? "bg-white shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+            className={`text-xs px-3 py-1.5 rounded-md font-semibold ${activePhase === "all" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
           >
             Todas as fases
           </button>
@@ -696,22 +735,16 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
               key={p.id}
               type="button"
               onClick={() => setActivePhase(p.id)}
-              className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 ${activePhase === p.id ? "bg-white shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 font-semibold ${activePhase === p.id ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             >
               {p.tab}
               <span className="text-[10px] text-muted-foreground">{phaseCounts[p.id] || 0}</span>
             </button>
           ))}
         </div>
-        <div className="flex border rounded-lg bg-white divide-x w-fit">
-          <div className="px-4 py-1.5">
-            <div className="text-[10px] text-muted-foreground">No funil</div>
-            <div className="text-sm font-semibold">{noFunil}</div>
-          </div>
-          <div className="px-4 py-1.5">
-            <div className="text-[10px] text-muted-foreground">Ganhos</div>
-            <div className="text-sm font-semibold">{ganhos}</div>
-          </div>
+        <div className="flex items-center gap-4 text-sm">
+          <span className="text-muted-foreground">No funil <b className="text-foreground tabular-nums">{noFunil}</b></span>
+          <span className="text-muted-foreground">Ganhos <b className="text-success tabular-nums">{ganhos}</b></span>
         </div>
       </div>
 
@@ -721,10 +754,10 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           const stages = NEGOCIO_STAGES.filter((s) => s.phase === phase.id);
           return (
             <div key={phase.id} className="flex flex-col gap-2 flex-shrink-0">
-              <div className="flex items-center gap-2 text-[10px] font-semibold tracking-widest uppercase text-slate-500">
+              <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground px-1">
                 <span>{phase.label}</span>
-                <span>{phaseCounts[phase.id] || 0}</span>
-                <div className="flex-1 h-px bg-slate-200" />
+                <span className="tabular-nums opacity-70">{phaseCounts[phase.id] || 0}</span>
+                <div className="flex-1 h-px bg-border" />
               </div>
               <div className="flex gap-2">{stages.map((s) => renderColumn(s, phase.accent))}</div>
             </div>
@@ -735,7 +768,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       {/* Barra de ação da seleção múltipla */}
       {selectMode && (
         <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
-          <div className="pointer-events-auto mx-auto max-w-5xl rounded-xl border bg-white shadow-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="pointer-events-auto mx-auto max-w-5xl rounded-2xl border bg-card shadow-elegant p-3 flex flex-col sm:flex-row sm:items-center gap-2">
             <div className="flex items-center justify-between sm:justify-start gap-3 sm:min-w-[150px]">
               <span className="text-sm font-semibold">
                 {selectedIds.size} selecionado{selectedIds.size === 1 ? "" : "s"}
@@ -754,7 +787,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                 <SelectContent className="max-h-[50vh]">
                   {NEGOCIO_PHASES.map((p) => (
                     <div key={p.id}>
-                      <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{p.label}</div>
+                      <div className="px-2 pt-2 pb-1 text-xs font-semibold text-muted-foreground">{p.label}</div>
                       {NEGOCIO_STAGES.filter((s) => s.phase === p.id).map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.name}
@@ -765,7 +798,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
                 </SelectContent>
               </Select>
               <Button
-                className="h-10 shrink-0 bg-blue-800 hover:bg-blue-900 text-white"
+                className="h-10 shrink-0"
                 disabled={!bulkTarget || selectedIds.size === 0 || bulkMoving}
                 onClick={moveSelected}
               >
@@ -815,57 +848,112 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         </div>
       )}
 
-      {/* Novo negócio */}
+      {/* Novo negócio: sempre a partir de um lead */}
       <Dialog open={isNewOpen} onOpenChange={setIsNewOpen}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>Novo negócio</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3">
-            <div className="grid gap-1.5">
-              <Label>Nome *</Label>
-              <Input value={newDeal.nome} onChange={(e) => setNewDeal({ ...newDeal, nome: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="grid gap-1.5">
-                <Label>Telefone *</Label>
-                <Input value={newDeal.telefone} onChange={(e) => setNewDeal({ ...newDeal, telefone: e.target.value })} placeholder="(11) 99999-9999" />
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Origem</Label>
-                <Input value={newDeal.origem} onChange={(e) => setNewDeal({ ...newDeal, origem: e.target.value })} placeholder="roleta, Instagram..." />
-              </div>
-            </div>
-            <div className="grid gap-1.5">
-              <Label>E-mail *</Label>
-              <Input value={newDeal.email} onChange={(e) => setNewDeal({ ...newDeal, email: e.target.value })} />
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Etapa</Label>
-              <Select value={newDeal.stageId} onValueChange={(v) => setNewDeal({ ...newDeal, stageId: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {NEGOCIO_STAGES.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Observações</Label>
-              <Textarea rows={2} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Interesse do lead..." />
-            </div>
+          <div className="grid gap-1.5">
+            <Label>Em qual etapa</Label>
+            <Select value={newDeal.stageId} onValueChange={(v) => setNewDeal({ ...newDeal, stageId: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-[50vh]">
+                {NEGOCIO_STAGES.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreate} disabled={saving} className="bg-blue-800 hover:bg-blue-900 text-white">
-              {saving ? "Salvando..." : "Criar"}
-            </Button>
-          </DialogFooter>
+          <div className="flex rounded-lg bg-muted p-1 text-sm font-semibold">
+            <button
+              type="button"
+              onClick={() => setModoNovo("existente")}
+              className={`flex-1 rounded-md py-1.5 inline-flex items-center justify-center gap-1.5 ${modoNovo === "existente" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
+            >
+              <Users className="w-4 h-4" /> Lead que já existe
+            </button>
+            <button
+              type="button"
+              onClick={() => setModoNovo("novo")}
+              className={`flex-1 rounded-md py-1.5 inline-flex items-center justify-center gap-1.5 ${modoNovo === "novo" ? "bg-card shadow-sm" : "text-muted-foreground"}`}
+            >
+              <UserPlus className="w-4 h-4" /> Cadastrar lead
+            </button>
+          </div>
+
+          {modoNovo === "existente" ? (
+            <div className="grid gap-2">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input autoFocus value={buscaLead} onChange={(e) => setBuscaLead(e.target.value)} placeholder="Nome ou telefone do lead" className="pl-9" />
+              </div>
+              <div className="max-h-[300px] overflow-y-auto -mx-1">
+                {leadsParaEscolher.length === 0 ? (
+                  <p className="text-sm text-muted-foreground px-1 py-4 text-center">
+                    Nenhum lead encontrado.{" "}
+                    <button type="button" className="text-primary font-semibold underline" onClick={() => setModoNovo("novo")}>
+                      Cadastrar lead
+                    </button>
+                  </p>
+                ) : (
+                  leadsParaEscolher.map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => escolherLead(l)}
+                      className="w-full text-left rounded-lg px-3 py-2 hover:bg-muted flex items-center justify-between gap-3"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold truncate">{l.nome}</span>
+                        <span className="block text-xs text-muted-foreground truncate">
+                          {empreendimentoDoLead(l.observacoes, l.nome) || l.telefone || "—"}
+                        </span>
+                      </span>
+                      <span className="text-[11px] text-muted-foreground shrink-0">{getStageForStatus(l.status)?.name || l.status || "Sem etapa"}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3">
+                <div className="grid gap-1.5">
+                  <Label>Nome *</Label>
+                  <Input value={newDeal.nome} onChange={(e) => setNewDeal({ ...newDeal, nome: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label>Telefone *</Label>
+                    <Input value={newDeal.telefone} onChange={(e) => setNewDeal({ ...newDeal, telefone: e.target.value })} placeholder="(11) 99999-9999" />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label>Origem</Label>
+                    <Input value={newDeal.origem} onChange={(e) => setNewDeal({ ...newDeal, origem: e.target.value })} placeholder="roleta, Instagram..." />
+                  </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>E-mail *</Label>
+                  <Input value={newDeal.email} onChange={(e) => setNewDeal({ ...newDeal, email: e.target.value })} />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Empreendimento / observações</Label>
+                  <Textarea rows={2} value={newDeal.observacoes} onChange={(e) => setNewDeal({ ...newDeal, observacoes: e.target.value })} placeholder="Empreendimento que o lead procura" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsNewOpen(false)}>Cancelar</Button>
+                <Button onClick={handleCreate} disabled={saving}>
+                  {saving ? "Cadastrando..." : "Cadastrar lead"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
       {/* Padronizar etapas */}
@@ -897,12 +985,14 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsNormalizeOpen(false)} disabled={normalizing}>Cancelar</Button>
-            <Button onClick={applyNormalization} disabled={normalizing} className="bg-blue-800 hover:bg-blue-900 text-white">
+            <Button onClick={applyNormalization} disabled={normalizing} >
               {normalizing ? "Aplicando..." : `Aplicar em ${normalizationTotal} lead(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Ficha rápida do lead (painel lateral) */}
+      <LeadPainel leadId={painelLeadId} onClose={() => setPainelLeadId(null)} onAbrirFicha={(id) => { setPainelLeadId(null); onNavigate?.("leads", { id }); }} />
       {/* Timeline / histórico do lead */}
       <LeadTimeline
         leadId={timelineLeadId}
