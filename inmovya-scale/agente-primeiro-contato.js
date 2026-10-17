@@ -281,6 +281,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const resultados = [];
     for (const l of request.leads || []) {
       try {
+        // só cadastra quem tem WhatsApp
+        const tel = agenteTelefone(l.telefone);
+        if (!tel || tel.length < 12) {
+          resultados.push({ id: l.id, ok: true, acao: 'sem_telefone' });
+          continue;
+        }
+        const conf = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
+        if (conf?.temWhatsapp === false) {
+          resultados.push({ id: l.id, ok: true, acao: 'sem_whatsapp' });
+          continue;
+        }
         const r = await agenteRpc(cred, 'agente_cadastrar_lead', {
           p_token: cred.token,
           p_fonte: 'Midrah',

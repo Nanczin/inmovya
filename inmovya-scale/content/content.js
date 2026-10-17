@@ -141,6 +141,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Captura do Midrah: o número tem WhatsApp? (conversa abre = sim; aviso de número inválido = não)
+  if (request.action === 'checar_whatsapp_tab') {
+    (async () => {
+      const dom = window.IS.WhatsAppDOM;
+      const fim = Date.now() + 45000;
+      while (Date.now() < fim) {
+        if (dom.findMessageInput()) { sendResponse({ ok: true, temWhatsapp: true }); return; }
+        const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
+          .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|not on whatsapp/i.test(el.innerText || ''));
+        if (invalido) { sendResponse({ ok: true, temWhatsapp: false }); return; }
+        await dom.delay(500);
+      }
+      sendResponse({ ok: false, final: true, error: 'O WhatsApp Web não carregou para conferir o número.' });
+    })();
+    return true;
+  }
+
   if (request.action === 'campaign_auto_send') {
     (async () => {
       // Trava anti-duplicado: a mesma mensagem (envioId) nunca sai duas vezes nesta aba, mesmo se o
