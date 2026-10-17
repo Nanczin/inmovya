@@ -88,7 +88,7 @@ export function AppSidebar({ activeModule, onModuleChange }: AppSidebarProps) {
           onClick={() => ir(item.id)}
           isActive={ativo}
           tooltip={item.label}
-          className={`relative h-9 rounded-lg font-medium text-[13.5px] transition-colors
+          className={`relative h-[34px] rounded-lg font-medium text-[13.5px] transition-colors
             text-sidebar-foreground hover:bg-sidebar-accent hover:text-white
             data-[active=true]:bg-sidebar-accent data-[active=true]:text-white
             ${ativo ? "before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-sidebar-primary" : ""}`}
@@ -109,9 +109,9 @@ export function AppSidebar({ activeModule, onModuleChange }: AppSidebarProps) {
         </button>
       </SidebarHeader>
 
-      <SidebarContent className="px-1">
+      <SidebarContent className="px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {grupos.map((g) => (
-          <SidebarGroup key={g.titulo} className="py-1.5">
+          <SidebarGroup key={g.titulo} className="py-1">
             {!recolhido && (
               <SidebarGroupLabel className="text-[11px] font-semibold text-sidebar-foreground/55 h-6">{g.titulo}</SidebarGroupLabel>
             )}
@@ -122,7 +122,7 @@ export function AppSidebar({ activeModule, onModuleChange }: AppSidebarProps) {
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="px-1 pb-4">
+      <SidebarFooter className="px-1 pb-3 pt-1 border-t border-sidebar-border">
         <SidebarMenu>{botao({ id: "settings", label: "Configurações", icon: Settings })}</SidebarMenu>
       </SidebarFooter>
     </Sidebar>

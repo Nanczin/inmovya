@@ -44,6 +44,8 @@ interface Task {
 }
 
 const feito = (t: Task) => t.status === "completed";
+// lembretes automáticos de temperatura foram desativados: não aparecem e são apagados
+const ehLembreteTemperatura = (t: { title?: string | null }) => String(t.title || "").startsWith("Lembrete de Follow-up (Temperatura");
 
 /** Nome do dia como as pessoas falam: Hoje, Amanhã, "sexta, 20 de out." */
 const nomeDoDia = (d: Date) => {
@@ -94,6 +96,8 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
       const inicio = startOfWeek(startOfMonth(mes), { locale: ptBR });
       const fim = endOfWeek(endOfMonth(mes), { locale: ptBR });
       const hoje = startOfDay(new Date());
+      // apaga os lembretes automáticos de temperatura que sobraram (você pediu para tirar)
+      await supabase.from("tasks").delete().eq("user_id", user.id).like("title", "Lembrete de Follow-up (Temperatura%");
       const [doMes, pendentes] = await Promise.all([
         supabase
           .from("tasks")
@@ -112,8 +116,8 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
           .limit(100),
       ]);
       if (doMes.error) throw doMes.error;
-      setTasks((doMes.data as Task[]) || []);
-      setAtrasados((pendentes.data as Task[]) || []);
+      setTasks(((doMes.data as Task[]) || []).filter((t) => !ehLembreteTemperatura(t)));
+      setAtrasados(((pendentes.data as Task[]) || []).filter((t) => !ehLembreteTemperatura(t)));
     } catch (error) {
       console.error("Erro ao carregar a agenda:", error);
       toast({ title: "Não consegui carregar a agenda", description: "Confira a internet e tente de novo.", variant: "destructive" });

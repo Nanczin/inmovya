@@ -65,7 +65,7 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
             if (leadsData) {
                 const leadsWithTasks = leadsData.map(lead => ({
                     ...lead,
-                    tasks: tasksData ? tasksData.filter(t => t.lead_id === lead.id) : []
+                    tasks: tasksData ? tasksData.filter(t => t.lead_id === lead.id && !String(t.title || '').startsWith('Lembrete de Follow-up (Temperatura')) : []
                 }));
                 setLeads(leadsWithTasks);
             }
