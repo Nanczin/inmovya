@@ -609,10 +609,9 @@ function agenteBotaoSalvarPorTexto() {
 async function agenteSalvarContato(nomeCompleto, telefone) {
   const nome = String(nomeCompleto || '').replace(/\s+/g, ' ').trim();
   if (!nome) return { salvo: false, motivo: 'lead sem nome' };
-  // cabeçalho com letras = já é um contato salvo
+  // Não dá para confiar no nome do topo: em número NÃO salvo o WhatsApp pode mostrar o nome do perfil do lead.
+  // O que vale é existir o botão "Adicionar contato" (na conversa, no menu ⋮ ou nos dados do contato).
   const titulo = agenteTituloConversa();
-  // (o "~Nome" do perfil, que aparece em número não salvo, não conta)
-  if (/[a-zà-ÿ]/i.test(titulo) && !titulo.startsWith('~')) return { salvo: true, jaEstava: true, motivo: `já salvo como "${titulo}"` };
 
   const ADICIONAR = /^(adicionar( aos?)? contatos?|adicionar contato|novo contato|salvar contato|add( to)? contacts?|add contact|new contact|save contact)$/i;
   // 1) botão na própria conversa (aviso de número desconhecido) ou no menu ⋮ do cabeçalho
@@ -632,7 +631,10 @@ async function agenteSalvarContato(nomeCompleto, telefone) {
     botao = await agenteEsperarBotao(ADICIONAR, 4000);
   }
   if (!botao) {
-    await agenteGuardarDiagnostico('contato: botão Adicionar contato não encontrado');
+    await agenteGuardarDiagnostico(`contato: sem botão "Adicionar contato" (topo da conversa: "${titulo}")`);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    // sem botão de adicionar e com nome no topo: é contato salvo de verdade
+    if (/[a-zà-ÿ]/i.test(titulo) && !titulo.startsWith('~')) return { salvo: true, jaEstava: true, motivo: `já estava salvo como "${titulo}"` };
     return { salvo: false, motivo: 'não achei o botão "Adicionar contato" no WhatsApp Web. Guardei os detalhes da tela para ajuste.' };
   }
   botao.click();
