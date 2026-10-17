@@ -54,6 +54,16 @@
       const apikey = await chavePublica();
       if (!apikey) return log('não achei a chave pública do Midrah');
 
+      // 1.7.0: confere de novo as últimas 24 h (o Inmovya não duplica; recupera leads da roleta que ficaram de fora)
+      const { midrahRevisado170 } = await chrome.storage.local.get('midrahRevisado170');
+      if (!midrahRevisado170) {
+        await chrome.storage.local.set({
+          midrahRevisado170: true,
+          midrahFeitos: [],
+          midrahSemZap: {},
+          midrahDesde: new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+        });
+      }
       let { midrahDesde, midrahFeitos = [] } = await chrome.storage.local.get(['midrahDesde', 'midrahFeitos']);
       if (!midrahDesde) {
         // primeira vez: pega os negócios das últimas 2 horas
@@ -61,24 +71,49 @@
         await chrome.storage.local.set({ midrahDesde });
       }
       const desde = new Date(Math.max(new Date(midrahDesde).getTime(), Date.now() - 3 * 86400 * 1000)).toISOString();
-      const url = `${BASE}deals?select=id,name,created_at,development_name,owner_user_id,client:clients(name,phone,whatsapp,email)` +
-        `&owner_user_id=eq.${s.user.id}&created_at=gte.${encodeURIComponent(desde)}&order=created_at.asc&limit=100`;
-      const r = await fetch(url, { headers: { apikey, Authorization: `Bearer ${s.access_token}` } });
+      const h = { apikey, Authorization: `Bearer ${s.access_token}` };
+      const campos = 'id,name,created_at,development_name,owner_user_id,client:clients(name,phone,whatsapp,email)';
+      // 1) negócios criados para você (inclui os que você pega na roleta)
+      const url = `${BASE}deals?select=${campos}` +
+        `&owner_user_id=eq.${s.user.id}&created_at=gte.${encodeURIComponent(desde)}&order=created_at.desc&limit=100`;
+      const r = await fetch(url, { headers: h });
       if (!r.ok) return log('Midrah respondeu', r.status);
       const deals = await r.json();
+      // 2) leads da roleta que você pegou (mesmo se o negócio foi criado antes ou passado para você)
+      try {
+        const ro = await fetch(`${BASE}lead_offers?select=deal_id&user_id=eq.${s.user.id}&status=eq.aceito` +
+          `&responded_at=gte.${encodeURIComponent(desde)}&deal_id=not.is.null&order=responded_at.desc&limit=50`, { headers: h });
+        if (ro.ok) {
+          const ja = new Set(deals.map(d => d.id));
+          const ids = (await ro.json()).map(o => o.deal_id).filter(id => id && !ja.has(id));
+          if (ids.length) {
+            const rd = await fetch(`${BASE}deals?select=${campos}&id=in.(${ids.join(',')})`, { headers: h });
+            if (rd.ok) deals.push(...(await rd.json()));
+          }
+        }
+      } catch (_) { /* roleta indisponível: segue só com os negócios */ }
+      deals.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
       const feitos = new Set(midrahFeitos);
       const novos = deals.filter(d => !feitos.has(d.id)).map(d => ({
         id: d.id,
-        nome: String(d.client?.name || String(d.name || '').split(' · ')[0] || '').trim(),
+        nome: String(d.client?.name || String(d.name || '').split(' · ')[0] || '').normalize('NFKC').trim(),
         telefone: d.client?.whatsapp || d.client?.phone || '',
         email: d.client?.email || '',
         empreendimento: d.development_name || ''
       }));
       if (!novos.length) return;
-      novos.splice(5); // até 5 por minuto (cada número é conferido no WhatsApp antes)
+      novos.splice(10); // até 10 por minuto (cada número é conferido no WhatsApp antes)
       const resp = await chrome.runtime.sendMessage({ action: 'midrah_capturar', leads: novos });
       if (!resp?.ok) return log('não cadastrou:', resp?.error);
-      const ok = (resp.resultados || []).filter(x => x.ok).map(x => x.id);
+      // "sem WhatsApp" só vale depois de conferir 2 vezes (evita perder lead por uma falha do WhatsApp Web)
+      const { midrahSemZap = {} } = await chrome.storage.local.get('midrahSemZap');
+      const ok = [];
+      for (const x of resp.resultados || []) {
+        if (!x.ok) continue;
+        if (x.acao === 'sem_whatsapp' && (midrahSemZap[x.id] || 0) < 1) { midrahSemZap[x.id] = 1; continue; }
+        ok.push(x.id);
+      }
+      await chrome.storage.local.set({ midrahSemZap });
       if (ok.length) {
         const lista = [...midrahFeitos, ...ok].slice(-3000);
         await chrome.storage.local.set({ midrahFeitos: lista });

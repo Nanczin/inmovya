@@ -127,23 +127,40 @@ async function saveLead(supabase: SupabaseClient, lead: IncomingLead) {
     }
   }
 
+  // Lead novo: não entra direto. Vai para a fila e o Inmovya Scale confere o número no WhatsApp
+  // (a cada 1 minuto); só vira lead se tiver WhatsApp (supabase/captura_whatsapp.sql).
+  if (key.length >= 8) {
+    const { data: naFila, error: filaErr } = await supabase
+      .from("captura_fila")
+      .select("id, telefone")
+      .eq("user_id", userId)
+      .eq("status", "pendente")
+      .ilike("telefone", `%${key.slice(-4)}%`);
+    if (filaErr) throw filaErr;
+    const igual = (naFila ?? []).find((c) => {
+      const k = phoneKey(c.telefone);
+      return k === key || (k.length >= 10 && key.length >= 10 && k.slice(-8) === key.slice(-8));
+    });
+    if (igual) return { action: "ja_na_fila", id: igual.id };
+  }
   const { data, error } = await supabase
-    .from("leads")
+    .from("captura_fila")
     .insert([{
+      user_id: userId,
+      fonte: lead.fonte,
       nome: lead.nome?.trim() || "Lead sem nome",
       telefone,
       email: lead.email?.trim() || fakeEmail(telefone),
       origem: lead.origem,
       observacoes: lead.observacoes || null,
-      status,
       tags: Array.from(new Set(lead.tags ?? [])),
-      ultimo_contato: new Date().toISOString(),
-      user_id: userId,
+      status: key.length >= 8 ? "pendente" : "sem_telefone",
+      resolvido_em: key.length >= 8 ? null : new Date().toISOString(),
     }])
     .select("id")
     .single();
   if (error) throw error;
-  return { action: "criado", id: data.id };
+  return { action: key.length >= 8 ? "na_fila_whatsapp" : "sem_telefone", id: data.id, status };
 }
 
 // ---------- 1) Meta Lead Ads ----------
@@ -250,6 +267,9 @@ async function pollBitrix(supabase: SupabaseClient) {
     const { data: seen, error } = await supabase.from("leads").select("id").eq("user_id", userId).ilike("observacoes", "%" + tag + "%").limit(1);
     if (error) throw error;
     if (seen && seen.length) { results.push({ deal: d.ID, action: "ja_importado" }); continue; }
+    const { data: filaVista, error: filaErr } = await supabase.from("captura_fila").select("id").eq("user_id", userId).ilike("observacoes", "%" + tag + "%").limit(1);
+    if (filaErr) throw filaErr;
+    if (filaVista && filaVista.length) { results.push({ deal: d.ID, action: "ja_na_fila" }); continue; }
     const lead = await fetchBitrixLead("ONCRMDEALADD", String(d.ID));
     lead.observacoes = [lead.observacoes, tag].filter(Boolean).join(" | ");
     results.push({ deal: d.ID, ...(await saveLead(supabase, lead)) });

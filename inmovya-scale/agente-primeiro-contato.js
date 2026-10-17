@@ -19,7 +19,12 @@ agenteGarantirAlarme();
 chrome.runtime.onStartup.addListener(agenteGarantirAlarme);
 chrome.runtime.onInstalled.addListener(agenteGarantirAlarme);
 chrome.alarms.onAlarm.addListener(alarme => {
-  if (alarme.name === AGENTE_ALARME) agenteRodada().catch(err => console.error('[Inmovya agente]', err));
+  if (alarme.name === AGENTE_ALARME) {
+    // primeiro confere a fila da captura (Bitrix/Meta só viram lead com WhatsApp), depois o 1º contato
+    agenteFilaCaptura()
+      .catch(err => console.warn('[Inmovya captura]', err.message || err))
+      .finally(() => agenteRodada().catch(err => console.error('[Inmovya agente]', err)));
+  }
 });
 
 // ---------- Banco (Supabase, via funções com o token do agente) ----------
@@ -272,6 +277,46 @@ async function agenteAtender(cred, cfg, lead) {
   }
 }
 
+// ---------- Fila da captura (Bitrix e Meta): só vira lead quem tem WhatsApp ----------
+// O lead-intake (Supabase) põe os leads novos na captura_fila; aqui cada número é testado no WhatsApp Web.
+let agenteFilaEmCurso = false;
+async function agenteFilaCaptura() {
+  if (agenteFilaEmCurso) return;
+  const cred = await agenteCredenciais();
+  if (!cred) return;
+  agenteFilaEmCurso = true;
+  try {
+    let fila;
+    try {
+      fila = await agenteRpc(cred, 'agente_fila_captura', { p_token: cred.token });
+    } catch (err) {
+      if (/agente_fila_captura|não existe|does not exist|PGRST202|Falta rodar/i.test(err.message)) return; // SQL ainda não rodado
+      throw err;
+    }
+    if (!Array.isArray(fila) || !fila.length) return;
+    let criou = false;
+    for (const l of fila) {
+      const tel = agenteTelefone(l.telefone);
+      let tem = null;
+      if (!tel || tel.length < 12) tem = false;
+      else {
+        try {
+          const conf = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
+          if (conf?.temWhatsapp === true) tem = true;
+          else if (conf?.temWhatsapp === false) tem = false;
+        } catch (_) { tem = null; } // WhatsApp Web não respondeu: tenta no próximo minuto
+      }
+      const r = await agenteRpc(cred, 'agente_resolver_captura', { p_token: cred.token, p_id: l.id, p_tem_whatsapp: tem });
+      console.log('[Inmovya captura]', l.fonte, l.nome, '→', r?.acao);
+      if (r?.acao === 'criado') criou = true;
+      if (tem === null) break; // WhatsApp fora do ar: não adianta testar os outros agora
+    }
+    return criou;
+  } finally {
+    agenteFilaEmCurso = false;
+  }
+}
+
 // ---------- Captura do CRM Midrah (a aba do Midrah manda os negócios novos; aqui cadastra no Inmovya) ----------
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request?.action !== 'midrah_capturar') return;
@@ -279,7 +324,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const cred = await agenteCredenciais();
     if (!cred) throw new Error('Abra o Inmovya uma vez neste Chrome (Esteiras → 1º contato) para ligar a captura.');
     const resultados = [];
+    // já cadastrados antes? pula sem abrir o WhatsApp
+    let vistos = new Set();
+    try {
+      const ids = (request.leads || []).map(l => String(l.id));
+      vistos = new Set(await agenteRpc(cred, 'agente_captura_vistos', { p_token: cred.token, p_fonte: 'Midrah', p_ids: ids }) || []);
+    } catch (_) { /* SQL novo ainda não rodado: segue conferindo */ }
     for (const l of request.leads || []) {
+      if (vistos.has(String(l.id))) {
+        resultados.push({ id: l.id, ok: true, acao: 'ja_visto' });
+        continue;
+      }
       try {
         // só cadastra quem tem WhatsApp
         const tel = agenteTelefone(l.telefone);
@@ -287,9 +342,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           resultados.push({ id: l.id, ok: true, acao: 'sem_telefone' });
           continue;
         }
-        const conf = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
+        let conf = null;
+        try {
+          conf = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
+        } catch (_) { conf = null; }
         if (conf?.temWhatsapp === false) {
           resultados.push({ id: l.id, ok: true, acao: 'sem_whatsapp' });
+          continue;
+        }
+        if (conf?.temWhatsapp !== true) {
+          // não deu para conferir (WhatsApp Web fora do ar): tenta de novo no próximo minuto
+          resultados.push({ id: l.id, ok: false, erro: 'WhatsApp Web não respondeu' });
           continue;
         }
         const r = await agenteRpc(cred, 'agente_cadastrar_lead', {
