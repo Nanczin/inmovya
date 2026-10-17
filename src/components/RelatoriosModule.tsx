@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Line, ComposedChart, ResponsiveContainer,
 import { ArrowDownRight, ArrowUpRight, Minus, Table2, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useLeads } from "@/context/LeadsContext";
+import { RegistrosComerciais } from "@/components/relatorios/RegistrosComerciais";
 import { getFunilTier, getStageForStatus, normalizeStatus, PERDIDO_STAGE_ID } from "@/lib/negociosStages";
 
 // ---------- período ----------
@@ -527,6 +528,9 @@ export function RelatoriosModule() {
           </>
         )}
       </Painel>
+
+      <h2 className="text-lg font-extrabold tracking-tight pt-2">Atendimento</h2>
+      <RegistrosComerciais inicio={j.inicio} fim={j.fim} inicioAnt={j.inicioAnt} fimAnt={j.fimAnt} corAtual={cores.atual} corVerde={cores.verde} />
 
       <h2 className="text-lg font-extrabold tracking-tight pt-2">Ligações da Oferta Ativa</h2>
       <div className="grid lg:grid-cols-2 gap-4">
