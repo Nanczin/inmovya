@@ -7,8 +7,8 @@
 // para o seu usuário, o lead existente recebe uma anotação em vez de um cadastro novo.
 //
 // Segredos (supabase secrets set ...):
-//   INMOVYA_USER_EMAIL       e-mail do seu login no Inmovya (dono dos leads)        — obrigatório
-//   INTAKE_SECRET            token para Make/Zapier e para o Bitrix (?token=...)    — obrigatório
+//   INMOVYA_USER_EMAIL       (opcional) e-mail do dono dos leads; sem ele, usa o usuário com mais leads
+//   INTAKE_SECRET            token para Make/Zapier (?token=...)
 //   INTAKE_DEFAULT_STATUS    etapa inicial (padrão "Validação")
 //   META_VERIFY_TOKEN        texto combinado na configuração do webhook da Meta
 //   META_PAGE_ACCESS_TOKEN   token da página (permissão leads_retrieval)
@@ -74,7 +74,16 @@ let cachedUserId: string | null = null;
 async function getOwnerId(supabase: SupabaseClient): Promise<string> {
   if (cachedUserId) return cachedUserId;
   const email = env("INMOVYA_USER_EMAIL").toLowerCase();
-  if (!email) throw new Error("Segredo INMOVYA_USER_EMAIL não configurado");
+  if (!email) {
+    // Sem e-mail configurado: o dono é o usuário com mais leads cadastrados
+    const { data, error } = await supabase.from("leads").select("user_id").not("user_id", "is", null).limit(5000);
+    if (error) throw error;
+    const counts: Record<string, number> = {};
+    for (const r of data ?? []) counts[r.user_id] = (counts[r.user_id] || 0) + 1;
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    if (!top) throw new Error("Não foi possível identificar o dono dos leads (configure INMOVYA_USER_EMAIL)");
+    return (cachedUserId = top[0]);
+  }
   for (let page = 1; page <= 20; page++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
     if (error) throw error;
@@ -168,7 +177,7 @@ async function fetchMetaLead(leadgenId: string): Promise<IncomingLead> {
     email,
     origem: plataforma === "ig" || plataforma === "instagram" ? "Instagram" : "Facebook",
     observacoes: obs,
-    tags: ["Meta Ads", ...(campanha ? [`Campanha: ${campanha}`] : [])],
+    tags: ["Meta Ads"],
     fonte: "Meta Ads",
   };
 }
@@ -217,9 +226,35 @@ async function fetchBitrixLead(event: string, id: string): Promise<IncomingLead>
     email,
     origem: "roleta",
     observacoes: obs,
-    tags: ["Bitrix", ...(campanha ? [`Campanha: ${campanha}`] : [])],
+    tags: ["roleta"],
     fonte: "Bitrix",
   };
+}
+
+// ---------- 2b) Bitrix por consulta periódica (sem webhook de saída) ----------
+// Chamado a cada 1 min pelo agendador (pg_cron). Importa só negócios criados nos últimos
+// BITRIX_POLL_MINUTES (padrão 30) e atribuídos ao dono do webhook de entrada.
+async function pollBitrix(supabase: SupabaseClient) {
+  const base = env("BITRIX_WEBHOOK_URL");
+  if (!base) throw new Error("Segredo BITRIX_WEBHOOK_URL não configurado");
+  const owner = (base.match(/\/rest\/(\d+)\//) ?? [])[1] ?? "";
+  const minutes = Number(env("BITRIX_POLL_MINUTES") || "30");
+  const since = new Date(Date.now() - minutes * 60000).toISOString();
+  const params: Record<string, string> = { "filter[>DATE_CREATE]": since, "order[DATE_CREATE]": "ASC" };
+  if (owner) params["filter[ASSIGNED_BY_ID]"] = owner;
+  const deals = await bitrixCall("crm.deal.list", params);
+  const userId = await getOwnerId(supabase);
+  const results = [];
+  for (const d of deals ?? []) {
+    const tag = "Bitrix #" + d.ID;
+    const { data: seen, error } = await supabase.from("leads").select("id").eq("user_id", userId).ilike("observacoes", "%" + tag + "%").limit(1);
+    if (error) throw error;
+    if (seen && seen.length) { results.push({ deal: d.ID, action: "ja_importado" }); continue; }
+    const lead = await fetchBitrixLead("ONCRMDEALADD", String(d.ID));
+    lead.observacoes = [lead.observacoes, tag].filter(Boolean).join(" | ");
+    results.push({ deal: d.ID, ...(await saveLead(supabase, lead)) });
+  }
+  return results;
 }
 
 // ---------- servidor ----------
@@ -231,7 +266,9 @@ Deno.serve(async (req) => {
   // Verificação do webhook da Meta
   if (req.method === "GET") {
     if (url.searchParams.get("hub.mode") === "subscribe") {
-      const ok = url.searchParams.get("hub.verify_token") === env("META_VERIFY_TOKEN") && env("META_VERIFY_TOKEN") !== "";
+      // Sem META_VERIFY_TOKEN configurado, aceita a verificação (os leads só são lidos com o token da sua página)
+      const expected = env("META_VERIFY_TOKEN");
+      const ok = !expected || url.searchParams.get("hub.verify_token") === expected;
       return ok ? new Response(url.searchParams.get("hub.challenge") ?? "", { status: 200 }) : new Response("forbidden", { status: 403 });
     }
     return json({ ok: true, service: "lead-intake" });
@@ -243,14 +280,20 @@ Deno.serve(async (req) => {
   const contentType = req.headers.get("content-type") ?? "";
 
   try {
+    // ---- Bitrix por consulta (agendador) ----
+    if (url.searchParams.get("action") === "poll-bitrix") {
+      const results = await pollBitrix(supabase);
+      console.log("poll-bitrix", JSON.stringify(results));
+      return json({ ok: true, results });
+    }
+
     // ---- Bitrix (form-urlencoded) ----
     if (contentType.includes("application/x-www-form-urlencoded")) {
       const form = new URLSearchParams(raw);
+      // Se BITRIX_APP_TOKEN estiver configurado, confere. Sem ele, a segurança vem do próprio Bitrix:
+      // a função só importa negócios que existem de fato na sua conta (buscados pelo webhook de entrada).
       const appToken = env("BITRIX_APP_TOKEN");
-      const tokenOk = appToken
-        ? form.get("auth[application_token]") === appToken
-        : url.searchParams.get("token") === env("INTAKE_SECRET") && env("INTAKE_SECRET") !== "";
-      if (!tokenOk) return json({ error: "token inválido" }, 401);
+      if (appToken && form.get("auth[application_token]") !== appToken) return json({ error: "token inválido" }, 401);
 
       const event = (form.get("event") ?? "").toUpperCase();
       const id = form.get("data[FIELDS][ID]") ?? "";
@@ -294,7 +337,7 @@ Deno.serve(async (req) => {
       email: body.email ? String(body.email) : "",
       origem: String(body.origem ?? "Formulário"),
       observacoes: [body.observacoes, campanha && `Campanha: ${campanha}`].filter(Boolean).join(" | "),
-      tags: [...(Array.isArray(body.tags) ? body.tags.map(String) : []), ...(campanha ? [`Campanha: ${campanha}`] : [])],
+      tags: Array.isArray(body.tags) ? body.tags.map(String) : [],
       fonte: String(body.fonte ?? "Formulário"),
     });
     return json({ ok: true, ...result });
