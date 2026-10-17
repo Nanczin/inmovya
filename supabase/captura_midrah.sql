@@ -155,7 +155,7 @@ begin
 end;
 $$;
 
--- 1º contato automático: leads do Midrah entram na regra "captura" (como Bitrix e Meta)
+-- 1º contato automático: só Bitrix e Meta. Leads do Midrah NÃO recebem (o próprio Midrah já faz o 1º contato)
 create or replace function public.agente_pendentes(p_token text)
 returns json
 language plpgsql
@@ -190,10 +190,11 @@ begin
         or (
           l.primeiro_contato_status is null
           and l.created_at >= greatest(coalesce(v_cfg.ativado_em, now()), now() - interval '3 days')
+          and lower(coalesce(l.origem, '')) <> 'midrah'
           and (
             v_cfg.quais = 'todos'
-            or exists (select 1 from unnest(coalesce(l.tags, '{}'::text[])) t where lower(t) in ('meta ads', 'bitrix', 'roleta', 'midrah'))
-            or lower(coalesce(l.origem, '')) in ('roleta', 'facebook', 'instagram', 'formulário', 'formulario', 'midrah')
+            or exists (select 1 from unnest(coalesce(l.tags, '{}'::text[])) t where lower(t) in ('meta ads', 'bitrix', 'roleta'))
+            or lower(coalesce(l.origem, '')) in ('roleta', 'facebook', 'instagram', 'formulário', 'formulario')
           )
         )
       )

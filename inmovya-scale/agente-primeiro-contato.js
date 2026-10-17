@@ -369,8 +369,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         resultados.push({ id: l.id, ok: false, erro: err.message });
       }
     }
-    // lead novo entrou: o 1º contato já pode atender
-    if (resultados.some(x => x.acao === 'criado')) agenteRodada().catch(() => {});
+    // Midrah: só cadastra. O 1º contato é feito pelo próprio Midrah (o agente não atende leads do Midrah).
     return { resultados };
   })()
     .then(r => sendResponse({ ok: true, ...r }))

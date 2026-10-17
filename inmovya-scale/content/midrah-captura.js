@@ -1,6 +1,6 @@
 // midrah-captura.js — captura de leads do CRM Midrah para o Inmovya (roda na aba do Midrah, crm.midrah.com.br).
 // A cada 1 minuto lê os SEUS negócios novos no Midrah (com o login que já está aberto no Chrome) e manda para o
-// Inmovya cadastrar (etapa Validação, origem/tag "Midrah", sem duplicar). Igual à captura do Bitrix e da Meta.
+// Inmovya cadastrar (etapa Validação, origem/tag "Midrah", sem duplicar). Não faz 1º contato: o Midrah já faz.
 // Só cadastra quem tem WhatsApp (o Scale confere o número no WhatsApp Web antes).
 // Precisa: o Midrah aberto numa aba (pode ficar em segundo plano) e o 1º contato configurado no Inmovya (token).
 (() => {
