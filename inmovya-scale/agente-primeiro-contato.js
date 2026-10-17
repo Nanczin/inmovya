@@ -271,3 +271,35 @@ async function agenteAtender(cred, cfg, lead) {
     return 'erro';
   }
 }
+
+// ---------- Captura do CRM Midrah (a aba do Midrah manda os negócios novos; aqui cadastra no Inmovya) ----------
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action !== 'midrah_capturar') return;
+  (async () => {
+    const cred = await agenteCredenciais();
+    if (!cred) throw new Error('Abra o Inmovya uma vez neste Chrome (Esteiras → 1º contato) para ligar a captura.');
+    const resultados = [];
+    for (const l of request.leads || []) {
+      try {
+        const r = await agenteRpc(cred, 'agente_cadastrar_lead', {
+          p_token: cred.token,
+          p_fonte: 'Midrah',
+          p_externo: String(l.id),
+          p_nome: l.nome || '',
+          p_telefone: l.telefone || '',
+          p_email: l.email || '',
+          p_empreendimento: l.empreendimento || ''
+        });
+        resultados.push({ id: l.id, ok: true, acao: r?.acao });
+      } catch (err) {
+        resultados.push({ id: l.id, ok: false, erro: err.message });
+      }
+    }
+    // lead novo entrou: o 1º contato já pode atender
+    if (resultados.some(x => x.acao === 'criado')) agenteRodada().catch(() => {});
+    return { resultados };
+  })()
+    .then(r => sendResponse({ ok: true, ...r }))
+    .catch(err => sendResponse({ ok: false, error: err.message }));
+  return true;
+});
