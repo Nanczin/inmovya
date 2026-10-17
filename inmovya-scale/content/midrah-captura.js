@@ -2,6 +2,7 @@
 // A cada 1 minuto lê os SEUS negócios novos no Midrah (com o login que já está aberto no Chrome) e manda para o
 // Inmovya cadastrar (etapa Validação, origem/tag "Midrah", sem duplicar). Não faz 1º contato: o Midrah já faz.
 // Só cadastra quem tem WhatsApp (o Scale confere o número no WhatsApp Web antes).
+// Roleta: quando o Midrah oferece um lead para você, o Scale pega sozinho (em até 15 s).
 // Precisa: o Midrah aberto numa aba (pode ficar em segundo plano) e o 1º contato configurado no Inmovya (token).
 (() => {
   if (window.__inmovyaMidrah) return;
@@ -126,6 +127,44 @@
     }
   }
 
+  // ---------- Roleta: pega sozinho o lead oferecido para você (o Midrah dá 10 min; aqui confere a cada 15 s) ----------
+  const ACEITOS = new Set();
+  let pegando = false;
+  async function pegarRoleta() {
+    if (pegando) return;
+    pegando = true;
+    try {
+      const s = sessao();
+      if (!s) return;
+      const apikey = await chavePublica();
+      if (!apikey) return;
+      const h = { apikey, Authorization: `Bearer ${s.access_token}` };
+      const agora = new Date().toISOString();
+      const r = await fetch(`${BASE}lead_offers?select=id,status,expires_at&user_id=eq.${s.user.id}` +
+        `&status=not.in.(aceito,expirado,recusado,passado)&expires_at=gt.${encodeURIComponent(agora)}&order=offered_at.asc&limit=5`, { headers: h });
+      if (!r.ok) return;
+      const ofertas = (await r.json()).filter(o => !ACEITOS.has(o.id));
+      for (const o of ofertas) {
+        ACEITOS.add(o.id);
+        const a = await fetch(`${BASE}rpc/roulette_accept`, {
+          method: 'POST',
+          headers: { ...h, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_offer: o.id })
+        });
+        const txt = await a.text();
+        if (a.ok) log('lead da roleta pego', o.id);
+        else { log('não consegui pegar o lead da roleta', a.status, txt.slice(0, 200)); ACEITOS.delete(o.id); }
+      }
+      if (ofertas.length) setTimeout(conferir, 3000); // já manda para o Inmovya
+    } catch (e) {
+      log('roleta: erro', e?.message || e);
+    } finally {
+      pegando = false;
+    }
+  }
+
   setTimeout(conferir, 5000);
   setInterval(conferir, INTERVALO_MS);
+  setTimeout(pegarRoleta, 3000);
+  setInterval(pegarRoleta, 15 * 1000);
 })();
