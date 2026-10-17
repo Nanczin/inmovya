@@ -561,11 +561,14 @@ export function calcularAvanco(
 
   let update: Record<string, any>;
   let concluiu = false;
-  // O card anda no Negócios junto com a esteira (ex.: enviou o passo 3 -> coluna P3)
+  // O card anda no Negócios junto com a esteira: a coluna é SEMPRE o dia em que o lead está
+  // (enviou o D1 -> card vai para a coluna do D2, que é o próximo envio). No último passo fica na coluna dele.
   const etapaDoPasso = (passoEnviado.etapa || "").trim();
+  const etapaDoProximo = (proximo?.etapa || "").trim();
   if (proximo) {
+    const coluna = etapaDoProximo || etapaDoPasso;
     update = {
-      ...(etapaDoPasso ? { status: etapaDoPasso } : {}),
+      ...(coluna ? { status: coluna } : {}),
       esteira_passo: indice + 1,
       // 2 esteiras no dia: depois da 1ª, o próximo passo fica para hoje mesmo
       // sem "2 esteiras hoje": vai sempre para o próximo dia (no mínimo 1 dia, mesmo se o passo estiver com 0)
@@ -636,9 +639,8 @@ export async function colocarNaEsteira(leadIds: string[], esteiraId: string) {
 
 /** Coloca o lead num passo escolhido da esteira (ex.: D3), com envio para hoje. */
 export async function moverParaPasso(leadIds: string[], esteiraId: string, indice: number, passos?: EsteiraPasso[]) {
-  // Se o passo anterior tem coluna no Negócios (ex.: P2), o card vai para ela (já "recebeu" até ali)
-  const anterior = passos && indice > 0 ? passos[indice - 1] : null;
-  const etapa = (anterior?.etapa || "").trim();
+  // O card vai para a coluna do dia escolhido (ex.: D2 -> coluna P2), com envio hoje
+  const etapa = ((passos && passos[Math.max(0, indice)]?.etapa) || "").trim();
   for (let i = 0; i < leadIds.length; i += 200) {
     const chunk = leadIds.slice(i, i + 200);
     const { error } = await supabase

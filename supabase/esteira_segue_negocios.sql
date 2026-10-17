@@ -43,7 +43,11 @@ begin
 
   if v_esteira is not null then
     -- mesma esteira em outro passo, ou outra esteira: vai para o passo da coluna, ainda NÃO enviado, para hoje
-    if new.esteira_id is distinct from v_esteira or coalesce(new.esteira_passo, 0) <> v_idx then
+    -- já está nesse dia (ou já recebeu o último e está aguardando resposta na coluna dele): não mexe
+    if new.esteira_id is distinct from v_esteira
+       or (coalesce(new.esteira_passo, 0) <> v_idx
+           and not (coalesce(new.esteira_passo, 0) >= v_idx + 1
+                    and v_idx = (select count(*) - 1 from public.esteira_passos where esteira_id = v_esteira))) then
       new.esteira_id := v_esteira;
       new.esteira_passo := v_idx;
       new.esteira_proximo := now();

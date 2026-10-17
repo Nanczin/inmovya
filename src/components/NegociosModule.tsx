@@ -172,7 +172,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     try {
       const ids = Array.from(selectedIds);
       const indice = Math.min(Math.max(parseInt(bulkPasso) || 0, 0), Math.max(passosBulk.length - 1, 0));
-      if (indice > 0) await moverParaPasso(ids, bulkEsteira, indice, passosBulk as any);
+      if (passosBulk.length) await moverParaPasso(ids, bulkEsteira, indice, passosBulk as any);
       else await colocarNaEsteira(ids, bulkEsteira);
       const nome = esteirasLista.find((e) => e.id === bulkEsteira)?.nome || "esteira";
       const passo = passosBulk[indice]?.titulo || `Passo ${indice + 1}`;
@@ -255,6 +255,9 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       toast({ title: "Erro ao mover", description: "Não foi possível alterar a etapa do lead.", variant: "destructive" });
       return;
     }
+    // o banco põe a esteira no dia da coluna: traz o passo atualizado para o card
+    const { data: atual } = await supabase.from("leads").select("esteira_id, esteira_passo, esteira_proximo").eq("id", leadId).maybeSingle();
+    if (atual) updateLead(leadId, atual as any);
     toast({ title: "Etapa atualizada", description: `${lead.nome} → ${stage.name}` });
   };
 
@@ -317,6 +320,7 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
       }
       toast({ title: "Negócios movidos", description: `${ids.length} lead(s) → ${stage.name}` });
       exitSelectMode();
+      await refreshLeads();
     } catch (err: any) {
       console.error("Erro ao mover negócios:", err);
       previous.forEach((status, id) => updateLead(id, { status: status || "" }));

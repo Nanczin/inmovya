@@ -1,7 +1,7 @@
 -- FIM DE ESTEIRA NO SERVIDOR + MOVER COLUNA NÃO CONTA COMO ENVIO
 -- Rode no Supabase (SQL Editor → colar tudo → Run). Pode rodar mais de uma vez sem problema.
 --
--- 1) Mover o card de coluna (ex.: P1 → P2) NÃO marca passo como enviado.
+-- 1) A coluna do card é o dia da esteira: arrastar para P3 põe a esteira no D3 (envio hoje), sem marcar nada como enviado.
 -- 2) De hora em hora o banco finaliza, sozinho, quem passou do prazo depois do ÚLTIMO passo sem responder:
 --    move para "Ao terminar sem resposta, mover para" (ex.: Lista fria), acrescenta as
 --    "Etiquetas ao terminar sem resposta" (ex.: disparo) sem tirar as que já existem e tira da esteira.
@@ -39,7 +39,7 @@ begin
     end if;
   end if;
 
-  -- a) coluna de um passo (ex.: P2)
+  -- a) coluna de um passo (ex.: P2) — prefere a esteira em que o lead já está
   select p.esteira_id, p.idx into v_esteira, v_idx
   from (
     select ep.esteira_id, ep.etapa,
@@ -54,28 +54,30 @@ begin
   limit 1;
 
   if v_esteira is not null then
-    if new.esteira_id = v_esteira then
-      -- mesma esteira: só o card muda de coluna. NÃO conta como passo enviado (antes pulava o envio do dia).
-      return new;
+    -- mesma esteira em outro passo, ou outra esteira: vai para o passo da coluna, ainda NÃO enviado, para hoje
+    -- já está nesse dia (ou já recebeu o último e está aguardando resposta na coluna dele): não mexe
+    if new.esteira_id is distinct from v_esteira
+       or (coalesce(new.esteira_passo, 0) <> v_idx
+           and not (coalesce(new.esteira_passo, 0) >= v_idx + 1
+                    and v_idx = (select count(*) - 1 from public.esteira_passos where esteira_id = v_esteira))) then
+      new.esteira_id := v_esteira;
+      new.esteira_passo := v_idx;
+      new.esteira_proximo := now();
     end if;
-    -- fora da esteira (ou em outra): entra nesta esteira NO passo da coluna, ainda NÃO enviado, para hoje
-    new.esteira_id := v_esteira;
-    new.esteira_passo := v_idx;
-    new.esteira_proximo := now();
     return new;
   end if;
 
-  -- b) coluna de entrada de uma esteira (ex.: Primeiro impacto, 20%, 50%): entra no 1º passo
+  -- b) coluna de entrada de uma esteira (ex.: Primeiro impacto, 20%, 50%): 1º passo
   select e.id into v_esteira
   from public.esteiras e
   where e.user_id = new.user_id
     and e.etapa is not null
     and lower(trim(e.etapa)) = lower(trim(coalesce(new.status, '')))
-  order by e.ordem, e.created_at
+  order by (e.id = new.esteira_id) desc nulls last, e.ordem, e.created_at
   limit 1;
 
   if v_esteira is not null then
-    if new.esteira_id is distinct from v_esteira then
+    if new.esteira_id is distinct from v_esteira or coalesce(new.esteira_passo, 0) <> 0 then
       new.esteira_id := v_esteira;
       new.esteira_passo := 0;
       new.esteira_proximo := now();
