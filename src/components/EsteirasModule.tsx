@@ -321,7 +321,19 @@ export function EsteirasModule() {
     });
     return Array.from(m.values()).sort((a, b) => a.passo.ordem - b.passo.ordem);
   }, [filaDaEsteira, filtroEsteira, estado]);
-  const filaVisivel = filtroPasso === "todos" ? filaDaEsteira : filaDaEsteira.filter((i) => i.passo.id === filtroPasso);
+  // Vindo do Negócios ("Executar esteira" de uma coluna): mostra só os leads daquela coluna
+  const [filtroColuna, setFiltroColuna] = useState<string | null>(() => {
+    try {
+      const v = sessionStorage.getItem("inmovya_esteira_coluna");
+      sessionStorage.removeItem("inmovya_esteira_coluna");
+      return v || null;
+    } catch {
+      return null;
+    }
+  });
+  const colunaAlvo = filtroColuna ? getStageForStatus(filtroColuna) : null;
+  const filaPorPasso = filtroPasso === "todos" ? filaDaEsteira : filaDaEsteira.filter((i) => i.passo.id === filtroPasso);
+  const filaVisivel = colunaAlvo ? filaPorPasso.filter((i) => getStageForStatus(i.lead.status)?.id === colunaAlvo.id) : filaPorPasso;
   // "Só colar" do Scale agora também entra no envio: a mensagem pode ser personalizada aqui antes de rodar
   const filaAuto = filaVisivel;
   const filaManual: ItemFila[] = [];
@@ -934,6 +946,16 @@ export function EsteirasModule() {
             </div>
           ) : (
             <>
+              {colunaAlvo && (
+                <div className="rounded-xl border border-primary/30 bg-primary/[0.06] px-4 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+                  <span>
+                    Executando a esteira da coluna <b>{colunaAlvo.name}</b> do Negócios — {filaVisivel.length} lead(s) com envio para hoje. Confira e clique em <b>Enviar</b> ou <b>Só colar</b>.
+                  </span>
+                  <Button size="sm" variant="ghost" className="h-7 ml-auto" disabled={rodando} onClick={() => setFiltroColuna(null)}>
+                    Ver todas as colunas
+                  </Button>
+                </div>
+              )}
               <div className="rounded-2xl border bg-card p-4 shadow-card flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">

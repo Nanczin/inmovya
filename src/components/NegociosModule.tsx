@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow, ShieldCheck, MoreHorizontal, Clock, UserPlus, Users } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow, ShieldCheck, MoreHorizontal, Clock, UserPlus, Users, Play } from "lucide-react";
 import { LeadPainel } from "@/components/leads/LeadPainel";
 import { ConferenciaWhatsAppDialog } from "@/components/ConferenciaWhatsAppDialog";
 import { LeadTimeline } from "@/components/LeadTimeline";
@@ -76,6 +76,15 @@ const proximoLembrete = (lead: Lead) => {
 };
 
 export function NegociosModule({ onNavigate }: NegociosModuleProps) {
+  // Botão da coluna: abre Esteiras → Hoje só com os leads desta coluna
+  const executarEsteiraDaColuna = (status: string) => {
+    try {
+      sessionStorage.setItem("inmovya_esteira_coluna", status);
+    } catch {
+      /* sem sessionStorage: abre com todas */
+    }
+    onNavigate?.("esteiras");
+  };
   const { leads, updateLead, refreshLeads } = useLeads();
   const { toast } = useToast();
 
@@ -626,6 +635,11 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   const renderColumn = (stage: NegocioStage, accent: string) => {
     const stageLeads = leadsByStage[stage.id] || [];
     const isValidacao = stage.id === VALIDACAO_STAGE_ID;
+    const fimHoje = new Date();
+    fimHoje.setHours(23, 59, 59, 999);
+    const naEsteiraHoje = stageLeads.filter(
+      (l: any) => l.esteira_id && l.esteira_proximo && new Date(l.esteira_proximo).getTime() <= fimHoje.getTime()
+    ).length;
     return (
       <div
         key={stage.id}
@@ -670,6 +684,16 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           </div>
           {isValidacao && (
             <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
+          )}
+          {!isValidacao && !selectMode && naEsteiraHoje > 0 && (
+            <button
+              type="button"
+              onClick={() => executarEsteiraDaColuna(stage.value)}
+              className="mt-1.5 w-full inline-flex items-center justify-center gap-1 rounded-lg bg-success/[0.12] text-success hover:bg-success/20 text-[11px] font-bold py-1"
+              title={`Abrir as esteiras de hoje só com os leads de ${stage.name}`}
+            >
+              <Play className="w-3 h-3" /> Executar esteira ({naEsteiraHoje})
+            </button>
           )}
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden pl-2 pr-1.5 pb-2 flex flex-col gap-2 [scrollbar-gutter:stable] [scrollbar-width:thin]">
