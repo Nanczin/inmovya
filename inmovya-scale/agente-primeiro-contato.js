@@ -376,3 +376,52 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     .catch(err => sendResponse({ ok: false, error: err.message }));
   return true;
 });
+
+
+// ---------- Roleta do Midrah: pega sozinho o lead oferecido para você ----------
+// A aba do Midrah guarda o login (midrahSessao); aqui confere a cada 30 s, mesmo com a aba em segundo plano.
+// Ao instalar/atualizar a extensão, injeta de novo o script nas abas do Midrah já abertas (sem precisar dar F5).
+const ROLETA_ALARME = 'inmovya-roleta-midrah';
+const ROLETA_BASE = 'https://inckgllwamnbnqoldngz.supabase.co/rest/v1/';
+function roletaGarantir() {
+  chrome.alarms.get(ROLETA_ALARME, a => {
+    if (!a) chrome.alarms.create(ROLETA_ALARME, { periodInMinutes: 0.5, delayInMinutes: 0.1 });
+  });
+}
+async function roletaReinjetar() {
+  try {
+    const abas = await chrome.tabs.query({ url: 'https://crm.midrah.com.br/*' });
+    for (const t of abas) {
+      chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['content/midrah-captura.js'] }).catch(() => {});
+    }
+  } catch (_) { /* sem permissão: vale no próximo F5 */ }
+}
+roletaGarantir();
+chrome.runtime.onInstalled.addListener(() => { roletaGarantir(); roletaReinjetar(); });
+chrome.runtime.onStartup.addListener(roletaGarantir);
+
+const roletaFeitas = new Set();
+async function roletaConferir() {
+  const { midrahSessao: s } = await chrome.storage.local.get('midrahSessao');
+  if (!s?.token || !s.apikey) return;
+  if (s.expira && s.expira * 1000 < Date.now() + 15000) return; // login vencido: a aba renova quando estiver aberta
+  const h = { apikey: s.apikey, Authorization: `Bearer ${s.token}` };
+  const agora = encodeURIComponent(new Date().toISOString());
+  const r = await fetch(`${ROLETA_BASE}lead_offers?select=id,status,expires_at&user_id=eq.${s.usuario}` +
+    `&status=not.in.(aceito,expirado,recusado,passado)&expires_at=gt.${agora}&order=offered_at.asc&limit=5`, { headers: h });
+  if (!r.ok) return;
+  for (const o of await r.json()) {
+    if (roletaFeitas.has(o.id)) continue;
+    roletaFeitas.add(o.id);
+    const a = await fetch(`${ROLETA_BASE}rpc/roulette_accept`, {
+      method: 'POST',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_offer: o.id })
+    });
+    if (a.ok) console.log('[Inmovya roleta] lead pego', o.id);
+    else { console.warn('[Inmovya roleta] não pegou', a.status, (await a.text()).slice(0, 200)); roletaFeitas.delete(o.id); }
+  }
+}
+chrome.alarms.onAlarm.addListener(alarme => {
+  if (alarme.name === ROLETA_ALARME) roletaConferir().catch(err => console.warn('[Inmovya roleta]', err?.message || err));
+});

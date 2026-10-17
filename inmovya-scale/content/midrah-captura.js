@@ -2,11 +2,15 @@
 // A cada 1 minuto lê os SEUS negócios novos no Midrah (com o login que já está aberto no Chrome) e manda para o
 // Inmovya cadastrar (etapa Validação, origem/tag "Midrah", sem duplicar). Não faz 1º contato: o Midrah já faz.
 // Só cadastra quem tem WhatsApp (o Scale confere o número no WhatsApp Web antes).
-// Roleta: quando o Midrah oferece um lead para você, o Scale pega sozinho (em até 15 s).
+// Roleta: quando o Midrah oferece um lead para você, o Scale pega sozinho (aba: a cada 10 s; extensão: a cada 30 s).
 // Precisa: o Midrah aberto numa aba (pode ficar em segundo plano) e o 1º contato configurado no Inmovya (token).
 (() => {
-  if (window.__inmovyaMidrah) return;
-  window.__inmovyaMidrah = true;
+  // Uma cópia viva por aba: quando a extensão é recarregada, a cópia nova assume e a antiga para sozinha.
+  const MEU_ID = `${chrome.runtime.id}:${Date.now()}:${Math.random()}`;
+  document.documentElement.dataset.inmovyaMidrah = MEU_ID;
+  const souOAtual = () => {
+    try { return document.documentElement.dataset.inmovyaMidrah === MEU_ID && !!chrome.runtime?.id; } catch (_) { return false; }
+  };
 
   const PROJETO = 'inckgllwamnbnqoldngz';
   const BASE = `https://${PROJETO}.supabase.co/rest/v1/`;
@@ -47,6 +51,7 @@
 
   let rodando = false;
   async function conferir() {
+    if (!souOAtual()) return;
     if (rodando) return;
     rodando = true;
     try {
@@ -131,6 +136,7 @@
   const ACEITOS = new Set();
   let pegando = false;
   async function pegarRoleta() {
+    if (!souOAtual()) return;
     if (pegando) return;
     pegando = true;
     try {
@@ -138,6 +144,10 @@
       if (!s) return;
       const apikey = await chavePublica();
       if (!apikey) return;
+      // deixa o login do Midrah com a extensão: ela também confere a roleta a cada 30 s, mesmo com esta aba parada
+      await chrome.storage.local.set({
+        midrahSessao: { token: s.access_token, expira: s.expires_at || 0, usuario: s.user.id, apikey }
+      });
       const h = { apikey, Authorization: `Bearer ${s.access_token}` };
       const agora = new Date().toISOString();
       const r = await fetch(`${BASE}lead_offers?select=id,status,expires_at&user_id=eq.${s.user.id}` +
@@ -166,5 +176,6 @@
   setTimeout(conferir, 5000);
   setInterval(conferir, INTERVALO_MS);
   setTimeout(pegarRoleta, 3000);
-  setInterval(pegarRoleta, 15 * 1000);
+  setInterval(pegarRoleta, 10 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pegarRoleta(); });
 })();
