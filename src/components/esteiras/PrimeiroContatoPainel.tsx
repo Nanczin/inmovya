@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Bot, CheckCircle2, Loader2, RefreshCw, RotateCcw, Shuffle, Sparkles } from "lucide-react";
+import { AlertTriangle, Bot, Trash2, CheckCircle2, Loader2, RefreshCw, RotateCcw, Shuffle, Sparkles } from "lucide-react";
 import { checarExtensao, extensaoAtualizada, versaoExtensao } from "@/lib/esteiras";
 import {
   ConfigPrimeiroContato,
@@ -20,6 +20,7 @@ import {
   colocarNaFila,
   lerFilaAgente,
   tirarDaFila,
+  limparFila,
   exemploDeMensagem,
   lerHistoricoAgente,
   contarVariacoes,
@@ -193,6 +194,23 @@ export function PrimeiroContatoPainel() {
     }
   };
 
+  const limparTudo = async () => {
+    const ids = fila.filter((l) => l.situacao !== "atendendo").map((l) => l.id);
+    if (!ids.length) return;
+    if (!window.confirm(`Limpar a fila do 1º contato? ${ids.length} lead(s) que ainda não receberam saem da lista e não serão chamados. Quem já recebeu não muda.`)) return;
+    setMexendo("limpar");
+    try {
+      await limparFila(ids);
+      setSelecionados(new Set());
+      toast({ title: "Fila limpa", description: `${ids.length} lead(s) tirado(s). Os próximos leads que chegarem entram normalmente.` });
+      await recarregar();
+    } catch (e: any) {
+      toast({ title: "Não consegui limpar a fila", description: e?.message, variant: "destructive" });
+    } finally {
+      setMexendo(null);
+    }
+  };
+
   if (erroBanco && !cfg) {
     return <div className="max-w-xl rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">{erroBanco}</div>;
   }
@@ -280,6 +298,12 @@ export function PrimeiroContatoPainel() {
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-semibold text-sm">Leads que ainda não receberam ({fila.length})</h3>
           <span className="text-xs text-muted-foreground">últimos 7 dias · selecione para atender ou tirar da fila</span>
+          {fila.some((l) => l.situacao !== "atendendo") && (
+            <Button size="sm" variant="outline" className="h-8 ml-auto text-destructive hover:text-destructive" disabled={!!mexendo} onClick={limparTudo}>
+              {mexendo === "limpar" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+              Limpar fila
+            </Button>
+          )}
         </div>
         {fila.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 p-2">

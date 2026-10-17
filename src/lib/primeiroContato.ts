@@ -309,6 +309,21 @@ export async function tirarDaFila(leadIds: string[]) {
   if (error) throw error;
 }
 
+export const LIMPO_DA_FILA = "fila limpa por você";
+
+/** Limpa a fila inteira: ninguém que ainda não recebeu será chamado e a lista fica vazia (quem já recebeu não muda). */
+export async function limparFila(leadIds: string[]) {
+  if (!leadIds.length) return;
+  for (let i = 0; i < leadIds.length; i += 200) {
+    const { error } = await supabase
+      .from("leads")
+      .update({ primeiro_contato_status: "pulado", primeiro_contato_erro: LIMPO_DA_FILA, primeiro_contato_em: new Date().toISOString() } as any)
+      .in("id", leadIds.slice(i, i + 200))
+      .or("primeiro_contato_status.is.null,primeiro_contato_status.neq.enviado");
+    if (error) throw error;
+  }
+}
+
 export const retentarLead = (leadId: string) => colocarNaFila([leadId]);
 
 /** Faz o agente atender também quem chegou antes de ligar (até 3 dias atrás). */
