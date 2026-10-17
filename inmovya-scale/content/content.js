@@ -143,6 +143,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'campaign_auto_send') {
     (async () => {
+      // Trava anti-duplicado: a mesma mensagem (envioId) nunca sai duas vezes nesta aba, mesmo se o
+      // background tentar de novo depois de um erro de confirmação.
+      const chaveEnvio = request.envioId ? `inmovya_envio_${request.envioId}` : '';
+      const jaFoi = () => { try { return !!(chaveEnvio && sessionStorage.getItem(chaveEnvio)); } catch (_) { return false; } };
+      const marcarEnviado = () => {
+        if (!chaveEnvio) return;
+        try { sessionStorage.setItem(chaveEnvio, '1'); } catch (_) { /* ignore */ }
+        try { chrome.runtime.sendMessage({ action: 'campaign_sent_mark', envioId: request.envioId }); } catch (_) { /* ignore */ }
+      };
+      if (jaFoi()) { sendResponse({ ok: true, jaEnviado: true }); return; }
+      const saidas = () => document.querySelectorAll('#main .message-out').length;
+      let saidasAntes = null;
       try {
         window.IS.WhatsAppDOM.ultimoErro = '';
         let input = await window.IS.WhatsAppDOM.waitForMessageInput(30000);
@@ -178,15 +190,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             useCaption: !!item.useCaption
           });
         });
-        const sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
-          request.text || '',
-          attachments,
-          {
-            sendSingleText: true,
-            gapMinMs: Number(request.gapMinMs) || 0,
-            gapMaxMs: Number(request.gapMaxMs) || 0
-          }
-        );
+        saidasAntes = saidas();
+        let sent = false;
+        try {
+          sent = await window.IS.WhatsAppDOM.insertSequenceAndAttachments(
+            request.text || '',
+            attachments,
+            {
+              sendSingleText: true,
+              gapMinMs: Number(request.gapMinMs) || 0,
+              gapMaxMs: Number(request.gapMaxMs) || 0
+            }
+          );
+        } finally {
+          await window.IS.WhatsAppDOM.delay(800);
+          // saiu mensagem nova na conversa? então FOI enviada (mesmo que a confirmação tenha falhado): não reenvia
+          if (sent || saidas() > saidasAntes) marcarEnviado();
+        }
+        if (!sent && saidas() > saidasAntes) sent = true;
         if (!sent) throw new Error(window.IS.WhatsAppDOM.ultimoErro || 'O WhatsApp não confirmou o envio da campanha.');
 
         // Espera o WhatsApp terminar de mandar (relógio/upload sumir) antes de a aba ser fechada;
@@ -203,6 +224,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ ok: true });
       } catch (error) {
         window.IS.error('Falha no disparo da campanha', error);
+        if (jaFoi()) { sendResponse({ ok: true, jaEnviado: true, aviso: error.message }); return; }
         sendResponse({ ok: false, error: error.message });
       }
     })();

@@ -165,7 +165,17 @@ function agenteEtiquetaDaOrigem(lead) {
 async function agenteSalvarEEtiquetar(tel, lead) {
   const etiqueta = agenteEtiquetaDaOrigem(lead);
   try {
-    const r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: lead.nome || '', etiqueta }, 'agent_save_and_label_tab'));
+    let r = null;
+    try {
+      r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: lead.nome || '', etiqueta }, 'agent_save_and_label_tab'));
+    } catch (_) { r = null; }
+    const etiquetaOk = r?.etiqueta && r.etiqueta.ok !== false;
+    // não salvou na janelinha do canto? tenta de novo numa aba normal (o WhatsApp estreito às vezes esconde o botão)
+    if (!r || (r.contato && !r.contato.salvo && !r.contato.jaEstava)) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const r2 = await naVezWA(() => agenteNaConversa({ phone: tel, background: false, nome: lead.nome || '', etiqueta: etiquetaOk ? null : etiqueta }, 'agent_save_and_label_tab'));
+      r = { contato: r2?.contato || r?.contato, etiqueta: etiquetaOk ? r.etiqueta : (r2?.etiqueta || r?.etiqueta) };
+    }
     const problemas = [];
     if (r?.contato && !r.contato.salvo) problemas.push(`contato de ${lead.nome || tel} não foi salvo (${r.contato.motivo})`);
     else if (r?.contato?.salvo && r.contato.sincronizado === false && !r.contato.jaEstava)

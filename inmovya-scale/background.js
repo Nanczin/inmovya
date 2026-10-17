@@ -66,7 +66,14 @@ async function abrirJanelaDeEnvio(url) {
   return { tab, windowId: win.id };
 }
 
+// envios que o WhatsApp já mandou (marcados pela aba): nunca repetir
+const enviosJaFeitos = new Set();
+chrome.runtime.onMessage.addListener(request => {
+  if (request?.action === 'campaign_sent_mark' && request.envioId) enviosJaFeitos.add(request.envioId);
+});
+
 async function sendCampaignMessage(request, returnTabId = null) {
+  const envioId = request.envioId || crypto.randomUUID();
   const phone = String(request.phone || '').replace(/\D/g, '');
   if (!phone) throw new Error('Telefone inválido.');
   const url = `https://web.whatsapp.com/send?phone=${phone}&inmovya_auto=1`;
@@ -100,14 +107,18 @@ async function sendCampaignMessage(request, returnTabId = null) {
           // anexos das esteiras do Inmovya (qualquer tipo de arquivo, já em base64)
           attachments: Array.isArray(request.attachments) ? request.attachments : [],
           gapMinMs: Number(request.gapMinMs) || 0,
-          gapMaxMs: Number(request.gapMaxMs) || 0
+          gapMaxMs: Number(request.gapMaxMs) || 0,
+          envioId
         });
         if (response?.ok) return response;
+        if (enviosJaFeitos.has(envioId)) return { ok: true, jaEnviado: true };
         lastError = new Error(response?.error || 'Envio não confirmado.');
       } catch (error) {
         lastError = error;
+        if (enviosJaFeitos.has(envioId)) return { ok: true, jaEnviado: true };
       }
       await new Promise(resolve => setTimeout(resolve, 1000));
+      if (enviosJaFeitos.has(envioId)) return { ok: true, jaEnviado: true };
     }
     throw lastError || new Error('A extensão não conseguiu concluir o envio.');
   } finally {
