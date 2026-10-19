@@ -1267,7 +1267,7 @@ export function LigacoesModule() {
       </Dialog>
 
       {/* Lista Selection */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 sm:gap-4">
         {listas.map((lista) => (
           <Card
             key={lista.id}
@@ -1294,25 +1294,25 @@ export function LigacoesModule() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2 mt-2">
+                <div className="flex items-center gap-2 mt-2 min-w-0">
                   <Button
                     variant="default"
                     size="sm"
-                    className="flex-1 text-xs sm:text-sm"
+                    className="flex-1 min-w-0 text-xs sm:text-sm px-2"
                     disabled={isRequestingOffer}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleSolicitarOferta(lista.id);
                     }}
                   >
-                    <Mail className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                    {isRequestingOffer ? 'Carregando...' : 'Solicitar Oferta'}
+                    <Mail className="w-3 h-3 sm:w-4 sm:h-4 mr-1.5 shrink-0" />
+                    <span className="truncate">{isRequestingOffer ? 'Carregando...' : 'Solicitar Oferta'}</span>
                   </Button>
                   
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm px-2"
+                    className="shrink-0 h-9 w-9 p-0"
                     title="Baixar lista em CSV"
                     onClick={(e) => handleDownloadLista(lista, e)}
                   >
@@ -1322,7 +1322,7 @@ export function LigacoesModule() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-xs sm:text-sm px-2"
+                    className="shrink-0 h-9 w-9 p-0"
                     title="Resetar progresso e começar do início"
                     onClick={(e) => handleResetarProgresso(lista.id, e)}
                   >
