@@ -302,15 +302,18 @@ async function aceitarRoletaBitrix(owner: string) {
 }
 
 // ---------- 2b) Bitrix por consulta periódica (sem webhook de saída) ----------
-// Chamado a cada 1 min pelo agendador (pg_cron). Importa só negócios criados nos últimos
-// BITRIX_POLL_MINUTES (padrão 30) e atribuídos ao dono do webhook de entrada.
+// Chamado a cada 1 min pelo agendador (pg_cron). Importa os negócios criados nos últimos
+// BITRIX_POLL_MINUTES (padrão 3 dias) que estão atribuídos ao dono do webhook de entrada.
 async function pollBitrix(supabase: SupabaseClient) {
   const base = env("BITRIX_WEBHOOK_URL");
   if (!base) throw new Error("Segredo BITRIX_WEBHOOK_URL não configurado");
   const owner = (base.match(/\/rest\/(\d+)\//) ?? [])[1] ?? "";
-  const minutes = Number(env("BITRIX_POLL_MINUTES") || "30");
+  // Olha os negócios criados nos últimos 3 dias que estão com você (não só os últimos 30 min):
+  // o da roleta pode ser passado para você bem depois de criado (outro corretor perdeu).
+  // Quem já entrou (tag "Bitrix #ID" no Inmovya ou na fila) é pulado.
+  const minutes = Number(env("BITRIX_POLL_MINUTES") || String(3 * 24 * 60));
   const since = new Date(Date.now() - minutes * 60000).toISOString();
-  const params: Record<string, string> = { "filter[>DATE_CREATE]": since, "order[DATE_CREATE]": "ASC" };
+  const params: Record<string, string> = { "filter[>DATE_CREATE]": since, "order[DATE_CREATE]": "DESC" };
   if (owner) params["filter[ASSIGNED_BY_ID]"] = owner;
   // primeiro aceita o que está esperando na roleta (vale mais que importar)
   let aceitos: { deal: string; action: string }[] = [];
