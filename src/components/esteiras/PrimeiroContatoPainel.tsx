@@ -538,33 +538,6 @@ export function PrimeiroContatoPainel() {
         )}
       </div>
 
-      {/* Histórico */}
-      <div className="rounded-lg border bg-white p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-sm">Últimos atendimentos</h3>
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={recarregar}>
-            <RefreshCw className="w-3 h-3 mr-1" /> Atualizar
-          </Button>
-        </div>
-        {historico.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum ainda. Quando um lead novo chegar, ele aparece aqui.</p>
-        ) : (
-          <ul className="divide-y">
-            {historico.map((r) => (
-              <li key={r.leadId} className="py-2 text-sm space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`text-xs rounded-full border px-2 py-0.5 ${COR[r.status] || ""}`}>{r.status}</span>
-                  <span className="font-medium">{r.nome}</span>
-                  <span className="text-xs text-muted-foreground">{r.telefone}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">{hora(r.em)}</span>
-                </div>
-                {r.detalhe && <div className="text-xs text-muted-foreground">{r.detalhe}</div>}
-                {r.texto && r.status === "enviado" && <div className="text-xs whitespace-pre-wrap rounded bg-muted/50 p-2">{r.texto}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }
