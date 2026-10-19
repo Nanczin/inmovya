@@ -248,6 +248,59 @@ async function fetchBitrixLead(event: string, id: string): Promise<IncomingLead>
   };
 }
 
+// ---------- 2a) Roleta do Bitrix: aceita sozinho ----------
+// O lead da roleta chega na etapa "Fila de atendimento" atribuído a você; se não for para "Primeiro contato"
+// em ~10 min, o Bitrix tira de você. A cada minuto, move para "Primeiro contato" (= aceitar) os seus negócios
+// que estão na fila. Funciona 24 h (servidor), sem depender do computador.
+let etapasRoleta: { fila: string; primeiro: string }[] | null = null;
+async function etapasDaRoleta() {
+  if (etapasRoleta) return etapasRoleta;
+  const sem = (t: string) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const todas: any[] = (await bitrixCall("crm.status.list", { "filter[ENTITY_ID]": "DEAL_STAGE" })) ?? [];
+  // funis extras (DEAL_STAGE_1, DEAL_STAGE_2...)
+  const cats: any[] = (await bitrixCall("crm.dealcategory.list", {}).catch(() => [])) ?? [];
+  for (const c of cats) {
+    const r = await bitrixCall("crm.status.list", { "filter[ENTITY_ID]": `DEAL_STAGE_${c.ID}` }).catch(() => []);
+    todas.push(...(r ?? []));
+  }
+  const porFunil = new Map<string, { fila?: string; primeiro?: string }>();
+  for (const st of todas) {
+    const nome = sem(st.NAME);
+    const f = porFunil.get(st.ENTITY_ID) ?? {};
+    if (nome.includes("fila de atendimento")) f.fila = st.STATUS_ID;
+    if (nome.includes("primeiro contato")) f.primeiro = st.STATUS_ID;
+    porFunil.set(st.ENTITY_ID, f);
+  }
+  etapasRoleta = Array.from(porFunil.values()).filter((f) => f.fila && f.primeiro) as { fila: string; primeiro: string }[];
+  return etapasRoleta;
+}
+
+async function aceitarRoletaBitrix(owner: string) {
+  if (!owner || env("BITRIX_AUTO_ACEITAR") === "nao") return [];
+  const aceitos: { deal: string; action: string }[] = [];
+  const etapas = await etapasDaRoleta();
+  if (!etapas.length) {
+    etapasRoleta = null; // tenta achar de novo na próxima
+    return [{ deal: "-", action: "roleta_sem_etapas" }];
+  }
+  for (const e of etapas) {
+    const deals = (await bitrixCall("crm.deal.list", {
+      "filter[STAGE_ID]": e.fila,
+      "filter[ASSIGNED_BY_ID]": owner,
+      "select[]": "ID",
+    })) ?? [];
+    for (const d of deals) {
+      try {
+        await bitrixCall("crm.deal.update", { id: String(d.ID), "fields[STAGE_ID]": e.primeiro });
+        aceitos.push({ deal: String(d.ID), action: "aceito_roleta" });
+      } catch (err) {
+        aceitos.push({ deal: String(d.ID), action: `erro_aceitar: ${err instanceof Error ? err.message : err}` });
+      }
+    }
+  }
+  return aceitos;
+}
+
 // ---------- 2b) Bitrix por consulta periódica (sem webhook de saída) ----------
 // Chamado a cada 1 min pelo agendador (pg_cron). Importa só negócios criados nos últimos
 // BITRIX_POLL_MINUTES (padrão 30) e atribuídos ao dono do webhook de entrada.
@@ -259,6 +312,13 @@ async function pollBitrix(supabase: SupabaseClient) {
   const since = new Date(Date.now() - minutes * 60000).toISOString();
   const params: Record<string, string> = { "filter[>DATE_CREATE]": since, "order[DATE_CREATE]": "ASC" };
   if (owner) params["filter[ASSIGNED_BY_ID]"] = owner;
+  // primeiro aceita o que está esperando na roleta (vale mais que importar)
+  let aceitos: { deal: string; action: string }[] = [];
+  try {
+    aceitos = await aceitarRoletaBitrix(owner);
+  } catch (err) {
+    aceitos = [{ deal: "-", action: `erro_roleta: ${err instanceof Error ? err.message : err}` }];
+  }
   const deals = await bitrixCall("crm.deal.list", params);
   const userId = await getOwnerId(supabase);
   const results = [];
@@ -274,7 +334,7 @@ async function pollBitrix(supabase: SupabaseClient) {
     lead.observacoes = [lead.observacoes, tag].filter(Boolean).join(" | ");
     results.push({ deal: d.ID, ...(await saveLead(supabase, lead)) });
   }
-  return results;
+  return [...aceitos, ...results];
 }
 
 // ---------- servidor ----------
