@@ -65,6 +65,7 @@ import {
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { PrimeiroContatoPainel } from "@/components/esteiras/PrimeiroContatoPainel";
+import { RelatorioPrimeiroContato } from "@/components/esteiras/RelatorioPrimeiroContato";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/whatsappOcupado";
 import {
@@ -934,7 +935,8 @@ export function EsteirasModule() {
           </span>
         </div>
 
-        <TabsContent value="primeiro" className="mt-4">
+        <TabsContent value="primeiro" className="mt-4 space-y-4">
+          <RelatorioPrimeiroContato />
           <PrimeiroContatoPainel />
         </TabsContent>
 
