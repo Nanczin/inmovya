@@ -91,7 +91,8 @@ export function AppSidebar({ activeModule, onModuleChange }: AppSidebarProps) {
           className={`relative h-[34px] rounded-lg font-medium text-[13.5px] transition-colors
             text-sidebar-foreground hover:bg-sidebar-accent hover:text-white
             data-[active=true]:bg-sidebar-accent data-[active=true]:text-white
-            ${ativo ? "before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-sidebar-primary" : ""}`}
+            group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:mx-auto
+            ${ativo && !recolhido ? "before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-sidebar-primary" : ""}`}
         >
           <Icon className={`w-[18px] h-[18px] ${ativo ? "text-sidebar-primary" : ""}`} />
           {!recolhido && <span>{item.label}</span>}
@@ -102,28 +103,31 @@ export function AppSidebar({ activeModule, onModuleChange }: AppSidebarProps) {
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
-      <SidebarHeader className="px-4 pt-5 pb-3">
-        <button type="button" onClick={() => ir("dashboard")} className="flex items-center gap-2.5 min-w-0" title="Início">
-          <img src="/brand/marca-branca.png" alt="" className="h-8 w-auto shrink-0" />
+      <SidebarHeader className={recolhido ? "px-0 pt-5 pb-3 items-center" : "px-4 pt-5 pb-3"}>
+        <button type="button" onClick={() => ir("dashboard")} className={`flex items-center gap-2.5 min-w-0 ${recolhido ? "justify-center w-full" : ""}`} title="Início">
+          <img src="/brand/marca-branca.png" alt="" className={`${recolhido ? "h-7" : "h-8"} w-auto shrink-0`} />
           {!recolhido && <span className="text-white text-lg font-extrabold tracking-tight">Inmovya</span>}
         </button>
       </SidebarHeader>
 
-      <SidebarContent className="px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {grupos.map((g) => (
-          <SidebarGroup key={g.titulo} className="py-1">
+      <SidebarContent className="px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden group-data-[collapsible=icon]:px-0">
+        {grupos.map((g, i) => (
+          <SidebarGroup
+            key={g.titulo}
+            className={`py-1 ${recolhido ? "px-0" : ""} ${recolhido && i > 0 ? "mt-1 pt-2 border-t border-sidebar-border/60 mx-3 w-auto" : ""}`}
+          >
             {!recolhido && (
               <SidebarGroupLabel className="text-[11px] font-semibold text-sidebar-foreground/55 h-6">{g.titulo}</SidebarGroupLabel>
             )}
             <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">{g.itens.map(botao)}</SidebarMenu>
+              <SidebarMenu className={recolhido ? "gap-1 items-center" : "gap-0.5"}>{g.itens.map(botao)}</SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
       </SidebarContent>
 
-      <SidebarFooter className="px-1 pb-3 pt-1 border-t border-sidebar-border">
-        <SidebarMenu>{botao({ id: "settings", label: "Configurações", icon: Settings })}</SidebarMenu>
+      <SidebarFooter className={`pb-3 pt-2 border-t border-sidebar-border ${recolhido ? "px-0" : "px-1"}`}>
+        <SidebarMenu className={recolhido ? "items-center" : ""}>{botao({ id: "settings", label: "Configurações", icon: Settings })}</SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   );
