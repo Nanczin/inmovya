@@ -8,23 +8,42 @@ import { RegistrosComerciais } from "@/components/relatorios/RegistrosComerciais
 import { getFunilTier, getStageForStatus, normalizeStatus, PERDIDO_STAGE_ID } from "@/lib/negociosStages";
 
 // ---------- período ----------
-type PeriodoId = "7" | "30" | "mes";
+type PeriodoId = "hoje" | "7" | "30" | "mes" | "mes_passado" | "custom";
 const PERIODOS: { id: PeriodoId; nome: string }[] = [
+  { id: "hoje", nome: "Hoje" },
   { id: "7", nome: "7 dias" },
   { id: "30", nome: "30 dias" },
   { id: "mes", nome: "Este mês" },
+  { id: "mes_passado", nome: "Mês passado" },
+  { id: "custom", nome: "Escolher datas" },
 ];
 
 const inicioDoDia = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const somarDias = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const chaveDia = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+const paraInput = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const deInput = (s: string) => {
+  const [a, m, d] = s.split("-").map(Number);
+  return a && m && d ? new Date(a, m - 1, d) : null;
+};
 
 /** Janela atual e a anterior com o MESMO número de dias (comparação justa). */
-function janelas(p: PeriodoId) {
+function janelas(p: PeriodoId, de?: string, ate?: string) {
   const hoje = inicioDoDia(new Date());
-  const fim = somarDias(hoje, 1); // exclusivo
-  const inicio = p === "mes" ? new Date(hoje.getFullYear(), hoje.getMonth(), 1) : somarDias(hoje, -(Number(p) - 1));
-  const dias = Math.round((fim.getTime() - inicio.getTime()) / 86400000);
+  let inicio: Date;
+  let fim = somarDias(hoje, 1); // exclusivo
+  if (p === "hoje") inicio = hoje;
+  else if (p === "mes") inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  else if (p === "mes_passado") {
+    inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+    fim = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  } else if (p === "custom") {
+    const a = (de && deInput(de)) || somarDias(hoje, -29);
+    const b = (ate && deInput(ate)) || hoje;
+    inicio = a <= b ? a : b;
+    fim = somarDias(a <= b ? b : a, 1);
+  } else inicio = somarDias(hoje, -(Number(p) - 1));
+  const dias = Math.max(1, Math.round((fim.getTime() - inicio.getTime()) / 86400000));
   const inicioAnt = somarDias(inicio, -dias);
   return { inicio, fim, inicioAnt, fimAnt: inicio, dias };
 }
@@ -221,7 +240,9 @@ export function RelatoriosModule() {
   });
   const [ligacoes, setLigacoes] = useState<Ligacao[]>([]);
   const [carregando, setCarregando] = useState(true);
-  const j = useMemo(() => janelas(periodo), [periodo]);
+  const [de, setDe] = useState<string>(() => paraInput(somarDias(new Date(), -29)));
+  const [ate, setAte] = useState<string>(() => paraInput(new Date()));
+  const j = useMemo(() => janelas(periodo, de, ate), [periodo, de, ate]);
 
   const escolher = (p: PeriodoId) => {
     setPeriodo(p);
@@ -392,7 +413,8 @@ export function RelatoriosModule() {
   const taxaIntB = pct(interessados(ligB), ligB.length);
 
   const eixo = { stroke: cores.grade, tick: { fill: cores.texto, fontSize: 11 }, tickLine: false, axisLine: false } as const;
-  const rotuloPeriodo = periodo === "mes" ? "o mesmo nº de dias antes" : `os ${periodo} dias anteriores`;
+  const fmtData = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const rotuloPeriodo = `${fmtData(j.inicio)} a ${fmtData(somarDias(j.fim, -1))}, comparando com os ${j.dias} dia(s) antes (${fmtData(j.inicioAnt)} a ${fmtData(somarDias(j.fimAnt, -1))})`;
 
   const GraficoDiario = ({ dados, nome }: { dados: typeof leadsPorDia; nome: string }) => (
     <>
@@ -424,10 +446,18 @@ export function RelatoriosModule() {
     <div className="max-w-6xl mx-auto space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Comparando com {rotuloPeriodo}
+          {rotuloPeriodo}
           {carregando && " · carregando ligações…"}
         </p>
-        <div className="flex rounded-lg border bg-card p-0.5" role="tablist" aria-label="Período">
+        <div className="flex flex-wrap items-center gap-2">
+        {periodo === "custom" && (
+          <div className="flex items-center gap-1.5 text-sm">
+            <input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className="h-8 rounded-md border bg-card px-2 text-sm" aria-label="De" />
+            <span className="text-muted-foreground">até</span>
+            <input type="date" value={ate} min={de} max={paraInput(new Date())} onChange={(e) => setAte(e.target.value)} className="h-8 rounded-md border bg-card px-2 text-sm" aria-label="Até" />
+          </div>
+        )}
+        <div className="flex flex-wrap rounded-lg border bg-card p-0.5" role="tablist" aria-label="Período">
           {PERIODOS.map((p) => (
             <button
               key={p.id}
@@ -440,6 +470,7 @@ export function RelatoriosModule() {
               {p.nome}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
