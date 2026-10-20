@@ -39,7 +39,7 @@ const daCaptura = (origem: string, tags: string[]) => {
   return t.includes("meta ads") || t.includes("bitrix") || t.includes("roleta") || ["roleta", "facebook", "instagram", "formulário", "formulario"].includes(o);
 };
 
-function classificar(l: any): { grupo: Grupo; motivo: string } {
+function classificar(l: any, incluirMidrah = false): { grupo: Grupo; motivo: string } {
   const s = l.primeiro_contato_status as string | null;
   const erro = String(l.primeiro_contato_erro || "");
   const tent = l.primeiro_contato_tentativas || 0;
@@ -55,8 +55,9 @@ function classificar(l: any): { grupo: Grupo; motivo: string } {
   if (s === "enviando") return { grupo: "aguardando", motivo: "a extensão está enviando" };
   if (s === "na_fila") return { grupo: "aguardando", motivo: "você escolheu atender — na fila" };
   // nunca entrou na fila
-  if (origem.toLowerCase() === "midrah") return { grupo: "fora", motivo: "Midrah — o próprio Midrah faz o 1º contato" };
-  if (!daCaptura(origem, tags)) return { grupo: "fora", motivo: "não veio da captura automática (cadastrado à mão)" };
+  const midrah = origem.toLowerCase() === "midrah";
+  if (midrah && !incluirMidrah) return { grupo: "fora", motivo: "Midrah — o próprio Midrah faz o 1º contato" };
+  if (!midrah && !daCaptura(origem, tags)) return { grupo: "fora", motivo: "não veio da captura automática (cadastrado à mão)" };
   if (Date.now() - new Date(l.created_at).getTime() > 3 * 86400_000) return { grupo: "fora", motivo: "passou de 3 dias sem ser chamado (agente desligado ou PC fora)" };
   return { grupo: "aguardando", motivo: "na fila — recebe em 1 a 2 minutos com o agente ligado" };
 }
@@ -90,9 +91,11 @@ export function RelatorioPrimeiroContato() {
       .gte("created_at", desde.toISOString())
       .order("created_at", { ascending: false })
       .limit(1000);
+    const { data: cfg } = await supabase.from("agente_config" as any).select("*").eq("user_id", user.id).maybeSingle();
+    const incluirMidrah = !!(cfg as any)?.incluir_midrah;
     setLinhas(
       ((data as any[]) || []).map((l) => {
-        const c = classificar(l);
+        const c = classificar(l, incluirMidrah);
         return {
           id: l.id,
           nome: l.nome || "Lead sem nome",

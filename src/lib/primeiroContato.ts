@@ -36,6 +36,7 @@ export interface ConfigPrimeiroContato {
   instrucoes: string; // (antigo, da IA; não é mais usado)
   mensagemReserva: string; // a SUA mensagem do 1º contato, com spintax {Oi|Olá} e variáveis {{nome}}
   meuNome: string;
+  incluirMidrah: boolean; // também manda para os leads do Midrah (quando o envio do Midrah falha)
 }
 
 export interface SinalAgente {
@@ -62,6 +63,7 @@ const PADRAO: ConfigPrimeiroContato = {
   instrucoes: INSTRUCOES_PADRAO,
   mensagemReserva: MENSAGEM_RESERVA_PADRAO,
   meuNome: "",
+  incluirMidrah: false,
 };
 
 // configuração antiga (antes ficava só neste navegador): vira o ponto de partida
@@ -107,6 +109,7 @@ export async function carregarConfigAgente(): Promise<{ cfg: ConfigPrimeiroConta
         instrucoes: r.instrucoes || INSTRUCOES_PADRAO,
         mensagemReserva: r.mensagem_reserva || MENSAGEM_RESERVA_PADRAO,
         meuNome: r.meu_nome || getMeuNome(),
+        incluirMidrah: !!r.incluir_midrah,
       }
     : { ...PADRAO, ...configAntiga(), meuNome: getMeuNome() };
   return { cfg, sinal: { ultimoSinal: r?.ultimo_sinal || null, aviso: r?.aviso || null, temToken: !!r?.token } };
@@ -134,6 +137,7 @@ export async function salvarConfigAgente(c: ConfigPrimeiroContato) {
       instrucoes: c.instrucoes,
       mensagem_reserva: c.mensagemReserva,
       meu_nome: c.meuNome.trim(),
+      ...(c.incluirMidrah || (anterior?.cfg as any)?.incluirMidrah ? { incluir_midrah: !!c.incluirMidrah } : {}),
       token,
       updated_at: new Date().toISOString(),
     } as any,
@@ -281,7 +285,9 @@ export async function lerFilaAgente(cfg: ConfigPrimeiroContato): Promise<LeadNaF
     // nunca entrou na fila: valem as regras automáticas
     if (new Date(l.created_at).getTime() < tresDias)
       return { ...base, situacao: "antes_de_ligar" as const, motivo: "chegou há mais de 3 dias (o agente sozinho não chama) — selecione para atender" };
-    if (cfg.quais !== "todos" && !ehDaCaptura(l)) return { ...base, situacao: "fora_da_regra" as const, motivo: 'não veio da captura automática (selecione para atender, ou marque "Todos os leads novos")' };
+    const midrah = String(l.origem || "").toLowerCase() === "midrah";
+    if (midrah && !cfg.incluirMidrah) return { ...base, situacao: "fora_da_regra" as const, motivo: 'Midrah — o próprio Midrah faz o 1º contato (ligue "Enviar também para os leads do Midrah" para o Inmovya mandar)' };
+    if (cfg.quais !== "todos" && !midrah && !ehDaCaptura(l)) return { ...base, situacao: "fora_da_regra" as const, motivo: 'não veio da captura automática (selecione para atender, ou marque "Todos os leads novos")' };
     if (new Date(l.created_at).getTime() < ligadoEm)
       return { ...base, situacao: "antes_de_ligar" as const, motivo: cfg.ativo ? "chegou antes de você ligar o agente — selecione para atender" : "o agente está desligado" };
     return { ...base, situacao: "na_fila" as const, motivo: "na fila — recebe em 1 a 2 minutos" };

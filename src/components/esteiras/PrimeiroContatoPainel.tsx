@@ -406,6 +406,13 @@ export function PrimeiroContatoPainel() {
               <input type="radio" className="h-4 w-4" checked={cfg.quais === "todos"} onChange={() => mudar({ quais: "todos" })} />
               Todos os leads novos (inclusive cadastrados à mão)
             </label>
+            <label className="flex items-start gap-2 cursor-pointer pt-1">
+              <input type="checkbox" className="h-4 w-4 mt-0.5" checked={!!cfg.incluirMidrah} onChange={(e) => mudar({ incluirMidrah: e.target.checked })} />
+              <span>
+                Enviar também para os leads do Midrah
+                <span className="block text-xs text-muted-foreground">Ligue quando o envio do próprio Midrah estiver falhando. Vale para os leads do Midrah que chegarem a partir de agora.</span>
+              </span>
+            </label>
           </div>
         </div>
 
