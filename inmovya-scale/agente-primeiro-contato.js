@@ -156,13 +156,14 @@ function agenteTelefone(t) {
 }
 
 // ---------- Depois do envio: salvar o contato e marcar a etiqueta da origem ----------
-// Bitrix (tag Bitrix ou origem roleta) → etiqueta "Bitrix"; Meta Ads → etiqueta "Meta Ads".
+// Bitrix (tag Bitrix ou origem roleta) → etiqueta "Bitrix"; Meta Ads → etiqueta "Meta Ads"; Midrah → etiqueta "Midrah".
 // No Inmovya o lead já tem a tag da origem (a captura automática põe), que é de onde sai a etiqueta.
 function agenteEtiquetaDaOrigem(lead) {
   const tags = (lead.tags || []).map(t => String(t).toLowerCase());
   const origem = String(lead.origem || '').toLowerCase();
   if (tags.includes('bitrix') || tags.includes('roleta') || origem === 'roleta') return 'Bitrix';
   if (tags.includes('meta ads') || origem === 'facebook' || origem === 'instagram') return 'Meta Ads';
+  if (tags.includes('midrah') || origem === 'midrah') return 'Midrah';
   return null;
 }
 
@@ -174,15 +175,20 @@ async function agenteSalvarEEtiquetar(tel, lead) {
     try {
       r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: lead.nome || '', etiqueta }, 'agent_save_and_label_tab'));
     } catch (_) { r = null; }
-    const etiquetaOk = r?.etiqueta && r.etiqueta.ok !== false;
-    // não salvou na janelinha do canto? tenta de novo numa aba normal (o WhatsApp estreito às vezes esconde o botão)
-    if (!r || (r.contato && !r.contato.salvo && !r.contato.jaEstava)) {
+    const etiquetaOk = r?.etiqueta && r.etiqueta.ok !== false && !(r.etiqueta.alteracoes || []).some(a => /não existe/.test(a));
+    // "já estava salvo" só vale se o nome do topo bater com o do lead (lead novo quase nunca está salvo;
+    // o WhatsApp pode mostrar o nome do perfil do lead no topo de um número não salvo)
+    const primeiro = agenteSemAcento(String(lead.nome || '').split(/\s+/)[0] || '');
+    const salvoDeVerdade = c => c?.salvo && (!c.jaEstava || (primeiro && agenteSemAcento(c.motivo || '').includes(primeiro)));
+    // não salvou (ou a etiqueta falhou) na janelinha do canto? tenta de novo numa aba normal
+    if (!r || (r.contato && !salvoDeVerdade(r.contato)) || (etiqueta && !etiquetaOk)) {
       await new Promise(resolve => setTimeout(resolve, 3000));
       const r2 = await naVezWA(() => agenteNaConversa({ phone: tel, background: false, nome: lead.nome || '', etiqueta: etiquetaOk ? null : etiqueta }, 'agent_save_and_label_tab'));
       r = { contato: r2?.contato || r?.contato, etiqueta: etiquetaOk ? r.etiqueta : (r2?.etiqueta || r?.etiqueta) };
     }
     const problemas = [];
     if (r?.contato && !r.contato.salvo) problemas.push(`contato de ${lead.nome || tel} não foi salvo (${r.contato.motivo})`);
+    else if (r?.contato && !salvoDeVerdade(r.contato)) problemas.push(`contato de ${lead.nome || tel} pode não ter sido salvo (${r.contato.motivo})`);
     else if (r?.contato?.salvo && r.contato.sincronizado === false && !r.contato.jaEstava)
       problemas.push(`contato de ${lead.nome || tel} salvo no WhatsApp, mas não achei a opção de sincronizar com a agenda do celular`);
     const naoExiste = (r?.etiqueta?.alteracoes || []).find(a => /não existe/.test(a));
