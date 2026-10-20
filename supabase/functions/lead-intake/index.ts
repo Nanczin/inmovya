@@ -333,6 +333,9 @@ async function pollBitrix(supabase: SupabaseClient) {
     const { data: filaVista, error: filaErr } = await supabase.from("captura_fila").select("id").eq("user_id", userId).ilike("observacoes", "%" + tag + "%").limit(1);
     if (filaErr) throw filaErr;
     if (filaVista && filaVista.length) { results.push({ deal: d.ID, action: "ja_na_fila" }); continue; }
+    // apagado no Inmovya: não volta
+    const { data: visto } = await supabase.from("captura_vistos").select("externo_id").eq("user_id", userId).eq("fonte", "Bitrix").eq("externo_id", String(d.ID)).limit(1);
+    if (visto && visto.length) { results.push({ deal: d.ID, action: "apagado_no_inmovya" }); continue; }
     const lead = await fetchBitrixLead("ONCRMDEALADD", String(d.ID));
     lead.observacoes = [lead.observacoes, tag].filter(Boolean).join(" | ");
     results.push({ deal: d.ID, ...(await saveLead(supabase, lead)) });

@@ -219,3 +219,154 @@ $$;
 grant execute on function public.agente_pendentes(text) to anon, authenticated;
 
 notify pgrst, 'reload schema';
+
+-- ================== AJUSTES (20/10) ==================
+-- 1) Com o 1º contato DESLIGADO, a extensão não abre nada: a fila espera até ligar de novo.
+-- 2) Conferência que falha 5 vezes: para de tentar e cadastra com a tag "WhatsApp não conferido" (não perde o lead).
+-- 3) Lead apagado no Inmovya não volta pelo Bitrix (fica marcado como visto).
+
+create or replace function public.agente_ativo(p_token text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((select ativo from public.agente_config where user_id = public.agente_usuario(p_token)), false);
+$$;
+revoke all on function public.agente_ativo(text) from public;
+grant execute on function public.agente_ativo(text) to anon, authenticated;
+
+create or replace function public.agente_fila_captura(p_token text)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.agente_usuario(p_token);
+begin
+  if v_uid is null then
+    raise exception 'token do agente inválido' using errcode = '28000';
+  end if;
+  if not coalesce((select ativo from public.agente_config where user_id = v_uid), false) then
+    return '[]'::json; -- 1º contato desligado: não confere nada
+  end if;
+  return coalesce((
+    select json_agg(json_build_object('id', f.id, 'nome', f.nome, 'telefone', f.telefone, 'fonte', f.fonte) order by f.created_at)
+    from (
+      select * from public.captura_fila
+      where user_id = v_uid and status = 'pendente'
+      order by tentativas, created_at
+      limit 5
+    ) f
+  ), '[]'::json);
+end;
+$$;
+
+-- resolver: depois de 5 falhas na conferência, cadastra com a tag "WhatsApp não conferido"
+create or replace function public.agente_resolver_captura(p_token text, p_id uuid, p_tem_whatsapp boolean)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.agente_usuario(p_token);
+  f public.captura_fila;
+  v_chave text;
+  v_nota text;
+  v_exist record;
+  v_id uuid;
+begin
+  if v_uid is null then
+    raise exception 'token do agente inválido' using errcode = '28000';
+  end if;
+  select * into f from public.captura_fila where id = p_id and user_id = v_uid for update;
+  if not found or f.status <> 'pendente' then
+    return json_build_object('acao', 'ja_resolvido');
+  end if;
+
+  if p_tem_whatsapp is null then
+    update public.captura_fila set tentativas = tentativas + 1 where id = f.id;
+    if f.tentativas + 1 < 5 then
+      return json_build_object('acao', 'tentar_de_novo');
+    end if;
+    -- 5 falhas: para de tentar e cadastra marcando que não deu para conferir
+    f.tags := (select array_agg(distinct t) from unnest(coalesce(f.tags, '{}'::text[]) || array['WhatsApp não conferido']) t);
+    update public.captura_fila set tags = f.tags where id = f.id;
+    p_tem_whatsapp := true;
+  end if;
+
+  if not p_tem_whatsapp then
+    update public.captura_fila set status = 'sem_whatsapp', resolvido_em = now() where id = f.id;
+    return json_build_object('acao', 'sem_whatsapp');
+  end if;
+
+  v_chave := public.captura_chave_telefone(f.telefone);
+  v_nota := '[' || to_char(now() at time zone 'America/Sao_Paulo', 'DD/MM/YYYY HH24:MI') || '] Lead recebido automaticamente via ' || f.fonte
+            || case when coalesce(f.observacoes, '') <> '' then ' — ' || f.observacoes else '' end;
+
+  -- chegou outro com o mesmo telefone enquanto esperava? só anota
+  select l.id, l.observacoes, l.tags into v_exist
+  from public.leads l
+  where l.user_id = v_uid
+    and length(v_chave) >= 8
+    and (public.captura_chave_telefone(l.telefone) = v_chave
+         or (length(public.captura_chave_telefone(l.telefone)) >= 10 and length(v_chave) >= 10
+             and right(public.captura_chave_telefone(l.telefone), 8) = right(v_chave, 8)))
+  limit 1;
+  if found then
+    update public.leads
+    set observacoes = concat_ws(E'\n', nullif(v_exist.observacoes, ''), v_nota),
+        tags = (select array_agg(distinct t) from unnest(coalesce(v_exist.tags, '{}'::text[]) || f.tags || array['reentrada']) t),
+        ultimo_contato = now()
+    where id = v_exist.id;
+    update public.captura_fila set status = 'duplicado', lead_id = v_exist.id, resolvido_em = now() where id = f.id;
+    return json_build_object('acao', 'duplicado_atualizado', 'id', v_exist.id);
+  end if;
+
+  insert into public.leads (nome, telefone, email, origem, observacoes, status, tags, ultimo_contato, user_id)
+  values (
+    coalesce(nullif(trim(f.nome), ''), 'Lead sem nome'),
+    f.telefone,
+    coalesce(nullif(trim(f.email), ''), 'sem-email+' || v_chave || '@inmovya.local'),
+    f.origem,
+    nullif(f.observacoes, ''),
+    'Validação',
+    f.tags,
+    now(),
+    v_uid
+  )
+  returning id into v_id;
+  update public.captura_fila set status = 'cadastrado', lead_id = v_id, resolvido_em = now() where id = f.id;
+  return json_build_object('acao', 'criado', 'id', v_id);
+end;
+$$;
+
+drop trigger if exists captura_desistir_conferencia on public.captura_fila;
+drop function if exists public.captura_desistir_conferencia();
+
+-- lead apagado: guarda o "Bitrix #ID" para a consulta não cadastrar de novo
+create or replace function public.captura_lembrar_apagado()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  m text;
+begin
+  for m in select (regexp_matches(coalesce(old.observacoes, ''), 'Bitrix #(\d+)', 'g'))[1] loop
+    insert into public.captura_vistos (user_id, fonte, externo_id, lead_id)
+    values (old.user_id, 'Bitrix', m, null)
+    on conflict do nothing;
+  end loop;
+  return old;
+end;
+$$;
+drop trigger if exists captura_lembrar_apagado on public.leads;
+create trigger captura_lembrar_apagado after delete on public.leads
+  for each row when (old.user_id is not null) execute function public.captura_lembrar_apagado();
+
+notify pgrst, 'reload schema';

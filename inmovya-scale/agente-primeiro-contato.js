@@ -324,6 +324,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const cred = await agenteCredenciais();
     if (!cred) throw new Error('Abra o Inmovya uma vez neste Chrome (Esteiras → 1º contato) para ligar a captura.');
     const resultados = [];
+    // 1º contato desligado: não abre o WhatsApp para conferir; os negócios esperam e entram quando ligar de novo
+    try {
+      const ativo = await agenteRpc(cred, 'agente_ativo', { p_token: cred.token });
+      if (ativo === false) return { resultados: (request.leads || []).map(l => ({ id: l.id, ok: false, erro: '1º contato desligado' })) };
+    } catch (_) { /* SQL novo ainda não rodado: segue */ }
     // já cadastrados antes? pula sem abrir o WhatsApp
     let vistos = new Set();
     try {
