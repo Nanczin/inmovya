@@ -8,8 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow, ShieldCheck, MoreHorizontal, Clock, UserPlus, Users, Play } from "lucide-react";
+import { Check, X, Phone, Plus, Search, MessageCircle, ExternalLink, Wand2, ArrowRight, History, CheckSquare, Square, MoveRight, Workflow, ShieldCheck, MoreHorizontal, Clock, UserPlus, Users, Play, Trash2, Loader2 } from "lucide-react";
 import { LeadPainel } from "@/components/leads/LeadPainel";
+import { limparPerdidos } from "@/lib/limparPerdidos";
 import { ConferenciaWhatsAppDialog } from "@/components/ConferenciaWhatsAppDialog";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { colocarNaEsteira, tirarDaEsteira, moverParaPasso, cortarNaEtapaFinal, empreendimentoDoLead } from "@/lib/esteiras";
@@ -87,6 +88,30 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
   };
   const { leads, updateLead, refreshLeads } = useLeads();
   const { toast } = useToast();
+  // Perdido: excluir do Inmovya e tirar as etiquetas no WhatsApp
+  const [limpeza, setLimpeza] = useState<Lead[] | null>(null);
+  const [limpezaTirarEtiquetas, setLimpezaTirarEtiquetas] = useState(true);
+  const [limpezaFase, setLimpezaFase] = useState<string | null>(null);
+  const rodarLimpeza = async () => {
+    if (!limpeza?.length) return;
+    try {
+      setLimpezaFase("Começando…");
+      const r = await limparPerdidos(limpeza as any, { tirarEtiquetas: limpezaTirarEtiquetas, aoProgredir: setLimpezaFase });
+      const extras = [
+        limpezaTirarEtiquetas ? `${r.etiquetasTiradas} conversa(s) sem etiqueta no WhatsApp` : "",
+        r.naoAchadosNoWhatsApp.length ? `${r.naoAchadosNoWhatsApp.length} sem conversa no WhatsApp` : "",
+        r.falhasWhatsApp.length ? `não mexi em ${r.falhasWhatsApp.join(", ")} (o WhatsApp falhou — tente de novo)` : "",
+      ].filter(Boolean);
+      toast({ title: `${r.excluidos} lead(s) excluído(s) do Inmovya`, description: extras.join(" · ") || undefined });
+      setLimpeza(null);
+      setSelectedIds(new Set());
+      await refreshLeads();
+    } catch (e: any) {
+      toast({ title: "Não consegui terminar", description: e?.message, variant: "destructive" });
+    } finally {
+      setLimpezaFase(null);
+    }
+  };
 
   const [activePhase, setActivePhase] = useState<"all" | NegocioPhaseId>("all");
   const [search, setSearch] = useState("");
@@ -685,6 +710,20 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
           {isValidacao && (
             <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Leads novos das campanhas. Valide para entrar no funil.</p>
           )}
+          {stage.id === PERDIDO_STAGE_ID && stageLeads.length > 0 && (() => {
+            const marcados = stageLeads.filter((l) => selectedIds.has(l.id));
+            const alvo = selectMode && marcados.length ? marcados : stageLeads;
+            return (
+              <button
+                type="button"
+                onClick={() => setLimpeza(alvo)}
+                className="mt-1.5 w-full inline-flex items-center justify-center gap-1 rounded-lg bg-destructive/[0.1] text-destructive hover:bg-destructive/20 text-[11px] font-bold py-1"
+                title="Excluir do Inmovya e tirar as etiquetas desses leads no WhatsApp"
+              >
+                <Trash2 className="w-3 h-3" /> Excluir {selectMode && marcados.length ? `${marcados.length} marcado(s)` : `todos (${stageLeads.length})`}
+              </button>
+            );
+          })()}
           {!isValidacao && !selectMode && naEsteiraHoje > 0 && (
             <button
               type="button"
@@ -1020,6 +1059,46 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
         </DialogContent>
       </Dialog>
       {/* Ficha rápida do lead (painel lateral) */}
+      <Dialog open={!!limpeza} onOpenChange={(o) => !o && !limpezaFase && setLimpeza(null)}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Excluir {limpeza?.length} lead(s) perdido(s)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              Saem do Inmovya de vez (com histórico e lembretes). Os do Bitrix não voltam pela captura.
+            </p>
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input type="checkbox" className="h-4 w-4 mt-0.5" checked={limpezaTirarEtiquetas} disabled={!!limpezaFase} onChange={(e) => setLimpezaTirarEtiquetas(e.target.checked)} />
+              <span>
+                <b>Tirar todas as etiquetas</b> dessas conversas no WhatsApp
+                <span className="block text-xs text-muted-foreground">O Inmovya Scale abre cada conversa numa janelinha e desmarca as etiquetas. Precisa do WhatsApp Web aberto neste Chrome.</span>
+              </span>
+            </label>
+            <div className="max-h-40 overflow-y-auto rounded-lg border divide-y text-xs">
+              {(limpeza || []).map((l) => (
+                <div key={l.id} className="px-2.5 py-1.5 flex justify-between gap-2">
+                  <span className="truncate font-medium">{l.nome || "Sem nome"}</span>
+                  <span className="text-muted-foreground tabular-nums shrink-0">{l.telefone}</span>
+                </div>
+              ))}
+            </div>
+            {limpezaFase && (
+              <p className="flex items-center gap-2 text-primary font-medium">
+                <Loader2 className="w-4 h-4 animate-spin" /> {limpezaFase}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={!!limpezaFase} onClick={() => setLimpeza(null)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" disabled={!!limpezaFase} onClick={rodarLimpeza}>
+              <Trash2 className="w-4 h-4 mr-1" /> Excluir {limpeza?.length}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <LeadPainel leadId={painelLeadId} onClose={() => setPainelLeadId(null)} onAbrirFicha={(id) => { setPainelLeadId(null); onNavigate?.("leads", { id }); }} />
       {/* Timeline / histórico do lead */}
       <LeadTimeline
