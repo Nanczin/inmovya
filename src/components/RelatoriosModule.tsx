@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Line, ComposedChart, ResponsiveContainer,
 import { ArrowDownRight, ArrowUpRight, Minus, Table2, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useLeads } from "@/context/LeadsContext";
+import { GestorCard } from "@/components/gestor/GestorCard";
 import { RegistrosComerciais } from "@/components/relatorios/RegistrosComerciais";
 import { getFunilTier, getStageForStatus, normalizeStatus, PERDIDO_STAGE_ID } from "@/lib/negociosStages";
 
@@ -228,7 +229,7 @@ const nomeResultado = (r: string) => {
   return r.length > 28 ? `${r.slice(0, 27)}…` : r;
 };
 
-export function RelatoriosModule() {
+export function RelatoriosModule({ onNavigate }: { onNavigate?: (modulo: string) => void } = {}) {
   const { leads } = useLeads();
   const cores = useCores();
   const [periodo, setPeriodo] = useState<PeriodoId>(() => {
@@ -444,6 +445,7 @@ export function RelatoriosModule() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-5">
+      <GestorCard onNavigate={onNavigate} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {rotuloPeriodo}

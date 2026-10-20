@@ -115,7 +115,7 @@ const Index = () => {
       case "funil":
         return <FunilModule />;
       case "relatorios":
-        return <RelatoriosModule />;
+        return <RelatoriosModule onNavigate={(m) => handleNavigation(m)} />;
       case "whatsapp":
         return <WhatsappModule />;
       case "settings":

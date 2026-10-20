@@ -36,6 +36,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   const [aberto, setAberto] = useState(false);
   const [dia, setDia] = useState(chave(new Date()));
   const [form, setForm] = useState<Valores>(vazio());
+  const [valorVendas, setValorVendas] = useState(0);
   const [salvando, setSalvando] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -63,6 +64,18 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
     carregar();
   }, [carregar]);
 
+  // o Gestor (topo dos Relatórios) pede para abrir o registro
+  useEffect(() => {
+    const abrirPeloGestor = (e: Event) => {
+      const d = (e as CustomEvent).detail?.dia || chave(new Date());
+      setDia(d);
+      carregarDia(d);
+      setAberto(true);
+    };
+    window.addEventListener("inmovya:registrar-dia", abrirPeloGestor);
+    return () => window.removeEventListener("inmovya:registrar-dia", abrirPeloGestor);
+  });
+
   const somar = (a: Date, b: Date) => {
     const t = vazio();
     const ka = chave(a);
@@ -87,6 +100,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
     const v = vazio();
     if (row) CAMPOS.forEach((c) => (v[c.id] = Number(row[c.coluna]) || 0));
     setForm(v);
+    setValorVendas(Number(row?.venda_valor) || 0);
   };
 
   const salvar = async () => {
@@ -107,6 +121,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
           visitas: form.visitas,
           documentacao: form.documentacoes,
           venda: form.vendas,
+          ...(valorVendas || existente?.venda_valor !== undefined ? { venda_valor: valorVendas } : {}),
           updated_at: new Date().toISOString(),
         } as any,
         { onConflict: "user_id, period" }
@@ -115,6 +130,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
       toast({ title: "Registro salvo", description: `Dia ${dia.split("-").reverse().join("/")}` });
       setAberto(false);
       await carregar();
+      window.dispatchEvent(new CustomEvent("inmovya:registro-salvo"));
     } catch (e: any) {
       toast({ title: "Não consegui salvar", description: e?.message, variant: "destructive" });
     } finally {
@@ -219,6 +235,20 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
                 </div>
               </div>
             ))}
+            <div className="flex items-center justify-between py-2.5">
+              <span className="text-sm font-semibold">Valor das vendas (R$)</span>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                className="h-9 w-36 text-right font-bold tabular-nums"
+                value={valorVendas || ""}
+                placeholder="0"
+                onChange={(e) => setValorVendas(Math.max(0, Number(e.target.value) || 0))}
+                aria-label="Valor das vendas"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAberto(false)}>
