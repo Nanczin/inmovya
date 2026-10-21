@@ -1,6 +1,7 @@
 // Esteiras de follow-up dentro do Inmovya.
 // O Inmovya guarda esteiras, passos e em que passo cada lead está;
 // a extensão Inmovya Scale apenas envia a mensagem no WhatsApp Web.
+import { spin } from "@/lib/spintax";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface Esteira {
@@ -296,9 +297,11 @@ const semProjeto = (template: string) =>
     .replace(/(^|[^\p{L}])([oa]s?)\s+\{\{\s*empreendimento\s*\}\}/giu, `$1${EMPREENDIMENTO_PADRAO}`)
     .replace(/\{\{\s*empreendimento\s*\}\}/gi, EMPREENDIMENTO_PADRAO);
 
-export const montarMensagem = (template: string, leadNome: string, observacoes?: string | null) => {
+export const montarMensagem = (template: string, leadNome: string, observacoes?: string | null, semente?: string) => {
   if (!template) return "";
   const now = new Date();
+  // spintax {Oi|Olá}: com semente, cada lead recebe sempre a mesma variação (a prévia é o que vai)
+  template = spin(template, semente);
   const projeto = empreendimentoDoLead(observacoes, leadNome);
   return (projeto ? template.replace(/\{\{\s*empreendimento\s*\}\}/gi, projeto) : semProjeto(template))
     .replace(/\{\{\s*(nome|primeiro_nome)\s*\}\}/gi, primeiroNome(leadNome))

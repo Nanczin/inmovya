@@ -10,7 +10,8 @@ import {
   partesDaMensagem,
   tamanhoLegivel,
 } from "@/lib/esteiras";
-import { Loader2, Paperclip, X as XIcon } from "lucide-react";
+import { Loader2, Paperclip, Shuffle, Eye, X as XIcon } from "lucide-react";
+import { contarVariacoes, gerarSpintax, spin, spintaxValido } from "@/lib/spintax";
 
 // Formatação do WhatsApp: *negrito*, _itálico_, ~tachado~, ```mono```
 const FORMATOS = [
@@ -64,6 +65,54 @@ function LegendaEditor({ valor, onChange }: { valor: string; onChange: (v: strin
   );
 }
 
+/** Spintax: {Oi|Olá|Oii} — cada lead recebe uma combinação diferente. */
+function SpintaxBarra({ mensagem, onMensagem }: { mensagem: string; onMensagem: (v: string) => void }) {
+  const [exemplo, setExemplo] = useState<string | null>(null);
+  if (!mensagem.trim()) return null;
+  const valido = spintaxValido(mensagem);
+  const n = valido ? contarVariacoes(mensagem) : 0;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="text-muted-foreground">
+          Spintax: escreva {"{Oi|Olá|Oii}"} e cada lead recebe uma opção diferente.
+        </span>
+        {!valido ? (
+          <span className="font-semibold text-destructive">Tem chave {"{ }"} sobrando ou faltando</span>
+        ) : n > 1 ? (
+          <span className="font-semibold text-success">{n.toLocaleString("pt-BR")} combinações</span>
+        ) : null}
+        <div className="ml-auto flex gap-1">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 h-6 px-2 rounded border bg-card hover:bg-muted"
+            title="Troca expressões comuns (oi, tudo bem, posso te ajudar…) por opções. Revise depois."
+            onClick={() => onMensagem(gerarSpintax(mensagem))}
+          >
+            <Shuffle className="w-3 h-3" /> Gerar spintax
+          </button>
+          <button
+            type="button"
+            disabled={!valido}
+            className="inline-flex items-center gap-1 h-6 px-2 rounded border bg-card hover:bg-muted disabled:opacity-50"
+            onClick={() => setExemplo(spin(mensagem))}
+          >
+            <Eye className="w-3 h-3" /> Ver exemplo
+          </button>
+        </div>
+      </div>
+      {exemplo !== null && (
+        <div className="relative rounded-md border bg-muted/40 p-2 pr-7 text-xs whitespace-pre-wrap">
+          {exemplo}
+          <button type="button" className="absolute top-1 right-1 p-0.5 text-muted-foreground hover:text-foreground" onClick={() => setExemplo(null)} aria-label="Fechar exemplo">
+            <XIcon className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   mensagem: string;
   anexos: EsteiraAnexo[];
@@ -97,7 +146,8 @@ export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, pl
 
   return (
     <>
-      <Textarea rows={4} value={mensagem} onChange={(ev) => onMensagem(ev.target.value)} placeholder={placeholder || "Oi {{nome}}, {{saudacao}}! ..."} />
+      <Textarea rows={4} value={mensagem} onChange={(ev) => onMensagem(ev.target.value)} placeholder={placeholder || "{Oi|Olá} {{nome}}, {{saudacao}}! ..."} />
+      <SpintaxBarra mensagem={mensagem} onMensagem={onMensagem} />
       <div className="flex flex-wrap items-center gap-2">
         {anexos.map((a) => {
           const chave = (a.local_id || a.path)!;

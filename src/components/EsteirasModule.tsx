@@ -132,6 +132,9 @@ const fimDeHoje = () => {
 const fmtData = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "agora";
 
+// mesma variação do spintax para o mesmo lead + passo no mesmo dia (prévia = envio)
+const sementeSpin = (leadId: string, passoId: string) => `${leadId}:${passoId}:${new Date().toDateString()}`;
+
 export function EsteirasModule() {
   const { leads, refreshLeads } = useLeads();
   const { toast } = useToast();
@@ -215,7 +218,7 @@ export function EsteirasModule() {
         esteira,
         passos: ps,
         passo,
-        mensagem: montarMensagem(passo.mensagem, lead.nome, lead.observacoes),
+        mensagem: montarMensagem(passo.mensagem, lead.nome, lead.observacoes, sementeSpin(lead.id, passo.id)),
         telefone: telefoneWhatsApp(lead.telefone),
       });
     });
@@ -339,7 +342,7 @@ export function EsteirasModule() {
   const filaAuto = filaVisivel;
   const filaManual: ItemFila[] = [];
   const [editados, setEditados] = useState<Record<string, string>>({});
-  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes);
+  const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes, sementeSpin(item.lead.id, item.passo.id));
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
 
   // Em segundo plano o Chrome atrasa os timers da aba escondida: a espera usa o relógio, não a contagem de ticks
@@ -528,7 +531,7 @@ export function EsteirasModule() {
 
   const marcarManualEnviado = async (item: ItemFila) => {
     try {
-      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes));
+      await avancarLead(item.lead, item.esteira, item.passos, item.passo, montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes, sementeSpin(item.lead.id, item.passo.id)));
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviado" } }));
       await refreshLeads();
     } catch (err: any) {
