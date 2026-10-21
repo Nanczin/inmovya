@@ -343,7 +343,42 @@ export function EsteirasModule() {
   const filaManual: ItemFila[] = [];
   const [editados, setEditados] = useState<Record<string, string>>({});
   const textoDo = (item: ItemFila) => editados[item.lead.id] ?? montarMensagem(item.passo.mensagem, item.lead.nome, item.lead.observacoes, sementeSpin(item.lead.id, item.passo.id));
-  const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado");
+  // Anti-repetição: quem já recebeu mensagem hoje (esteira ou 1º contato) ou tem o mesmo número de outro lead da fila
+  // não entra no envio — evita mandar 2 vezes no mesmo dia e bloqueio do WhatsApp. Dá para liberar um a um.
+  const [liberados, setLiberados] = useState<Set<string>>(new Set());
+  const bloqueios = useMemo(() => {
+    const m: Record<string, string> = {};
+    const numeros = new Map<string, string>();
+    filaAuto.forEach((i) => {
+      const l: any = i.lead;
+      if (i.telefone) {
+        const dono = numeros.get(i.telefone);
+        if (dono) m[l.id] = `mesmo número de ${dono} (vai só uma mensagem)`;
+        else numeros.set(i.telefone, l.nome || "outro lead");
+      }
+      if (m[l.id]) return;
+      if (enviadoHoje(l.esteira_ultimo_envio) && !doisHoje.has(l.id)) m[l.id] = "já recebeu mensagem da esteira hoje";
+      else if (l.primeiro_contato_status === "enviado" && enviadoHoje(l.primeiro_contato_em)) m[l.id] = "recebeu o 1º contato hoje";
+    });
+    liberados.forEach((id) => delete m[id]);
+    return m;
+  }, [filaAuto, doisHoje, liberados]);
+  const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado" && !bloqueios[i.lead.id]);
+
+  /** Confere no banco, na hora de enviar, se o lead já recebeu hoje (outra aba, outro computador, 1º contato). */
+  const jaRecebeuHojeNoBanco = async (item: ItemFila, enviadosAgora: Set<string>) => {
+    if (liberados.has(item.lead.id)) return null;
+    if (item.telefone && enviadosAgora.has(item.telefone)) return "mesmo número já recebeu agora";
+    const { data } = await supabase
+      .from("leads")
+      .select("esteira_ultimo_envio, primeiro_contato_status, primeiro_contato_em")
+      .eq("id", item.lead.id)
+      .maybeSingle();
+    const l: any = data || {};
+    if (enviadoHoje(l.esteira_ultimo_envio) && !doisHoje.has(item.lead.id)) return "já recebeu mensagem da esteira hoje";
+    if (l.primeiro_contato_status === "enviado" && enviadoHoje(l.primeiro_contato_em)) return "recebeu o 1º contato hoje";
+    return null;
+  };
 
   // Em segundo plano o Chrome atrasa os timers da aba escondida: a espera usa o relógio, não a contagem de ticks
   const [segundoPlano, setSegundoPlanoState] = useState<boolean>(getSegundoPlano());
@@ -408,10 +443,16 @@ export function EsteirasModule() {
     let enviados = 0;
     const porEsteira: Record<string, number> = {};
     const prontosParaSegunda: string[] = [];
+    const enviadosAgora = new Set<string>();
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
       setProgressoEsteira(i, lista.length, item.lead.nome);
+      const motivo = await jaRecebeuHojeNoBanco(item, enviadosAgora).catch(() => null);
+      if (motivo) {
+        setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: `não enviado: ${motivo}` } }));
+        continue; // sem esperar o intervalo: nada foi enviado
+      }
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia)
@@ -421,6 +462,7 @@ export function EsteirasModule() {
         await enviarPeloWhatsApp(item.telefone, texto, anexos, segundoPlano && extensaoAtualizada("1.3.0"), { min: cfgEsteira.gapMin, max: cfgEsteira.gapMax });
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
+        if (item.telefone) enviadosAgora.add(item.telefone);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
         if (proximoHoje) prontosParaSegunda.push(item.lead.id);
         enviados++;
@@ -493,8 +535,15 @@ export function EsteirasModule() {
     let colados = 0;
     const voltam: string[] = [];
     try {
+      const enviadosAgora = new Set<string>();
       for (const item of lista) {
         const texto = textoDo(item);
+        const motivo = await jaRecebeuHojeNoBanco(item, enviadosAgora).catch(() => null);
+        if (motivo) {
+          setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: `não colado: ${motivo}` } }));
+          continue;
+        }
+        if (item.telefone) enviadosAgora.add(item.telefone);
         try {
           const anexos = item.passo.anexos?.length
             ? await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, 1, item.lead.observacoes)
@@ -968,6 +1017,11 @@ export function EsteirasModule() {
                     <span className="text-sm text-muted-foreground">
                       de {filaAuto.length} mensage{filaAuto.length === 1 ? "m" : "ns"} prontas para hoje
                     </span>
+                    {Object.keys(bloqueios).length > 0 && (
+                      <span className="text-xs font-semibold text-warning" title="Já receberam mensagem hoje (esteira ou 1º contato) ou têm o mesmo número de outro lead">
+                        · {Object.keys(bloqueios).length} fora para não repetir hoje
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground">
                     <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setVerAgendados((v) => !v)}>
@@ -1112,7 +1166,7 @@ export function EsteirasModule() {
               {filaAuto.length > 0 && (
                 <div className="space-y-2">
                   {(() => {
-                    const marcaveis = filaAuto.filter((i) => i.telefone && estado[i.lead.id]?.s !== "enviado");
+                    const marcaveis = filaAuto.filter((i) => i.telefone && estado[i.lead.id]?.s !== "enviado" && !bloqueios[i.lead.id]);
                     const todosMarcados = marcaveis.length > 0 && marcaveis.every((i) => !desmarcados.has(i.lead.id));
                     const algum = marcaveis.some((i) => !desmarcados.has(i.lead.id));
                     return (
@@ -1164,8 +1218,8 @@ export function EsteirasModule() {
                           <input
                             type="checkbox"
                             className="mt-1 h-4 w-4 shrink-0"
-                            disabled={rodando || st === "enviado" || !item.telefone}
-                            checked={!desmarcados.has(item.lead.id) && !!item.telefone}
+                            disabled={rodando || st === "enviado" || !item.telefone || !!bloqueios[item.lead.id]}
+                            checked={!desmarcados.has(item.lead.id) && !!item.telefone && !bloqueios[item.lead.id]}
                             onChange={() =>
                               setDesmarcados((s) => {
                                 const n = new Set(s);
@@ -1178,6 +1232,20 @@ export function EsteirasModule() {
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               <span className="font-semibold text-sm truncate">{item.lead.nome}</span>
                               {!item.telefone && <span className="text-xs text-destructive">sem telefone</span>}
+                              {bloqueios[item.lead.id] && st !== "enviado" && (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold rounded-md bg-warning/15 text-warning px-1.5 py-0.5">
+                                  <AlertTriangle className="w-3 h-3" /> {bloqueios[item.lead.id]}
+                                  <button
+                                    type="button"
+                                    disabled={rodando}
+                                    className="underline font-normal ml-1"
+                                    title="Liberar o envio para este lead hoje mesmo assim"
+                                    onClick={() => setLiberados((x) => new Set(x).add(item.lead.id))}
+                                  >
+                                    enviar mesmo assim
+                                  </button>
+                                </span>
+                              )}
                               <span className="text-[11px] font-semibold rounded-md px-1.5 py-0.5 bg-primary/10 text-primary">
                                 {item.esteira.nome} · {item.passo.titulo || `Passo ${item.passo.ordem + 1}`} <span className="tabular-nums opacity-70">{item.passos.indexOf(item.passo) + 1}/{item.passos.length}</span>
                               </span>
