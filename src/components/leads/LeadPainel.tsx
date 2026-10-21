@@ -5,12 +5,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MessageCircle, Phone, Mail, Building2, CalendarClock, History, Plus, ExternalLink, Tag } from "lucide-react";
+import { MessageCircle, Phone, Mail, Building2, CalendarClock, History, Plus, ExternalLink, Tag, Archive } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { NEGOCIO_STAGES, getStageForStatus } from "@/lib/negociosStages";
-import { empreendimentoDoLead } from "@/lib/esteiras";
+import { empreendimentoDoLead, tirarDaEsteira } from "@/lib/esteiras";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { LeadTimeline } from "@/components/LeadTimeline";
 
@@ -62,6 +62,21 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
       toast({ title: "Etapa atualizada", description: `${lead.nome} → ${getStageForStatus(value)?.name || value}` });
       refreshLeads();
     }
+  };
+
+  // Tira do quadro de Negócios (e da esteira) e deixa só na base de leads, com a tag "base"
+  const deixarNaBase = async () => {
+    if (!window.confirm(`Tirar ${lead.nome || "este lead"} de Negócios e deixar só na base? Ele sai da esteira também. Para voltar, coloque numa etapa pela aba Leads ou por "Novo negócio".`)) return;
+    const tags = Array.from(new Set([...(lead.tags || []), "base"]));
+    const { error } = await supabase.from("leads").update({ status: "Nenhuma", tags } as any).eq("id", lead.id);
+    if (error) {
+      toast({ title: "Não consegui tirar de Negócios", description: error.message, variant: "destructive" });
+      return;
+    }
+    await tirarDaEsteira([lead.id]).catch(() => {});
+    toast({ title: "Lead só na base", description: `${lead.nome} saiu de Negócios. Continua na aba Leads.` });
+    onClose();
+    refreshLeads();
   };
 
   const salvarObs = async () => {
@@ -116,6 +131,9 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
                   <ExternalLink className="w-4 h-4 mr-1" /> Ficha completa
                 </Button>
               )}
+              <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={deixarNaBase} title="Sai do quadro de Negócios e da esteira; continua na aba Leads">
+                <Archive className="w-4 h-4 mr-1" /> Tirar de Negócios
+              </Button>
             </div>
           </div>
 

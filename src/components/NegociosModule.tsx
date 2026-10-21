@@ -45,7 +45,7 @@ interface NegociosModuleProps {
 
 // Leads que já saíram do funil ativo (disparo / nutrição) e não têm etapa
 // não vão para a Validação.
-const OUT_OF_FUNNEL_TAGS = ["disparo", "nutricao"];
+const OUT_OF_FUNNEL_TAGS = ["disparo", "nutricao", "base"];
 
 const formatChegou = (date?: string) => {
   if (!date) return "";
