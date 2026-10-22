@@ -1,7 +1,0 @@
-# Nunca enviar: senhas, conexao do WhatsApp e arquivos gerados no PC
-config.json
-OpenWA/
-node22/
-log-*.txt
-robo-log.txt
-*.antes-2c

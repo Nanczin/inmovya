@@ -26,7 +26,6 @@ import {
   Briefcase,
   Workflow,
   LayoutTemplate,
-  Bot,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -53,7 +52,6 @@ const grupos: { titulo: string; itens: Item[] }[] = [
     itens: [
       { id: "ligacoes", label: "Ligações", icon: Phone },
       { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
-      { id: "robo-anuncios", label: "Robô de anúncios", icon: Bot },
       { id: "mailing", label: "Mailing", icon: Mail },
       { id: "email-marketing", label: "Email Marketing", icon: AtSign },
     ],
