@@ -33,6 +33,7 @@ const moduleNames: Record<string, string> = {
   ligacoes: "Ligações",
   templates: "Templates",
   whatsapp: "WhatsApp",
+  "robo-anuncios": "Robô de anúncios",
   relatorios: "Relatórios",
   settings: "Configurações"
 };
