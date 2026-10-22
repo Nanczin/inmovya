@@ -310,7 +310,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             : m.querySelector('[data-testid*="video" i]') ? 'vídeo' : m.querySelector('img') ? 'imagem/figurinha' : 'mídia');
           msgs.push({ dir, data: quando ? ultimaData : ultimaData, hora, texto: texto.slice(0, 1500), tipo });
         });
-        sendResponse({ ok: true, mensagens: msgs.slice(-40) });
+        sendResponse({ ok: true, mensagens: msgs.slice(-40), titulo: agenteTituloConversa() });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }
@@ -386,7 +386,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const telefone = soNumero ? String(info.nome).replace(/\D/g, '') : '';
         return { ...info, telefone };
       });
-      sendResponse({ ok: true, linhas: linhas.filter(l => l.telefone && l.naoLidas > 0 && !l.ultimaSua) });
+      sendResponse({
+        ok: true,
+        linhas: linhas.filter(l => l.telefone && l.naoLidas > 0 && !l.ultimaSua),
+        // modo teste: o número de teste pode estar salvo (título = nome); só nome e marcadores, sem o texto
+        todas: linhas.filter(l => l.naoLidas > 0 && !l.ultimaSua).map(l => ({ nome: l.nome, telefone: l.telefone, naoLidas: l.naoLidas, ultimaSua: l.ultimaSua }))
+      });
     } catch (error) {
       sendResponse({ ok: false, error: error.message });
     }

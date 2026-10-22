@@ -207,6 +207,40 @@ export function RoboAnunciosPainel() {
         </div>
       </div>
 
+      <div className={`rounded-lg border p-4 space-y-2 ${cfg.testeNumero ? "border-blue-300 bg-blue-50" : "bg-card"}`}>
+        <div className="font-semibold text-sm">Modo teste</div>
+        <p className="text-xs text-muted-foreground">
+          Com o modo teste ligado, o robô conversa <b>só</b> com o número de teste (pode ser o seu pessoal, mesmo salvo) e ignora tudo que
+          aconteceu nessa conversa antes do início do teste. Ninguém mais recebe mensagem.
+        </p>
+        {cfg.testeNumero ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span>
+              Testando com <b>+{cfg.testeNumero}</b> desde {hora(cfg.testeDesde)}. Mande do celular de teste: <i>"Olá! Tenho interesse"</i>.
+            </span>
+            <Button size="sm" variant="outline" disabled={salvando} onClick={() => salvar({ testeNumero: "", testeDesde: null }, "Modo teste encerrado — robô atende os leads de anúncio")}>
+              Encerrar teste
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Input id="robo-teste" className="max-w-[220px]" placeholder="Ex.: 11988782027" defaultValue="" />
+            <Button
+              size="sm"
+              disabled={salvando}
+              onClick={() => {
+                const v = ((document.getElementById("robo-teste") as HTMLInputElement)?.value || "").replace(/\D/g, "");
+                if (v.length < 10) return toast({ title: "Digite o número de teste com DDD", variant: "destructive" });
+                const tel = v.length <= 11 ? "55" + v : v;
+                salvar({ testeNumero: tel, testeDesde: new Date().toISOString(), ativo: true }, "Modo teste ligado");
+              }}
+            >
+              Começar teste
+            </Button>
+          </div>
+        )}
+      </div>
+
       <div className="rounded-lg border bg-card p-4 space-y-2">
         <div className="font-semibold text-sm">Últimas conversas do robô</div>
         {!conversas.length ? (

@@ -23,6 +23,8 @@ export interface ConfigRobo {
   frases: string[];
   recuperarHoras: number;
   numeroAviso: string;
+  testeNumero: string;
+  testeDesde: string | null;
 }
 export interface SinalRobo {
   ultimoSinal: string | null;
@@ -64,6 +66,8 @@ export async function carregarRobo(): Promise<{ cfg: ConfigRobo; sinal: SinalRob
       frases: r?.frases_anuncio?.length ? r.frases_anuncio : FRASES_PADRAO,
       recuperarHoras: r?.recuperar_horas ?? 12,
       numeroAviso: r?.numero_aviso || "5511988782027",
+      testeNumero: r?.teste_numero || "",
+      testeDesde: r?.teste_desde || null,
     },
     sinal: { ultimoSinal: r?.ultimo_sinal || null, aviso: r?.aviso || null },
   };
@@ -87,6 +91,8 @@ export async function salvarRobo(c: ConfigRobo): Promise<{ entregue: boolean }> 
       frases_anuncio: c.frases.map(semAcento).filter(Boolean),
       recuperar_horas: Math.max(1, Math.min(72, Math.round(c.recuperarHoras || 12))),
       numero_aviso: c.numeroAviso.replace(/\D/g, ""),
+      teste_numero: c.testeNumero.replace(/\D/g, "") || null,
+      teste_desde: c.testeNumero.replace(/\D/g, "") ? c.testeDesde || new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     } as any,
     { onConflict: "user_id" }

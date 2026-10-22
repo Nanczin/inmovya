@@ -161,6 +161,8 @@ function roboQuando(m) { // "11/10/2026" + "16:23" -> Date
 }
 
 const roboNorm = s => agenteSemAcento(s).slice(0, 60);
+// mensagens de aviso que o robô manda para o seu WhatsApp pessoal
+const roboEhAviso = t => /^\s*(📩|⏰|🔴|🟢|🔁|📣)/u.test(String(t || '')) || /^\*?Robô( \(teste\))?:/.test(String(t || '').trim());
 
 async function roboEnviar(tel, texto) {
   await naVezWA(() => sendCampaignMessage({ phone: tel, text: texto, background: true, gapMinMs: 0, gapMaxMs: 0 }));
@@ -212,6 +214,30 @@ async function roboRodadaAgora() {
 
   await chrome.storage.local.set({ roboOcupadoAte: Date.now() + 12 * 60 * 1000 });
   try {
+    // MODO TESTE: só o número de teste; o que aconteceu antes do início do teste não conta
+    const teste = agenteTelefone(estado.teste_numero || '');
+    if (teste && teste.length >= 12) {
+      const desde = new Date(estado.teste_desde || Date.now()).getTime();
+      const { roboTesteTitulo = null } = await chrome.storage.local.get('roboTesteTitulo');
+      const titulo = roboTesteTitulo?.tel === teste && roboTesteTitulo?.desde === desde ? roboTesteTitulo.titulo : null;
+      const naLista = (lista.todas || []).find(l => l.naoLidas > 0 && !l.ultimaSua &&
+        ((l.telefone && agenteTelefone(l.telefone).slice(-8) === teste.slice(-8)) || (titulo && agenteSemAcento(l.nome) === agenteSemAcento(titulo))));
+      if (!titulo || naLista) {
+        let info = null;
+        try { info = await agenteRpc(cred, 'robo_ext_conversa', { p_token: cred.token, p_telefone: teste }); } catch (_) {}
+        let conversa = info?.conversa || null;
+        if (conversa && new Date(conversa.updated_at || 0).getTime() < desde) conversa = null; // conversa de antes do teste
+        if (!conversa || conversa.situacao === 'qualificando') {
+          try {
+            await roboAtender(cred, estado, teste, conversa, pareceAnuncio, { desde });
+          } catch (err) {
+            await aviso(`Robô (teste): erro: ${err.message}`);
+          }
+        }
+      }
+      return;
+    }
+
     let feitos = 0;
     for (const linha of lista.linhas || []) {
       if (feitos >= ROBO_MAX_POR_RODADA) break;
@@ -241,10 +267,17 @@ async function roboRodadaAgora() {
   }
 }
 
-async function roboAtender(cred, estado, tel, conversa, pareceAnuncio) {
+async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = null) {
   const salvar = dados => agenteRpc(cred, 'robo_ext_salvar', { p_token: cred.token, p_telefone: tel, p_dados: dados });
   const leitura = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'agent_read_chat_tab'));
-  const msgs = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
+  let msgs = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
+  if (teste) {
+    // guarda o nome da conversa (contato salvo) para achar as próximas mensagens na lista sem abrir
+    if (leitura?.titulo) await chrome.storage.local.set({ roboTesteTitulo: { tel, desde: teste.desde, titulo: leitura.titulo } });
+    // só vale o que veio depois do início do teste; e os avisos do robô para você não contam como "mensagem sua"
+    msgs = msgs.filter(m => { const q = roboQuando(m); return !q || q.getTime() >= teste.desde - 60000; })
+      .filter(m => !(m.dir === 'out' && roboEhAviso(m.texto)));
+  }
   if (!msgs.length) return;
 
   // mensagens do cliente que ainda não tiveram resposta
@@ -275,7 +308,7 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio) {
       await roboAvisarVoce(estado, `⏰ *Robô:* o lead de anúncio +${tel} escreveu há mais de ${estado.recuperar_horas}h. Não respondi — é com você.\n💬 "${textoCliente.slice(0, 200)}"\n👉 https://wa.me/${tel}`);
       return;
     }
-    await chrome.storage.local.set({ roboUltimoNovo: Date.now() });
+    if (!teste) await chrome.storage.local.set({ roboUltimoNovo: Date.now() });
     // 1ª mensagem: o texto do anúncio às vezes já fala em "valores"; por isso aqui só áudio/arquivo passa direto
     const motivo = temMidia ? 'mandou áudio/arquivo' : null;
     const nova = { etapa: 0, respostas: {}, situacao: 'qualificando', nome: '', msgs_robo: 0 };
