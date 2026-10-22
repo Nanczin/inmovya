@@ -40,6 +40,7 @@ const ROBO_CAMPOS = {
   entrada: 'Entrada disponível',
   planta_pronto: 'Planta ou pronto',
 };
+const ROBO_ROTULOS = { ...ROBO_CAMPOS, outras: 'Outras respostas' };
 const ROBO_ROTEIRO = [ // usado sem IA (ou se a IA falhar)
   { campos: ['objetivo'], texto: 'Para começar: você procura o imóvel para *investimento* ou para *morar*?' },
   { campos: ['dormitorios', 'vaga'], texto: 'Quantos *dormitórios* você precisa? E quantas *vagas de garagem*?' },
@@ -101,6 +102,7 @@ async function roboIA(estado, conversa, historico) {
       if (/gpt-oss/.test(modelo)) corpo.reasoning_effort = 'low';
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
+        signal: AbortSignal.timeout(25000), // IA demorou? cai no roteiro fixo
         headers: { Authorization: `Bearer ${estado.ia_chave}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(corpo),
       });
@@ -117,16 +119,29 @@ async function roboIA(estado, conversa, historico) {
   throw ultimoErro || new Error('IA indisponível');
 }
 
-// Sem IA: segue o roteiro fixo pela etapa
+// Roteiro fixo: usado quando não há chave da IA OU quando a IA falha/demora (vale no meio da conversa também).
+// Não depende de "etapa": olha qual foi a última pergunta do robô e quais informações ainda faltam.
 function roboRoteiroFixo(conversa, textoCliente) {
   const respostas = { ...(conversa.respostas || {}) };
-  const etapa = Number(conversa.etapa || 0);
-  if (etapa > 0) {
-    const passo = ROBO_ROTEIRO[etapa - 1];
-    if (passo) respostas[passo.campos.join('_e_')] = textoCliente;
+  const ultima = agenteSemAcento(conversa.ultima_msg_robo || '');
+  const perguntado = ROBO_ROTEIRO.find(p => ultima && ultima.includes(agenteSemAcento(p.texto).slice(0, 40)));
+  const resposta = String(textoCliente || '').trim();
+  if (resposta) {
+    if (perguntado) {
+      for (const c of perguntado.campos) if (!String(respostas[c] || '').trim()) respostas[c] = resposta;
+    } else if (!ultima.includes('perguntas rapidas')) { // "sim" depois da saudação não é resposta
+      // a última pergunta foi da IA: descobre pelo assunto da pergunta onde guardar a resposta
+      const assuntos = { objetivo: /investi|morar|moradia/, dormitorios: /dormit|quarto|suite/, vaga: /vaga|garagem/,
+        regiao: /bairro|regiao|zona|localiza/, valor: /valor|faixa|investimento de|orcamento/, entrada: /entrada/, planta_pronto: /planta|pronto/ };
+      const campos = Object.keys(assuntos).filter(c => assuntos[c].test(ultima) && !String(respostas[c] || '').trim());
+      if (campos.length) for (const c of campos) respostas[c] = resposta;
+      else respostas.outras = [respostas.outras, resposta].filter(Boolean).join(' / ').slice(0, 500);
+    }
   }
-  if (etapa >= ROBO_ROTEIRO.length) return { acao: 'concluir', respostas, etapa };
-  return { acao: 'responder', mensagem: ROBO_ROTEIRO[etapa].texto, respostas, etapa: etapa + 1 };
+  const falta = ROBO_ROTEIRO.find(p => p.campos.some(c => !String(respostas[c] || '').trim()));
+  const preenchidos = Object.keys(ROBO_CAMPOS).filter(c => String(respostas[c] || '').trim()).length;
+  if (!falta) return { acao: 'concluir', respostas, etapa: preenchidos, via: 'roteiro fixo' };
+  return { acao: 'responder', mensagem: falta.texto, respostas, etapa: preenchidos, via: 'roteiro fixo' };
 }
 
 // ---------- WhatsApp ----------
@@ -325,7 +340,7 @@ async function roboPassar(cred, estado, tel, conversa, motivo, textoCliente, sal
 
 async function roboFinalizar(cred, estado, tel, conversa, transf) {
   const linhas = Object.entries(conversa.respostas || {}).filter(([, v]) => String(v || '').trim())
-    .map(([k, v]) => `${ROBO_CAMPOS[k] || k.replace(/_e_/g, ' e ')}: ${String(v).replace(/\s+/g, ' ')}`);
+    .map(([k, v]) => `${ROBO_ROTULOS[k] || k.replace(/_/g, ' ')}: ${String(v).replace(/\s+/g, ' ')}`);
   const obs = [...linhas, transf ? `Passado para o ${estado.meu_nome}: ${transf.motivo}` : 'Qualificação completa'].join(' | ');
   let inmovya;
   try {

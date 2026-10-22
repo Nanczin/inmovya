@@ -174,8 +174,8 @@ export function RoboAnunciosPainel() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Modelo aberto <code>{cfg.iaModelo}</code>. Crie a chave grátis em console.groq.com → API Keys. Sem chave, o robô segue o roteiro fixo
-            de 5 perguntas. Com ou sem IA, preço, desconto, condições e financiamento sempre passam para você.
+            Modelo aberto <code>{cfg.iaModelo}</code>. Crie a chave grátis em console.groq.com → API Keys. Sem chave — ou se a IA falhar ou demorar —
+            o robô segue o roteiro fixo de 5 perguntas, do ponto onde a conversa parou. Com ou sem IA, preço, desconto, condições e financiamento sempre passam para você.
           </p>
         </div>
 
