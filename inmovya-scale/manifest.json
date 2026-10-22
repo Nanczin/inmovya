@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Inmovya Scale",
     "short_name": "Inmovya Scale",
-    "version": "1.7.5",
+    "version": "1.8.0",
     "description": "Ferramentas de produtividade e respostas rápidas para WhatsApp Web.",
     "icons": {
         "16": "icons/icon16.png",
@@ -25,6 +25,7 @@
         "https://inmovya-main.vercel.app/*",
         "https://*.supabase.co/*",
         "https://generativelanguage.googleapis.com/*",
+        "https://api.groq.com/*",
         "https://crm.midrah.com.br/*"
     ],
     "web_accessible_resources": [

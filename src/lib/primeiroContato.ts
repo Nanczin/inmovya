@@ -177,7 +177,13 @@ export const entregarParaExtensao = (rodarAgora = false) =>
 export async function sincronizarAgenteComExtensao() {
   try {
     const { cfg } = await carregarConfigAgente();
-    if (!cfg.ativo || !tokenAtual) return;
+    // o robô de anúncios usa o mesmo token: entrega também quando só ele está ligado
+    let roboLigado = false;
+    if (!cfg.ativo) {
+      const { data } = await supabase.from("robo_ext_config" as any).select("ativo").maybeSingle();
+      roboLigado = !!(data as any)?.ativo;
+    }
+    if ((!cfg.ativo && !roboLigado) || !tokenAtual) return;
     if (!(await checarExtensao()) || !extensaoAtualizada(VERSAO_SCALE_AGENTE)) return;
     await entregarParaExtensao(false);
   } catch {

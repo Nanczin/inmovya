@@ -66,6 +66,7 @@ import {
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { PrimeiroContatoPainel } from "@/components/esteiras/PrimeiroContatoPainel";
 import { RelatorioPrimeiroContato } from "@/components/esteiras/RelatorioPrimeiroContato";
+import { RoboAnunciosPainel } from "@/components/esteiras/RoboAnunciosPainel";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/whatsappOcupado";
 import {
@@ -976,6 +977,7 @@ export function EsteirasModule() {
             <TabsTrigger value="hoje" className="font-semibold">Hoje <span className="ml-1.5 tabular-nums text-muted-foreground">{fila.length}</span></TabsTrigger>
             <TabsTrigger value="esteiras" className="font-semibold">Esteiras</TabsTrigger>
             <TabsTrigger value="primeiro" className="font-semibold">1º contato</TabsTrigger>
+            <TabsTrigger value="robo" className="font-semibold">Robô de anúncios</TabsTrigger>
             <TabsTrigger value="importar" className="font-semibold">Backup</TabsTrigger>
           </TabsList>
           <span
@@ -986,6 +988,10 @@ export function EsteirasModule() {
             {extensaoOk === null ? "Procurando o Inmovya Scale…" : extensaoOk ? "Inmovya Scale conectado" : "Inmovya Scale não encontrado"}
           </span>
         </div>
+
+        <TabsContent value="robo" className="mt-4 space-y-4">
+          <RoboAnunciosPainel />
+        </TabsContent>
 
         <TabsContent value="primeiro" className="mt-4 space-y-4">
           <RelatorioPrimeiroContato />

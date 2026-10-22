@@ -375,6 +375,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })();
     return true;
   }
+
+  // Robô de anúncios: lê a lista de conversas (sem abrir nenhuma) e devolve as que têm mensagem não lida
+  // de número NÃO salvo (o título da conversa é o próprio número).
+  if (request.action === 'robo_listar_conversas') {
+    try {
+      if (!document.querySelector('#pane-side')) return sendResponse({ ok: false, error: 'O WhatsApp Web ainda não carregou.' });
+      const linhas = agenteLinhasVisiveis().map(agenteLerLinha).map(info => {
+        const soNumero = /^\+?[\d\s().-]{10,22}$/.test(String(info.nome || '').replace(/[‪-‮‎‏]/g, '').trim());
+        const telefone = soNumero ? String(info.nome).replace(/\D/g, '') : '';
+        return { ...info, telefone };
+      });
+      sendResponse({ ok: true, linhas: linhas.filter(l => l.telefone && l.naoLidas > 0 && !l.ultimaSua) });
+    } catch (error) {
+      sendResponse({ ok: false, error: error.message });
+    }
+    return true;
+  }
 });
 
 // ---------- Agente: funções do lote ----------
