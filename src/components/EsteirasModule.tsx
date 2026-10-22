@@ -328,9 +328,9 @@ export function EsteirasModule() {
   // Vindo do Negócios ("Executar esteira" de uma coluna): mostra só os leads daquela coluna
   const [filtroColuna, setFiltroColuna] = useState<string | null>(() => {
     try {
-      const v = sessionStorage.getItem("inmovya_esteira_coluna");
-      sessionStorage.removeItem("inmovya_esteira_coluna");
-      return v || null;
+      // não apaga aqui: se a tela montar de novo (ex.: o login renovou), o filtro continua.
+      // Sai ao clicar em "Ver todas as colunas" ou ao trocar de aba pelo menu.
+      return sessionStorage.getItem("inmovya_esteira_coluna") || null;
     } catch {
       return null;
     }
@@ -1005,7 +1005,14 @@ export function EsteirasModule() {
                   <span>
                     Executando a esteira da coluna <b>{colunaAlvo.name}</b> do Negócios — {filaVisivel.length} lead(s) com envio para hoje. Confira e clique em <b>Enviar</b> ou <b>Só colar</b>.
                   </span>
-                  <Button size="sm" variant="ghost" className="h-7 ml-auto" disabled={rodando} onClick={() => setFiltroColuna(null)}>
+                  <Button size="sm" variant="ghost" className="h-7 ml-auto" disabled={rodando} onClick={() => {
+                      setFiltroColuna(null);
+                      try {
+                        sessionStorage.removeItem("inmovya_esteira_coluna");
+                      } catch {
+                        /* ignore */
+                      }
+                    }}>
                     Ver todas as colunas
                   </Button>
                 </div>

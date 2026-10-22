@@ -128,7 +128,18 @@ const Index = () => {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar activeModule={activeModule} onModuleChange={setActiveModule} />
+        <AppSidebar
+          activeModule={activeModule}
+          onModuleChange={(m) => {
+            // pelo menu, Esteiras abre com todas as colunas (o filtro é só quando vem do botão do Negócios)
+            try {
+              sessionStorage.removeItem("inmovya_esteira_coluna");
+            } catch {
+              /* ignore */
+            }
+            setActiveModule(m);
+          }}
+        />
 
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
