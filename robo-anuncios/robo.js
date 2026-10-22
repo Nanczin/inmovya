@@ -31,6 +31,8 @@ const padrao = {
   ignorarMaisAntigasQueMin: 10,
   empreendimentos: [],
   testeSomenteNumeros: [], // se tiver números aqui, o robô SÓ responde esses (modo teste)
+  recuperarHoras: 12, // ao ligar: retoma quem escreveu nas últimas X horas e ficou sem resposta (0 = desliga)
+  recuperarIntervaloMin: 2, // minutos entre um contato e outro na recuperação
 };
 for (const [k, v] of Object.entries(padrao)) if (cfg[k] === undefined) cfg[k] = v;
 if (!cfg.webhookSegredo && require.main === module) {
@@ -71,12 +73,14 @@ const MSG_HUMANO = `Vou te passar para o ${cfg.meuNome} agora mesmo`;
 
 const semAcento = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-function saudacao(nome, empreendimento) {
+function saudacao(nome, empreendimento, atrasado = false) {
   const primeiro = String(nome || "").trim().split(/\s+/)[0];
   const ola = primeiro && /[a-zà-ú]/i.test(primeiro) ? `Olá, ${primeiro}!` : "Olá!";
   const anuncio = empreendimento ? `Vi que você veio pelo anúncio do *${empreendimento}*. ` : "Vi que você veio pelo nosso anúncio. ";
-  return `${ola} Aqui é o ${cfg.meuNome}, corretor. Obrigado pelo contato! ${anuncio}Posso te fazer umas perguntas rápidas para te mandar as melhores opções?`;
+  const desculpa = atrasado ? " Desculpe a demora para responder." : "";
+  return `${ola}${desculpa} Aqui é o ${cfg.meuNome}, corretor. Obrigado pelo contato! ${anuncio}Posso te fazer umas perguntas rápidas para te mandar as melhores opções?`;
 }
+const MSG_DESCULPA = "Desculpe a demora!";
 
 function acharEmpreendimento(texto) {
   const t = semAcento(texto);
@@ -195,7 +199,9 @@ async function sinal() {
   try {
     const s = await rpc("robo_sinal", { p_quem: cfg.quem });
     if (s.atende !== atendendo) log(s.atende ? "Este robô passou a ATENDER." : "Este robô ficou em ESPERA (o outro está atendendo).");
+    const virou = !atendendo && !!s.atende;
     atendendo = !!s.atende;
+    if (virou) recuperar(); // assumiu o atendimento: retoma quem ficou sem resposta
   } catch (e) {
     log("Falha no sinal do Inmovya:", e.message);
     // sem internet com o Inmovya: o PC continua atendendo; a nuvem fica em espera
@@ -207,6 +213,18 @@ async function sinal() {
 const filas = new Map(); // chatId -> { msgs: [], timer }
 const ocupados = new Set();
 
+function telefoneDe(chatId, senderPhone) {
+  const t = chatId.endsWith("@c.us") ? chatId.split("@")[0] : senderPhone || "";
+  return String(t).replace(/\D/g, "");
+}
+function podeAtender(telefone) {
+  if (telefone.length < 10) return false;
+  const teste = (cfg.testeSomenteNumeros || []).map((n) => String(n).replace(/\D/g, ""));
+  if (teste.length) return teste.includes(telefone); // modo teste: SÓ esses números (pode incluir o pessoal)
+  if (telefone === cfg.numeroPessoal) return false; // fora do teste: nunca conversa com o seu número pessoal
+  return true;
+}
+
 function receber(evento) {
   const d = evento.data || {};
   if (evento.event !== "message.received") return;
@@ -217,11 +235,9 @@ function receber(evento) {
   const ts = Number(d.timestamp || 0) * 1000;
   if (ts && Date.now() - ts > cfg.ignorarMaisAntigasQueMin * 60000) return;
 
-  let telefone = chatId.endsWith("@c.us") ? chatId.split("@")[0] : d.senderPhone || "";
-  telefone = String(telefone).replace(/\D/g, "");
+  const telefone = telefoneDe(chatId, d.senderPhone);
   if (telefone.length < 10) { log("Mensagem sem telefone identificável, ignorada:", chatId); return; }
-  if (telefone === cfg.numeroPessoal) return; // nunca conversa com o seu número pessoal
-  if (cfg.testeSomenteNumeros?.length && !cfg.testeSomenteNumeros.includes(telefone)) return;
+  if (!podeAtender(telefone)) return;
 
   const nome = d.contact?.pushName || d.contact?.name || d.chatName || "";
   const item = filas.get(chatId) || { msgs: [], timer: null, telefone, nome };
@@ -246,38 +262,39 @@ async function processar(chatId) {
   try { await conversar(chatId, item); } finally { ocupados.delete(chatId); }
 }
 
-async function conversar(chatId, item) {
+async function conversar(chatId, item, atrasado = false) {
   const { telefone, nome, msgs } = item;
   const texto = msgs.map((m) => m.texto).filter(Boolean).join("\n").trim();
   const soTexto = msgs.every((m) => m.tipo === "chat" || m.tipo === "text");
   const info = await rpc("robo_conversa", { p_telefone: telefone });
   let c = info.conversa;
 
-  if (c && c.situacao !== "qualificando") return; // encerrada: nunca mais responde
+  if (c && c.situacao !== "qualificando") return "encerrada"; // encerrada: nunca mais responde
   if (!c && info.ja_e_lead) {
     log(`${telefone} já é lead no Inmovya — robô não aborda; avisando o ${cfg.meuNome}.`);
     await rpc("robo_salvar_conversa", { p_telefone: telefone, p_dados: { chat_id: chatId, nome, situacao: "transferido", atendido_por: cfg.quem, resultado_inmovya: "ja_era_lead" } });
     await avisar(`📣 *Lead que JÁ ESTÁ no Inmovya* escreveu no número dos anúncios (o robô não respondeu).\n👤 ${nome || "-"}\n📱 +${telefone}\n💬 "${texto.slice(0, 300)}"`);
-    return;
+    return "ja_era_lead";
   }
 
   if (!c) {
     const empreendimento = acharEmpreendimento(texto);
     c = { chat_id: chatId, nome, empreendimento, etapa: 0, respostas: {}, situacao: "qualificando", atendido_por: cfg.quem };
     const motivo = !soTexto ? "mandou áudio/arquivo" : precisaDoEstevao(texto, 0);
-    if (motivo) return transferir(chatId, telefone, c, motivo, texto);
+    if (motivo) { await transferir(chatId, telefone, c, motivo, texto); return "transferido"; }
     await rpc("robo_salvar_conversa", { p_telefone: telefone, p_dados: c });
-    await enviarTexto(chatId, saudacao(nome, empreendimento));
-    log(`Novo contato ${telefone} (${nome || "sem nome"})${empreendimento ? " — " + empreendimento : ""}: saudação enviada.`);
-    return;
+    await enviarTexto(chatId, saudacao(nome, empreendimento, atrasado));
+    log(`Novo contato ${telefone} (${nome || "sem nome"})${empreendimento ? " — " + empreendimento : ""}: saudação enviada${atrasado ? " (recuperação)" : ""}.`);
+    await cadastrarJa(telefone, c);
+    return "saudacao";
   }
 
   if (!c.empreendimento) c.empreendimento = acharEmpreendimento(texto);
   const motivo = !soTexto ? "mandou áudio/arquivo" : precisaDoEstevao(texto, c.etapa + 1);
-  if (motivo) return transferir(chatId, telefone, c, motivo, texto);
+  if (motivo) { await transferir(chatId, telefone, c, motivo, texto); return "transferido"; }
 
   if (c.etapa === 0) {
-    if (recusou(texto)) return transferir(chatId, telefone, c, "não quis responder as perguntas", texto);
+    if (recusou(texto)) { await transferir(chatId, telefone, c, "não quis responder as perguntas", texto); return "transferido"; }
   } else {
     const p = PERGUNTAS[c.etapa - 1];
     c.respostas = { ...(c.respostas || {}), [p.campo]: texto };
@@ -287,8 +304,8 @@ async function conversar(chatId, item) {
     const prox = PERGUNTAS[c.etapa];
     c.etapa += 1;
     await rpc("robo_salvar_conversa", { p_telefone: telefone, p_dados: { ...c, atendido_por: cfg.quem } });
-    await enviarTexto(chatId, prox.texto);
-    return;
+    await enviarTexto(chatId, atrasado ? `${MSG_DESCULPA} ${prox.texto}` : prox.texto);
+    return "pergunta";
   }
 
   // respondeu a última pergunta
@@ -296,6 +313,78 @@ async function conversar(chatId, item) {
   await rpc("robo_salvar_conversa", { p_telefone: telefone, p_dados: { ...c, atendido_por: cfg.quem } });
   await enviarTexto(chatId, MSG_FIM);
   await finalizar(chatId, telefone, c, null);
+  return "qualificado";
+}
+
+// Cadastra no Inmovya logo no 1º contato, para nenhum lead se perder se ele parar de responder.
+// No fim da qualificação o mesmo lead recebe as respostas (o Inmovya acrescenta nas observações).
+async function cadastrarJa(telefone, c) {
+  const obs = [c.empreendimento ? `Empreendimento: ${c.empreendimento}` : null, "Veio pelo anúncio — robô iniciou a qualificação"].filter(Boolean).join(" | ");
+  try {
+    const r = await rpc("robo_registrar_lead", { p_nome: c.nome || "", p_telefone: telefone, p_observacoes: obs });
+    log(`${telefone}: cadastrado no Inmovya no 1º contato (${r?.acao || "ok"}).`);
+  } catch (e) {
+    log(`${telefone}: não consegui cadastrar no 1º contato: ${e.message.slice(0, 150)}`);
+  }
+}
+
+// ---------------- recuperação ao ligar ----------------
+// Quem escreveu nas últimas `recuperarHoras` e ficou SEM resposta (a última mensagem do chat é do cliente)
+// recebe resposta agora, um contato por vez, com `recuperarIntervaloMin` minutos entre eles.
+let recuperando = false;
+async function recuperar() {
+  if (recuperando || !cfg.recuperarHoras || !atendendo) return;
+  recuperando = true;
+  const feitos = [];
+  try {
+    const agora = Date.now();
+    const desde = agora - cfg.recuperarHoras * 3600e3;
+    const ate = agora - cfg.ignorarMaisAntigasQueMin * 60e3; // as mais novas chegam pelo webhook normal
+    const chats = await openwa("GET", `/sessions/${sessaoId}/chats?limit=300`);
+    const lista = (Array.isArray(chats) ? chats : chats?.items || [])
+      .filter((ch) => (ch.kind ? ch.kind === "individual" : !ch.isGroup) && !ch.archived)
+      .filter((ch) => /@(c\.us|lid|s\.whatsapp\.net)$/.test(ch.id))
+      .filter((ch) => ch.timestamp * 1000 >= desde && ch.timestamp * 1000 <= ate)
+      .sort((a, b) => a.timestamp - b.timestamp); // quem esperou mais vai primeiro
+    log(`Recuperação: ${lista.length} conversa(s) com movimento nas últimas ${cfg.recuperarHoras}h para conferir.`);
+    let primeiro = true;
+    for (const ch of lista) {
+      if (!atendendo) { log("Recuperação interrompida: este robô entrou em espera."); break; }
+      if (ch.id.endsWith("@c.us") && !podeAtender(telefoneDe(ch.id))) continue; // nem lê o histórico (ex.: modo teste)
+      let hist;
+      try { hist = await openwa("GET", `/sessions/${sessaoId}/messages/${encodeURIComponent(ch.id)}/history?limit=20`); }
+      catch (e) { log(`Recuperação: não li o histórico de ${ch.id}: ${e.message.slice(0, 120)}`); continue; }
+      const msgs = (Array.isArray(hist) ? hist : hist?.items || hist?.messages || []).sort((a, b) => a.timestamp - b.timestamp);
+      if (!msgs.length || msgs[msgs.length - 1].fromMe) continue; // já respondido (pelo robô ou por você)
+      const pendentes = [];
+      for (let i = msgs.length - 1; i >= 0 && !msgs[i].fromMe; i--) pendentes.unshift(msgs[i]);
+      const ultima = pendentes[pendentes.length - 1];
+      if (ultima.timestamp * 1000 < desde || ultima.timestamp * 1000 > ate) continue;
+      const telefone = telefoneDe(ch.id, ultima.senderPhone);
+      if (!podeAtender(telefone)) continue;
+      if (ocupados.has(ch.id) || filas.has(ch.id)) continue; // já está sendo atendido pelo webhook
+
+      if (!primeiro) await dormir(cfg.recuperarIntervaloMin * 60e3);
+      primeiro = false;
+      const item = { telefone, nome: ch.name && !/^\+?\d[\d\s-]+$/.test(ch.name) ? ch.name : "", msgs: pendentes.map((m) => ({ tipo: m.type || "chat", texto: String(m.body || ""), id: m.id })) };
+      ocupados.add(ch.id);
+      try {
+        const r = await conversar(ch.id, item, true);
+        log(`Recuperação: ${telefone} → ${r || "sem ação"}`);
+        if (r && r !== "encerrada") feitos.push(`• ${item.nome || "-"} (+${telefone}): ${{ saudacao: "recebeu a saudação", pergunta: "continuou as perguntas", transferido: "passado para você", qualificado: "qualificado", ja_era_lead: "já era lead (não respondido)" }[r] || r}`);
+      } catch (e) {
+        log(`Recuperação: erro com ${telefone}: ${e.message.slice(0, 150)}`);
+      } finally {
+        ocupados.delete(ch.id);
+      }
+    }
+  } catch (e) {
+    log("Recuperação falhou:", e.message.slice(0, 200));
+  } finally {
+    recuperando = false;
+  }
+  if (feitos.length) await avisar(`🔁 *Robô religado — respondi quem ficou sem resposta* (últimas ${cfg.recuperarHoras}h):\n${feitos.join("\n")}`);
+  log(`Recuperação terminada: ${feitos.length} contato(s) atendido(s).`);
 }
 
 async function transferir(chatId, telefone, c, motivo, texto) {
@@ -389,6 +478,7 @@ async function iniciar() {
   await sinal();
   setInterval(sinal, 60000);
   log(atendendo ? "Pronto e ATENDENDO." : "Pronto, em ESPERA (o PC está atendendo).");
+  setTimeout(() => recuperar(), 30000); // dá tempo do WhatsApp sincronizar as conversas
 }
 
 if (require.main === module) iniciar().catch((e) => { log("Falha ao iniciar:", e.message); process.exit(1); });
