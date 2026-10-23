@@ -26,6 +26,7 @@ import {
   Briefcase,
   Workflow,
   LayoutTemplate,
+  Trophy,
 } from "lucide-react";
 
 interface AppSidebarProps {
@@ -41,6 +42,7 @@ const grupos: { titulo: string; itens: Item[] }[] = [
     titulo: "Dia a dia",
     itens: [
       { id: "dashboard", label: "Início", icon: Home },
+      { id: "arena", label: "Arena", icon: Trophy },
       { id: "agenda", label: "Agenda", icon: CalendarIcon },
       { id: "leads", label: "Leads", icon: Users },
       { id: "negocios", label: "Negócios", icon: Briefcase },

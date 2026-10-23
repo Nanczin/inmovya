@@ -33,6 +33,7 @@ const moduleNames: Record<string, string> = {
   ligacoes: "Ligações",
   templates: "Templates",
   whatsapp: "WhatsApp",
+  arena: "Arena Spartana",
   relatorios: "Relatórios",
   settings: "Configurações"
 };

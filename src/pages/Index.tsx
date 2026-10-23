@@ -21,6 +21,7 @@ import { NegociosModule } from "@/components/NegociosModule";
 import { EsteirasModule } from "@/components/EsteirasModule";
 import { EsteiraEmAndamento } from "@/components/esteiras/EsteiraEmAndamento";
 import { WhatsappModule } from "@/components/WhatsappModule";
+import { ArenaModule } from "@/components/ArenaModule";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
 
 const Index = () => {
@@ -118,6 +119,8 @@ const Index = () => {
         return <RelatoriosModule />;
       case "whatsapp":
         return <WhatsappModule />;
+      case "arena":
+        return <ArenaModule />;
       case "settings":
         return <ConfiguracoesModule />;
       default:
