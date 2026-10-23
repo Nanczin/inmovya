@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Spartano3D } from "@/components/arena/Spartano3D";
 import { Flame, Lock, Plus, Settings2, Shield, Swords, Target, Trophy, Zap } from "lucide-react";
 
 // ARENA SPARTANA — transforma as métricas do dia a dia em jogo: XP, nível, missões do dia, sequência,
@@ -35,7 +36,7 @@ const COLUNA: Partial<Record<Metrica, string>> = {
   vendas: "venda",
 };
 
-interface Metas {
+export interface Metas {
   diaLigacoes: number;
   diaInteressados: number;
   diaInteracoes: number;
@@ -44,7 +45,7 @@ interface Metas {
   mesDocumentacoes: number;
   mesVendas: number;
 }
-const METAS_PADRAO: Metas = {
+export const METAS_PADRAO: Metas = {
   diaLigacoes: 200,
   diaInteressados: 5,
   diaInteracoes: 15,
@@ -64,15 +65,15 @@ const NIVEIS = [
   { nome: "Lenda de Esparta", xp: 14000 },
 ];
 
-const chave = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const chave = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const xpDoDia = (d: Dia) => (Object.keys(XP) as Metrica[]).reduce((s, k) => s + d[k] * XP[k], 0);
-const ehDiaUtil = (d: Date) => d.getDay() !== 0; // segunda a sábado
-const interessado = (r?: string | null) => {
+export const ehDiaUtil = (d: Date) => d.getDay() !== 0; // segunda a sábado
+export const interessado = (r?: string | null) => {
   const n = String(r || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   return n.includes("interessado") && !n.includes("nao") && !n.includes("sem interesse");
 };
 
-function lerMetasLocal(): Metas {
+export function lerMetasLocal(): Metas {
   try {
     const m = JSON.parse(localStorage.getItem("inmovya_arena_metas") || "null");
     const dia = Number(localStorage.getItem("meta_ligacoes_diarias")) || METAS_PADRAO.diaLigacoes;
@@ -577,6 +578,9 @@ export function ArenaModule() {
       <section className="arena-sobe arena-arena rounded-2xl border p-4 sm:p-6 shadow-card">
         <div className="arena-chao" />
         <Brasas />
+        <div className="relative flex flex-wrap items-center gap-6">
+          <Spartano3D largura={150} className="hidden sm:block shrink-0" />
+          <div className="flex-1 min-w-[260px]">
         <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Medalha3D nivel={nivelIdx} />
@@ -595,6 +599,9 @@ export function ArenaModule() {
               </div>
               <div className="text-xs text-white/60 uppercase tracking-widest">XP no mês</div>
             </div>
+            <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white" onClick={() => window.dispatchEvent(new Event("inmovya-metas-dia"))} title="Números do dia">
+              <Target className="w-4 h-4" />
+            </Button>
             <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white" onClick={() => setEditando(metas)} title="Definir metas">
               <Settings2 className="w-4 h-4" />
             </Button>
@@ -614,6 +621,8 @@ export function ArenaModule() {
                 {i <= nivelIdx ? "★" : "☆"} <span className="hidden sm:inline">{n.nome}</span>
               </span>
             ))}
+          </div>
+        </div>
           </div>
         </div>
       </section>

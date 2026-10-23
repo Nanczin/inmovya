@@ -22,6 +22,7 @@ import { EsteirasModule } from "@/components/EsteirasModule";
 import { EsteiraEmAndamento } from "@/components/esteiras/EsteiraEmAndamento";
 import { WhatsappModule } from "@/components/WhatsappModule";
 import { ArenaModule } from "@/components/ArenaModule";
+import { MetasDoDia } from "@/components/arena/MetasDoDia";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
 
 const Index = () => {
@@ -157,6 +158,7 @@ const Index = () => {
         </div>
       </div>
     <TaskViewDialog taskId={globalViewTaskId} onClose={() => setGlobalViewTaskId(null)} />
+    <MetasDoDia onAbrirArena={() => setActiveModule("arena")} />
     {activeModule !== "esteiras" && <EsteiraEmAndamento onAbrir={() => setActiveModule("esteiras")} />}
     </SidebarProvider>
   );
