@@ -20,7 +20,7 @@ const ROBO_ATRASO_MIN = 10;                   // respondeu depois de 10 min? com
 
 function roboGarantirAlarme() {
   chrome.alarms.get(ROBO_ALARME, a => {
-    if (!a) chrome.alarms.create(ROBO_ALARME, { periodInMinutes: 1, delayInMinutes: 0.5 });
+    if (!a || a.periodInMinutes !== 0.5) chrome.alarms.create(ROBO_ALARME, { periodInMinutes: 0.5, delayInMinutes: 0.1 });
   });
 }
 roboGarantirAlarme();
@@ -28,6 +28,10 @@ chrome.runtime.onStartup.addListener(roboGarantirAlarme);
 chrome.runtime.onInstalled.addListener(roboGarantirAlarme);
 chrome.alarms.onAlarm.addListener(a => {
   if (a.name === ROBO_ALARME) roboRodada().catch(err => console.error('[Inmovya robô]', err));
+});
+// a aba do WhatsApp avisa quando aparece mensagem não lida: o robô confere na hora (sem esperar o alarme)
+chrome.runtime.onMessage.addListener(msg => {
+  if (msg?.action === 'robo_acordar') roboRodada().catch(err => console.error('[Inmovya robô]', err));
 });
 
 // ---------- Roteiro ----------
@@ -168,6 +172,51 @@ async function roboEnviar(tel, texto) {
   await naVezWA(() => sendCampaignMessage({ phone: tel, text: texto, background: true, gapMinMs: 0, gapMaxMs: 0 }));
 }
 
+// Abre UMA janelinha do WhatsApp na conversa e faz tudo nela: ler, responder, etiquetar (bem mais rápido
+// do que abrir uma janela para cada passo). Os avisos para o seu pessoal saem depois, em outra janela.
+async function roboSessao(tel, trabalho) {
+  const avisos = [];
+  const resultado = await naVezWA(async () => {
+    const { tab, windowId } = await abrirJanelaDeEnvio(`https://web.whatsapp.com/send?phone=${tel}&inmovya_auto=1`);
+    if (!tab?.id) throw new Error('Não foi possível abrir o WhatsApp.');
+    const pedir = async (msg, tentativas = 15, envioId = null) => {
+      let ultimo;
+      for (let i = 0; i < tentativas; i++) {
+        try {
+          const r = await chrome.tabs.sendMessage(tab.id, msg);
+          if (r?.ok) return r;
+          if (envioId && enviosJaFeitos.has(envioId)) return { ok: true, jaEnviado: true };
+          ultimo = new Error(r?.error || 'O WhatsApp não respondeu.');
+          if (r?.final) break;
+        } catch (err) {
+          ultimo = err;
+          if (envioId && enviosJaFeitos.has(envioId)) return { ok: true, jaEnviado: true };
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      throw ultimo || new Error('O WhatsApp não respondeu.');
+    };
+    const wa = {
+      ler: () => pedir({ action: 'agent_read_chat_tab', phone: tel, rapido: true }),
+      enviar: async texto => {
+        const envioId = crypto.randomUUID();
+        await pedir({ action: 'campaign_auto_send', text: texto, attachments: [], gapMinMs: 0, gapMaxMs: 0, envioId }, 15, envioId);
+        await new Promise(r => setTimeout(r, 700));
+      },
+      etiquetar: (nome, etiqueta) => pedir({ action: 'agent_save_and_label_tab', phone: tel, nome, etiqueta }, 3),
+      avisar: texto => avisos.push(texto),
+    };
+    try {
+      await waitForTabComplete(tab.id);
+      return await trabalho(wa);
+    } finally {
+      await new Promise(r => setTimeout(r, 1000));
+      await chrome.windows.remove(windowId).catch(() => {});
+    }
+  });
+  return { resultado, avisos };
+}
+
 async function roboAvisarVoce(estado, texto) {
   const tel = String(estado.numero_aviso || '').replace(/\D/g, '');
   if (!tel) return;
@@ -274,8 +323,14 @@ async function roboRodadaAgora() {
 }
 
 async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = null) {
+  const { resultado, avisos } = await roboSessao(tel, wa => roboAtenderNaJanela(wa, cred, estado, tel, conversa, pareceAnuncio, teste));
+  for (const a of avisos) await roboAvisarVoce(estado, a);
+  return resultado;
+}
+
+async function roboAtenderNaJanela(wa, cred, estado, tel, conversa, pareceAnuncio, teste) {
   const salvar = dados => agenteRpc(cred, 'robo_ext_salvar', { p_token: cred.token, p_telefone: tel, p_dados: dados });
-  const leitura = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'agent_read_chat_tab'));
+  const leitura = await wa.ler();
   let msgs = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
   if (teste) {
     // guarda o nome da conversa (contato salvo) para achar as próximas mensagens na lista sem abrir
@@ -308,21 +363,21 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = n
     if (!novo) {
       if (teste) return `não parece lead novo de anúncio: ${entradas.length} msg dele, ${saidas.length} sua(s), frase do anúncio ${entradas.some(m => pareceAnuncio(m.texto)) ? 'ok' : 'NÃO encontrada'} (${diag})`;
       await salvar({ situacao: 'ignorado', nome: '' });
-      await roboAvisarVoce(estado, `📩 *Robô:* abri a conversa de +${tel} achando que era lead de anúncio, mas não é contato novo. *Não respondi* — confira você.\n👉 https://wa.me/${tel}`);
+      wa.avisar(`📩 *Robô:* abri a conversa de +${tel} achando que era lead de anúncio, mas não é contato novo. *Não respondi* — confira você.\n👉 https://wa.me/${tel}`);
       return 'não é lead novo';
     }
     if (idadeMin > (Number(estado.recuperar_horas) || 12) * 60) {
       await salvar({ situacao: 'ignorado' });
-      await roboAvisarVoce(estado, `⏰ *Robô:* o lead de anúncio +${tel} escreveu há mais de ${estado.recuperar_horas}h. Não respondi — é com você.\n💬 "${textoCliente.slice(0, 200)}"\n👉 https://wa.me/${tel}`);
+      wa.avisar(`⏰ *Robô:* o lead de anúncio +${tel} escreveu há mais de ${estado.recuperar_horas}h. Não respondi — é com você.\n💬 "${textoCliente.slice(0, 200)}"\n👉 https://wa.me/${tel}`);
       return;
     }
     if (!teste) await chrome.storage.local.set({ roboUltimoNovo: Date.now() });
     // 1ª mensagem: o texto do anúncio às vezes já fala em "valores"; por isso aqui só áudio/arquivo passa direto
     const motivo = temMidia ? 'mandou áudio/arquivo' : null;
     const nova = { etapa: 0, respostas: {}, situacao: 'qualificando', nome: '', msgs_robo: 0 };
-    if (motivo) return roboPassar(cred, estado, tel, nova, motivo, textoCliente, salvar);
+    if (motivo) return roboPassar(wa, cred, estado, tel, nova, motivo, textoCliente, salvar);
     const texto = roboSaudacao(estado.meu_nome, atrasado);
-    await roboEnviar(tel, texto);
+    await wa.enviar(texto);
     await salvar({ ...nova, msgs_robo: 1, ultima_msg_robo: texto, ...(teste ? { reiniciar: true } : {}) });
     // cadastra já no 1º contato: ninguém se perde se parar de responder
     await agenteRpc(cred, 'robo_ext_registrar', { p_token: cred.token, p_nome: '', p_telefone: tel, p_observacoes: 'Veio pelo anúncio — robô iniciou a qualificação' }).catch(() => {});
@@ -339,8 +394,8 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = n
 
   const jaComecou = Number(conversa.etapa || 0) > 0 || Object.keys(conversa.respostas || {}).length > 0;
   const trava = temMidia ? 'mandou áudio/arquivo' : roboPrecisaDoCorretor(textoCliente, jaComecou);
-  if (trava) return roboPassar(cred, estado, tel, conversa, trava, textoCliente, salvar);
-  if (Number(conversa.msgs_robo || 0) >= ROBO_MAX_MSGS) return roboPassar(cred, estado, tel, conversa, 'conversa ficou longa', textoCliente, salvar);
+  if (trava) return roboPassar(wa, cred, estado, tel, conversa, trava, textoCliente, salvar);
+  if (Number(conversa.msgs_robo || 0) >= ROBO_MAX_MSGS) return roboPassar(wa, cred, estado, tel, conversa, 'conversa ficou longa', textoCliente, salvar);
 
   let decisao = null;
   if (estado.ia_chave) {
@@ -360,26 +415,26 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = n
   const nome = String(decisao.nome || conversa.nome || '').trim();
   const atual = { ...conversa, respostas, nome, etapa: decisao.etapa ?? Number(conversa.etapa || 0) + 1 };
 
-  if (decisao.acao === 'passar') return roboPassar(cred, estado, tel, atual, decisao.motivo || 'a IA achou melhor você assumir', textoCliente, salvar);
+  if (decisao.acao === 'passar') return roboPassar(wa, cred, estado, tel, atual, decisao.motivo || 'a IA achou melhor você assumir', textoCliente, salvar);
   if (decisao.acao === 'concluir') {
-    await roboEnviar(tel, ROBO_MSG_FIM);
+    await wa.enviar(ROBO_MSG_FIM);
     await salvar({ ...atual, situacao: 'concluido', msgs_robo: Number(conversa.msgs_robo || 0) + 1, ultima_msg_robo: ROBO_MSG_FIM });
-    return roboFinalizar(cred, estado, tel, atual, null);
+    return roboFinalizar(wa, cred, estado, tel, atual, null);
   }
   let texto = String(decisao.mensagem).trim().slice(0, 600);
   if (atrasado && !/desculp/i.test(texto)) texto = `Desculpe a demora! ${texto}`;
-  await roboEnviar(tel, texto);
+  await wa.enviar(texto);
   await salvar({ ...atual, situacao: 'qualificando', msgs_robo: Number(conversa.msgs_robo || 0) + 1, ultima_msg_robo: texto });
 }
 
-async function roboPassar(cred, estado, tel, conversa, motivo, textoCliente, salvar) {
+async function roboPassar(wa, cred, estado, tel, conversa, motivo, textoCliente, salvar) {
   const texto = roboMsgHumano(estado.meu_nome);
-  await roboEnviar(tel, texto);
+  await wa.enviar(texto);
   await salvar({ ...conversa, situacao: 'transferido', ultima_msg_robo: texto, msgs_robo: Number(conversa.msgs_robo || 0) + 1 });
-  return roboFinalizar(cred, estado, tel, conversa, { motivo, texto: textoCliente });
+  return roboFinalizar(wa, cred, estado, tel, conversa, { motivo, texto: textoCliente });
 }
 
-async function roboFinalizar(cred, estado, tel, conversa, transf) {
+async function roboFinalizar(wa, cred, estado, tel, conversa, transf) {
   const linhas = Object.entries(conversa.respostas || {}).filter(([, v]) => String(v || '').trim())
     .map(([k, v]) => `${ROBO_ROTULOS[k] || k.replace(/_/g, ' ')}: ${String(v).replace(/\s+/g, ' ')}`);
   const obs = [...linhas, transf ? `Passado para o ${estado.meu_nome}: ${transf.motivo}` : 'Qualificação completa'].join(' | ');
@@ -394,7 +449,7 @@ async function roboFinalizar(cred, estado, tel, conversa, transf) {
   let etiqueta = '';
   try {
     const nome = agentePrimeiroNome(conversa.nome) ? `${String(conversa.nome).trim()}${conversa.empreendimento ? ' ' + conversa.empreendimento : ''}` : '';
-    const r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome, etiqueta: '20%' }, 'agent_save_and_label_tab'));
+    const r = await wa.etiquetar(nome, '20%');
     etiqueta = r?.etiqueta?.ok === false ? 'não consegui pôr a etiqueta 20%' : 'etiqueta 20%';
     if (nome) etiqueta += r?.contato?.salvo ? ' · contato salvo' : ' · contato NÃO salvo';
   } catch (err) {
@@ -403,5 +458,5 @@ async function roboFinalizar(cred, estado, tel, conversa, transf) {
   await agenteRpc(cred, 'robo_ext_salvar', { p_token: cred.token, p_telefone: tel, p_dados: { resultado_inmovya: inmovya } }).catch(() => {});
   const cab = transf ? `🔴 *Lead do anúncio PRECISA DE VOCÊ* (${transf.motivo})` : '🟢 *Lead do anúncio qualificado*';
   const ultima = transf?.texto ? `\n💬 Última mensagem: "${transf.texto.slice(0, 300)}"` : '';
-  await roboAvisarVoce(estado, `${cab}\n👤 ${conversa.nome || '-'}\n📱 +${tel}\n${linhas.map(l => '• ' + l).join('\n') || '• (sem respostas)'}${ultima}\n🗂 Inmovya: ${inmovya}\n🏷 ${etiqueta}\n👉 https://wa.me/${tel}`);
+  wa.avisar(`${cab}\n👤 ${conversa.nome || '-'}\n📱 +${tel}\n${linhas.map(l => '• ' + l).join('\n') || '• (sem respostas)'}${ultima}\n🗂 Inmovya: ${inmovya}\n🏷 ${etiqueta}\n👉 https://wa.me/${tel}`);
 }

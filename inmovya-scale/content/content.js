@@ -271,8 +271,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             await dom.delay(500);
           }
         };
-        await esperarEstabilizar();
-        // sobe a conversa para carregar o histórico (até ~60 mensagens)
+        await esperarEstabilizar(request.rapido ? 6000 : 12000);
+        // sobe a conversa para carregar o histórico (até ~60 mensagens) — o robô (rapido) não precisa
         const acharRolagem = () => {
           let el = main.querySelector('[data-testid^="conv-msg-"]');
           while (el && el !== document.body) {
@@ -282,7 +282,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
           return null;
         };
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < (request.rapido ? 0 : 4); i++) {
           const rolagem = acharRolagem();
           if (!rolagem || contar() >= 60) break;
           const antes = contar();
@@ -846,3 +846,24 @@ async function agenteItemDoLote(request) {
   }
   return { ok: true, encontrado: true, info };
 }
+
+
+// Robô de anúncios: na aba principal do WhatsApp, quando aparece conversa NÃO LIDA nova, acorda o robô na hora
+// (sem esperar o próximo minuto). Só olha a lista; não abre nada.
+(() => {
+  if (location.search.includes('inmovya_auto')) return;
+  let assinaturaAnterior = '';
+  let ultimoAviso = 0;
+  setInterval(() => {
+    try {
+      if (!document.querySelector('#pane-side')) return;
+      const naoLidas = agenteLinhasVisiveis().map(agenteLerLinha).filter(l => l.naoLidas > 0 && !l.ultimaSua);
+      const assinatura = naoLidas.map(l => `${l.nome}:${l.naoLidas}:${l.ultimaMensagem}`).join('|');
+      if (assinatura && assinatura !== assinaturaAnterior && Date.now() - ultimoAviso > 8000) {
+        ultimoAviso = Date.now();
+        chrome.runtime.sendMessage({ action: 'robo_acordar' }).catch?.(() => {});
+      }
+      assinaturaAnterior = assinatura;
+    } catch (_) { /* extensão recarregada: ignora */ }
+  }, 3000);
+})();
