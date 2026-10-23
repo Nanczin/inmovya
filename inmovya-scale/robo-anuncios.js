@@ -2,7 +2,7 @@
 //
 // Não conversa e não manda NENHUMA mensagem. Só quando você liga no Inmovya (Esteiras → Leads de anúncio):
 //   a cada 30 s (e na hora em que chega mensagem nova) lê a LISTA de conversas da aba do WhatsApp Web, sem abrir nada,
-//   e cadastra no Inmovya quem: é número NÃO salvo, tem mensagem não lida, a prévia tem a frase do anúncio
+//   e cadastra no Inmovya quem: é número NÃO salvo, mandou a frase do anúncio (na prévia; se a última msg for sua, abre a conversa uma vez para conferir)
 //   ("Olá! Tenho interesse…") e ainda não está no Inmovya. O lead entra pela fila de conferência (→ Validação),
 //   com as tags "anuncio" e "robo-anuncio" e a mensagem dele nas observações. Cada número é cadastrado uma vez só.
 // Usa funções do agente-primeiro-contato.js: agenteCredenciais, agenteRpc, agenteSemAcento, agenteTelefone.
@@ -93,29 +93,68 @@ async function roboRodadaAgora() {
   const pareceAnuncio = t => { const s = agenteSemAcento(t); return !!s && frases.some(f => s.includes(f)); };
   const pessoal = String(estado.numero_aviso || '').replace(/\D/g, '').slice(-8);
 
+  let lidas = 0; // conversas abertas nesta rodada (no máximo 2, para não ficar abrindo janelas)
   for (const linha of lista.linhas || []) {
     const tel = agenteTelefone(linha.telefone);
     if (!tel || tel.length < 12) continue;
     if (pessoal && tel.slice(-8) === pessoal) continue;
-    if (!pareceAnuncio(linha.ultimaMensagem)) continue;
+    const vistos = await roboVistos();
+    if (vistos[tel]) continue; // já conferido antes (cadastrado ou não é anúncio)
     let info;
     try { info = await agenteRpc(cred, 'robo_ext_conversa', { p_token: cred.token, p_telefone: tel }); } catch (_) { continue; }
-    if (info?.conversa || info?.ja_e_lead) continue; // já cadastrado antes / já é lead
+    if (info?.conversa || info?.ja_e_lead) { await roboMarcarVisto(tel); continue; } // já cadastrado / já é lead
+
+    let mensagem = null;
+    if (!linha.ultimaSua && pareceAnuncio(linha.ultimaMensagem)) {
+      mensagem = linha.ultimaMensagem; // a prévia já mostra a frase do anúncio: cadastra sem abrir nada
+    } else if (linha.ultimaSua && lidas < 2) {
+      // a última mensagem é sua (ex.: saudação automática do Business ou você já respondeu pelo celular):
+      // abre a conversa numa janelinha UMA vez e procura a frase do anúncio nas mensagens dele
+      lidas++;
+      try {
+        const leitura = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, rapido: true }, 'agent_read_chat_tab'));
+        const dele = (leitura?.mensagens || []).filter(m => m.dir === 'in' && pareceAnuncio(m.texto));
+        if (dele.length) mensagem = dele[0].texto;
+        else {
+          await roboMarcarVisto(tel);
+          continue; // não é lead de anúncio
+        }
+      } catch (_) {
+        continue; // WhatsApp não respondeu: tenta na próxima rodada
+      }
+    } else {
+      continue; // mensagem dele sem a frase (ainda): espera
+    }
+
     try {
       const r = await agenteRpc(cred, 'robo_ext_registrar', {
         p_token: cred.token,
         p_nome: '',
         p_telefone: tel,
-        p_observacoes: `Veio pelo anúncio (WhatsApp). Mensagem: "${String(linha.ultimaMensagem || '').slice(0, 300)}"`,
+        p_observacoes: `Veio pelo anúncio (WhatsApp). Mensagem: "${String(mensagem || '').slice(0, 300)}"`,
       });
       await agenteRpc(cred, 'robo_ext_salvar', {
         p_token: cred.token,
         p_telefone: tel,
         p_dados: { situacao: 'cadastrado', resultado_inmovya: r?.acao || 'cadastrado' },
       });
+      await roboMarcarVisto(tel);
       console.log('[Inmovya anúncios] cadastrado', tel, r?.acao);
     } catch (err) {
       await aviso(`Não consegui cadastrar +${tel}: ${err.message}`);
     }
   }
+}
+
+// números já conferidos (guardados por 30 dias neste Chrome, para não consultar o banco toda hora)
+async function roboVistos() {
+  const { roboVistos: v = {} } = await chrome.storage.local.get('roboVistos');
+  return v;
+}
+async function roboMarcarVisto(tel) {
+  const v = await roboVistos();
+  const limite = Date.now() - 30 * 24 * 3600e3;
+  for (const k of Object.keys(v)) if (v[k] < limite) delete v[k];
+  v[tel] = Date.now();
+  await chrome.storage.local.set({ roboVistos: v });
 }

@@ -396,7 +396,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       sendResponse({
         ok: true,
-        linhas: linhas.filter(l => l.telefone && l.naoLidas > 0 && !l.ultimaSua),
+        // todas as conversas de número NÃO salvo que aparecem na lista (lidas ou não, última sua ou dele)
+        linhas: linhas.filter(l => l.telefone),
         // modo teste: o número de teste pode estar salvo (título = nome); só nome e marcadores, sem o texto
         todas: linhas.filter(l => l.naoLidas > 0 && !l.ultimaSua).map(l => ({ nome: l.nome, telefone: l.telefone, naoLidas: l.naoLidas, ultimaSua: l.ultimaSua }))
       });
