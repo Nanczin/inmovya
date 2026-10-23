@@ -577,11 +577,18 @@ export function ArenaModule() {
     <div className="space-y-4 max-w-6xl">
       <style>{CSS_ARENA}</style>
       {/* cabeçalho: arena 3D com medalha de nível */}
-      <section className="arena-sobe arena-arena rounded-2xl border p-4 sm:p-6 shadow-card">
-        <div className="arena-chao" />
-        <Brasas />
-        <div className="relative flex items-stretch gap-2">
-          <div className="flex-1 min-w-0 py-1">
+      <section className="arena-sobe arena-arena rounded-2xl border p-4 sm:p-6 shadow-card min-h-[280px] sm:min-h-[320px] flex flex-col justify-end">
+        {/* abertura estilo GTA no fundo, escurecida à esquerda para ler os números */}
+        <div
+          className="absolute inset-y-0 right-0 w-full md:w-[72%]"
+          style={{ WebkitMaskImage: "linear-gradient(to right, transparent, #000 32%)", maskImage: "linear-gradient(to right, transparent, #000 32%)" }}
+        >
+          <Abertura />
+        </div>
+        <div className="absolute inset-0 z-[4] pointer-events-none bg-black/50 md:bg-transparent" />
+        <div className="absolute inset-0 z-[4] pointer-events-none bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+        <div className="relative z-10 flex items-stretch gap-2">
+          <div className="flex-1 min-w-0 py-1 max-w-2xl">
         <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Medalha3D nivel={nivelIdx} />
@@ -625,7 +632,6 @@ export function ArenaModule() {
           </div>
         </div>
           </div>
-          <Abertura largura={280} altura={340} editavel className="hidden md:block shrink-0 -my-6 -mr-4 sm:-mr-6 rounded-r-2xl" />
         </div>
       </section>
 
