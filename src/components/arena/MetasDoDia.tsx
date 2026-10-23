@@ -16,17 +16,11 @@ interface Linha {
 }
 
 const CSS = `
-@keyframes md-entra { from { opacity: 0; transform: perspective(1000px) rotateX(40deg) translateY(50px) scale(.8); } to { opacity: 1; transform: none; } }
-@keyframes md-linha { from { opacity: 0; transform: perspective(600px) rotateY(-50deg) translateX(-30px); } to { opacity: 1; transform: none; } }
-@keyframes md-chao { to { background-position: 0 40px, 0 0; } }
-.md-caixa { animation: md-entra .8s cubic-bezier(.2,.8,.2,1) both; background: radial-gradient(120% 90% at 30% 0%, #3b1d0e, #0d0806 70%); color: #fff; border: 1px solid rgba(251,146,60,.35); }
-.md-linha { animation: md-linha .6s cubic-bezier(.2,.8,.2,1) both; }
-.md-chao { position: absolute; left: -50%; right: -50%; bottom: -35%; height: 80%; pointer-events: none;
-  background-image: linear-gradient(rgba(251,146,60,.25) 1px, transparent 1px), linear-gradient(90deg, rgba(251,146,60,.25) 1px, transparent 1px);
-  background-size: 40px 40px; transform: perspective(240px) rotateX(62deg); transform-origin: bottom; animation: md-chao 1.8s linear infinite;
-  -webkit-mask-image: linear-gradient(to top, #000, transparent 80%); mask-image: linear-gradient(to top, #000, transparent 80%); }
-.md-num { text-shadow: 0 1px 0 #d97706, 0 2px 0 #b45309, 0 3px 0 #92400e, 0 6px 10px rgba(0,0,0,.5); }
-@media (prefers-reduced-motion: reduce) { .md-caixa, .md-linha, .md-chao { animation: none !important; } }
+@keyframes md-entra { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes md-linha { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.md-caixa { animation: md-entra .4s ease-out both; background: hsl(222 47% 11%); color: #fff; border: 1px solid hsl(var(--primary) / .35); }
+.md-linha { animation: md-linha .35s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .md-caixa, .md-linha { animation: none !important; } }
 `;
 
 export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
@@ -132,17 +126,20 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-3 animate-in fade-in">
       <style>{CSS}</style>
       <div className="md-caixa relative overflow-hidden rounded-3xl shadow-2xl w-full max-w-4xl">
-        <div className="md-chao" />
         <button className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white" onClick={fechar} aria-label="Fechar">
           <X className="w-5 h-5" />
         </button>
-        <div className="relative flex items-center">
-          <div className="hidden md:block shrink-0 p-4 pr-1">
-            <Abertura largura={250} altura={400} className="rounded-2xl" />
+        <div className="relative flex items-stretch">
+          {/* imagens encostadas na lateral, sem moldura, sumindo na direita */}
+          <div
+            className="hidden md:block relative shrink-0 w-[270px]"
+            style={{ WebkitMaskImage: "linear-gradient(to right, #000 70%, transparent)", maskImage: "linear-gradient(to right, #000 70%, transparent)" }}
+          >
+            <Abertura />
           </div>
           <div className="flex-1 min-w-0 p-5 sm:p-6 md:pl-1">
-            <div className="text-xs uppercase tracking-[.25em] text-orange-300 font-bold">{dataTxt}</div>
-            <h2 className="md-num text-3xl sm:text-4xl font-black mt-1">{saudacao}!</h2>
+            <div className="text-xs uppercase tracking-[.25em] text-blue-200/90 font-semibold">{dataTxt}</div>
+            <h2 className="text-3xl sm:text-4xl font-black mt-1">{saudacao}!</h2>
             <p className="text-white/70 text-sm mt-1">Estes são os números de hoje para vencer a batalha.</p>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
@@ -154,10 +151,10 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
                     <div className="text-sm font-bold flex items-center justify-center gap-1.5">
                       <span className="text-lg">{l.icone}</span> {l.nome}
                     </div>
-                    <div className="md-num text-4xl font-black tabular-nums text-amber-300 leading-none mt-2">{falta ? falta : "✓"}</div>
+                    <div className="text-4xl font-black tabular-nums text-[hsl(var(--primary-glow))] leading-none mt-2">{falta ? falta : "✓"}</div>
                     <div className="text-[11px] text-white/60 mt-1">{falta ? `faltam · meta ${l.alvo}` : `meta ${l.alvo} batida`}</div>
                     <div className="h-1.5 mt-2 rounded-full bg-white/10 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-600" style={{ width: `${pct}%` }} />
+                      <div className="h-full rounded-full bg-gradient-to-r from-[hsl(var(--primary-glow))] to-[hsl(var(--accent-glow))]" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );
@@ -173,7 +170,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
                       {l.icone} {l.nome}
                     </span>
                     <span className="tabular-nums text-sm shrink-0">
-                      <b className="text-amber-300">{l.feito}</b>
+                      <b className="text-[hsl(var(--primary-glow))]">{l.feito}</b>
                       <span className="text-white/50">/{l.alvo}</span>
                     </span>
                   </div>
@@ -184,13 +181,13 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
 
             <div className="mt-4 flex flex-wrap gap-2">
               <Button
-                className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-6 shadow-[0_4px_0_#9a3412] active:translate-y-[3px] active:shadow-[0_1px_0_#9a3412] transition-all"
+                className="font-semibold px-6"
                 onClick={() => {
                   fechar();
                   onAbrirArena();
                 }}
               >
-                ⚔️ Bora pra Arena
+                Ir para a Arena
               </Button>
               <Button variant="ghost" className="text-white/70 hover:bg-white/10 hover:text-white" onClick={fechar}>
                 Fechar

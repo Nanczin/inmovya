@@ -18,15 +18,15 @@ const CSS = `
 @keyframes ab-kb-2 { from { transform: scale(1.16) translate(-3%, 0); } to { transform: scale(1.16) translate(3%, -1%); } }
 @keyframes ab-kb-3 { from { transform: scale(1.16) translate(0, -2%); } to { transform: scale(1.05) translate(-1%, 1.5%); } }
 @keyframes ab-kb-4 { from { transform: scale(1.14) translate(3%, 1.5%); } to { transform: scale(1.14) translate(-3%, -1.5%); } }
-@keyframes ab-faixa { from { transform: translateX(115%); filter: blur(6px) brightness(1.25); } to { transform: translateX(0); filter: blur(0) brightness(1); } }
-@keyframes ab-sai { from { transform: translateX(0); filter: blur(0); opacity: 1; } to { transform: translateX(-28%); filter: blur(5px); opacity: .25; } }
+@keyframes ab-faixa { from { transform: translateX(115%); } to { transform: translateX(0); } }
+@keyframes ab-sai { from { transform: translateX(0); opacity: 1; } to { transform: translateX(-20%); opacity: .35; } }
 @keyframes ab-brilho { 0% { opacity: 0; } 20% { opacity: .3; } 100% { opacity: 0; } }
 .ab-raiz { position: relative; overflow: hidden; background: #050505; }
 .ab-camada { position: absolute; inset: 0; overflow: hidden; }
 .ab-camada.sai { animation: ab-sai .75s cubic-bezier(.7,0,.2,1) forwards; z-index: 1; }
 .ab-camada.entra { z-index: 2; }
 .ab-faixa { position: absolute; inset: 0; overflow: hidden; animation: ab-faixa .65s cubic-bezier(.75,0,.2,1) both; will-change: transform; }
-.ab-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation-duration: ${TEMPO + 1200}ms; animation-timing-function: linear; animation-fill-mode: both; filter: contrast(1.06) saturate(1.1); }
+.ab-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation-duration: ${TEMPO + 1200}ms; animation-timing-function: linear; animation-fill-mode: both; }
 .ab-vinheta { position: absolute; inset: 0; z-index: 3; pointer-events: none; background: radial-gradient(120% 95% at 50% 45%, transparent 55%, rgba(0,0,0,.5)); }
 .ab-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; background: #fff; mix-blend-mode: overlay; animation: ab-brilho .6s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .ab-img, .ab-faixa, .ab-camada.sai, .ab-flash { animation: none !important; } }
@@ -110,7 +110,6 @@ export function Abertura({ largura, altura, className = "" }: { largura?: number
       <div className={`ab-raiz ${fundo ? "!absolute inset-0" : ""} ${className}`} style={fundo ? undefined : { width: largura, height: altura }}>
         {anterior !== null && anterior !== atual && camada(anterior, "sai", `s-${geracao}`)}
         {camada(atual, geracao > 0 ? "entra" : "fixa", `e-${geracao}`)}
-        {geracao > 0 && <div key={`f-${geracao}`} className="ab-flash" />}
         <div className="ab-vinheta" />
       </div>
     </>
