@@ -255,3 +255,39 @@ begin
   );
 end;
 $$;
+
+-- ===== TEMPO DE RESPOSTA (rode também esta parte) =====
+alter table public.robo_ext_config add column if not exists espera_segundos int not null default 0;
+
+create or replace function public.robo_ext_estado(p_token text)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.agente_usuario(p_token);
+  v_cfg public.robo_ext_config;
+  v_nome text;
+begin
+  if v_uid is null then raise exception 'token do agente inválido' using errcode = '28000'; end if;
+  update public.robo_ext_config set ultimo_sinal = now() where user_id = v_uid returning * into v_cfg;
+  if not found or not coalesce(v_cfg.ativo, false) then
+    return json_build_object('ativo', false);
+  end if;
+  select meu_nome into v_nome from public.agente_config where user_id = v_uid;
+  return json_build_object(
+    'ativo', true,
+    'ativado_em', v_cfg.ativado_em,
+    'ia_chave', v_cfg.ia_chave,
+    'ia_modelo', v_cfg.ia_modelo,
+    'frases_anuncio', v_cfg.frases_anuncio,
+    'recuperar_horas', v_cfg.recuperar_horas,
+    'numero_aviso', v_cfg.numero_aviso,
+    'teste_numero', v_cfg.teste_numero,
+    'teste_desde', v_cfg.teste_desde,
+    'espera_segundos', v_cfg.espera_segundos,
+    'meu_nome', coalesce(nullif(trim(v_nome), ''), 'Estevão')
+  );
+end;
+$$;

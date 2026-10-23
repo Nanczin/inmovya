@@ -80,7 +80,7 @@ export function RoboAnunciosPainel() {
         description: precisaAtualizar
           ? `A extensão não recebeu: atualize o Inmovya Scale para a versão ${VERSAO_SCALE_ROBO} (chrome://extensions → Recarregar) e abra esta tela de novo.`
           : novo.ativo
-            ? "O robô confere as conversas novas a cada minuto. Deixe o WhatsApp Web aberto neste Chrome."
+            ? "O robô responde as conversas novas sozinho. Deixe o WhatsApp Web aberto neste Chrome."
             : undefined,
         variant: precisaAtualizar ? "destructive" : undefined,
       });
@@ -168,7 +168,23 @@ export function RoboAnunciosPainel() {
         <div className="space-y-1.5">
           <Label className="flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> Chave da IA (Groq — gratuita)</Label>
           <div className="flex gap-2">
-            <Input type="password" autoComplete="off" placeholder="gsk_..." value={cfg.iaChave} onChange={(e) => mudar({ iaChave: e.target.value })} />
+            <Input
+              type="password"
+              name="groq-api-key"
+              autoComplete="new-password"
+              data-lpignore="true"
+              placeholder="gsk_..."
+              value={cfg.iaChave}
+              onChange={(e) => mudar({ iaChave: e.target.value.trim() })}
+              onPaste={(e) => {
+                const v = e.clipboardData.getData("text").trim();
+                if (v) {
+                  e.preventDefault();
+                  salvar({ iaChave: v }, "Chave da IA salva");
+                }
+              }}
+              onBlur={() => alterado && salvar({}, "Chave da IA salva")}
+            />
             <Button variant="outline" onClick={testar} disabled={!cfg.iaChave.trim() || testando}>
               {testando ? <Loader2 className="w-4 h-4 animate-spin" /> : "Testar"}
             </Button>
@@ -192,13 +208,20 @@ export function RoboAnunciosPainel() {
             <p className="text-xs text-muted-foreground">Ao abrir o Chrome, responde quem escreveu nesse período ("Desculpe a demora").</p>
           </div>
           <div className="space-y-1.5">
+            <Label>Tempo de resposta (segundos)</Label>
+            <Input type="number" min={0} max={600} step={5} value={cfg.esperaSegundos} onChange={(e) => mudar({ esperaSegundos: Number(e.target.value) })} />
+            <p className="text-xs text-muted-foreground">
+              Quanto o robô espera depois da mensagem do cliente antes de responder. 0 = o mais rápido possível (uns 15–30 s). Ex.: 60 parece mais humano.
+            </p>
+          </div>
+          <div className="space-y-1.5">
             <Label>Seu WhatsApp pessoal (recebe os avisos)</Label>
             <Input value={cfg.numeroAviso} onChange={(e) => mudar({ numeroAviso: e.target.value })} />
           </div>
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={() => salvar()} disabled={!alterado || salvando}>
+          <Button onClick={() => salvar()} disabled={salvando}>
             {salvando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Salvar
           </Button>
           <Button variant="outline" onClick={recarregar}>

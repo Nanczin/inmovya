@@ -258,6 +258,22 @@ async function roboRodadaAgora() {
   if (!lista?.ok) return aviso(lista?.error || 'Não consegui ler a lista de conversas.');
   await aviso(null);
 
+  // TEMPO DE RESPOSTA: espera X segundos desde que viu a mensagem nova antes de responder
+  const esperaMs = Math.max(0, Math.min(600, Number(estado.espera_segundos) || 0)) * 1000;
+  const { roboVisto = {} } = await chrome.storage.local.get('roboVisto');
+  const pronto = async (chave, assinatura) => {
+    if (!esperaMs) return true;
+    const v = roboVisto[chave];
+    if (!v || v.sig !== assinatura) {
+      roboVisto[chave] = { sig: assinatura, t: Date.now() };
+      await chrome.storage.local.set({ roboVisto });
+    }
+    const falta = roboVisto[chave].t + esperaMs - Date.now();
+    if (falta <= 0) return true;
+    if (falta < 60000) setTimeout(() => roboRodada().catch(() => {}), falta + 1000); // volta na hora certa
+    return false;
+  };
+
   const frases = (estado.frases_anuncio || []).map(agenteSemAcento).filter(Boolean);
   const pareceAnuncio = t => { const s = agenteSemAcento(t); return !!s && frases.some(f => s.includes(f)); };
 
@@ -271,6 +287,10 @@ async function roboRodadaAgora() {
       const titulo = roboTesteTitulo?.tel === teste && roboTesteTitulo?.desde === desde ? roboTesteTitulo.titulo : null;
       const naLista = (lista.todas || []).find(l => l.naoLidas > 0 && !l.ultimaSua &&
         ((l.telefone && agenteTelefone(l.telefone).slice(-8) === teste.slice(-8)) || (titulo && agenteSemAcento(l.nome) === agenteSemAcento(titulo))));
+      if (naLista && titulo && !(await pronto(teste, `${naLista.naoLidas}:${naLista.nome}`))) {
+        await aviso(`Teste: mensagem nova vista — respondo em ${Math.round(esperaMs / 1000)} s (tempo de resposta)`);
+        return;
+      }
       if (!titulo || naLista) {
         let info = null;
         try { info = await agenteRpc(cred, 'robo_ext_conversa', { p_token: cred.token, p_telefone: teste }); } catch (_) {}
@@ -309,6 +329,7 @@ async function roboRodadaAgora() {
         const { roboUltimoNovo = 0 } = await chrome.storage.local.get('roboUltimoNovo');
         if (Date.now() - roboUltimoNovo < ROBO_ENTRE_NOVOS_MS) continue; // 2 min entre leads novos
       }
+      if (!(await pronto(tel, `${linha.naoLidas}:${linha.ultimaMensagem}`))) continue; // ainda no tempo de resposta
       feitos++;
       try {
         await roboAtender(cred, estado, tel, conversa, pareceAnuncio);

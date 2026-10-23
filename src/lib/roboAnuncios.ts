@@ -22,6 +22,7 @@ export interface ConfigRobo {
   iaModelo: string;
   frases: string[];
   recuperarHoras: number;
+  esperaSegundos: number;
   numeroAviso: string;
   testeNumero: string;
   testeDesde: string | null;
@@ -65,6 +66,7 @@ export async function carregarRobo(): Promise<{ cfg: ConfigRobo; sinal: SinalRob
       iaModelo: r?.ia_modelo || "openai/gpt-oss-120b",
       frases: r?.frases_anuncio?.length ? r.frases_anuncio : FRASES_PADRAO,
       recuperarHoras: r?.recuperar_horas ?? 12,
+      esperaSegundos: r?.espera_segundos ?? 0,
       numeroAviso: r?.numero_aviso || "5511988782027",
       testeNumero: r?.teste_numero || "",
       testeDesde: r?.teste_desde || null,
@@ -90,6 +92,7 @@ export async function salvarRobo(c: ConfigRobo): Promise<{ entregue: boolean }> 
       ia_modelo: c.iaModelo.trim() || "openai/gpt-oss-120b",
       frases_anuncio: c.frases.map(semAcento).filter(Boolean),
       recuperar_horas: Math.max(1, Math.min(72, Math.round(c.recuperarHoras || 12))),
+      espera_segundos: Math.max(0, Math.min(600, Math.round(c.esperaSegundos || 0))),
       numero_aviso: c.numeroAviso.replace(/\D/g, ""),
       teste_numero: c.testeNumero.replace(/\D/g, "") || null,
       teste_desde: c.testeNumero.replace(/\D/g, "") ? c.testeDesde || new Date().toISOString() : null,
@@ -98,6 +101,9 @@ export async function salvarRobo(c: ConfigRobo): Promise<{ entregue: boolean }> 
     { onConflict: "user_id" }
   );
   if (error) throw erroDeTabela(error) ? new Error(ERRO_SQL_ROBO) : error;
+  // confere se gravou mesmo (a chave da IA, principalmente)
+  const { data: lido } = await supabase.from("robo_ext_config" as any).select("ia_chave").eq("user_id", user.id).maybeSingle();
+  if ((c.iaChave.trim() || null) !== ((lido as any)?.ia_chave || null)) throw new Error("O banco não guardou a chave da IA. Tente de novo ou me avise.");
   // token do agente: o robô usa o mesmo. Se ainda não existe, cria sem ligar o 1º contato.
   const { cfg: agente, sinal } = await carregarConfigAgente();
   if (!sinal.temToken) await salvarConfigAgente(agente);
