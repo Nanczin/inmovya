@@ -64,7 +64,8 @@ function texturaBrasa() {
 }
 
 export async function montar(container, opcoes = {}) {
-  const { autoGiro = true, giroInicial = -0.35 } = opcoes;
+  const { autoGiro = true, giroInicial = -0.35, modo = "inteiro", golpes = true } = opcoes;
+  const heroi = modo === "heroi";
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -77,9 +78,11 @@ export async function montar(container, opcoes = {}) {
 
   const cena = new THREE.Scene();
   cena.environment = ambiente(renderer);
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
-  const alvo = new THREE.Vector3(0, 1.3, 0);
-  camera.position.set(0, 1.75, 7.4);
+  const camera = new THREE.PerspectiveCamera(heroi ? 36 : 30, 1, 0.1, 50);
+  // herói: câmera baixa olhando para cima (imponente), enquadrando da cintura para cima
+  const alvo = heroi ? new THREE.Vector3(0, 1.7, 0) : new THREE.Vector3(0, 1.3, 0);
+  const camBase = heroi ? new THREE.Vector3(0, 1.05, 3.55) : new THREE.Vector3(0, 1.75, 7.4);
+  camera.position.copy(camBase);
   camera.lookAt(alvo);
 
   // luzes
@@ -181,8 +184,12 @@ export async function montar(container, opcoes = {}) {
 
   // ombros e pescoço
   for (const s of [-1, 1]) {
-    const o = add(new THREE.SphereGeometry(0.125, 18, 14), bronze, 0.36 * s, 1.57, 0, tronco);
-    o.scale.set(1, 0.8, 1);
+    const o = add(new THREE.SphereGeometry(0.145, 20, 14), bronze, 0.37 * s, 1.58, 0, tronco);
+    o.scale.set(1.05, 0.78, 1);
+    // ombreira em camadas
+    const om = add(new THREE.SphereGeometry(0.17, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2.4), bronzeEsc, 0.38 * s, 1.6, 0, tronco);
+    om.scale.set(1, 0.55, 0.95);
+    om.rotation.z = -0.35 * s;
   }
   add(new THREE.CylinderGeometry(0.07, 0.08, 0.16, 14), pele, 0, 1.73, 0, tronco);
 
@@ -207,7 +214,9 @@ export async function montar(container, opcoes = {}) {
 
   // ---- cabeça: capacete coríntio ----
   const cabeca = new THREE.Group();
-  cabeca.position.set(0, 1.92, 0.01);
+  cabeca.position.set(0, 1.93, 0.01);
+  cabeca.scale.setScalar(1.24);
+  cabeca.position.y = 1.95;
   tronco.add(cabeca);
   const perfilElmo = [
     [0.155, -0.2], [0.18, -0.16], [0.195, -0.08], [0.2, 0.0], [0.205, 0.06], [0.19, 0.13], [0.155, 0.19], [0.09, 0.235], [0.001, 0.25],
@@ -219,9 +228,10 @@ export async function montar(container, opcoes = {}) {
   // fendas dos olhos (escuras) e brilho de brasa dentro
   const olhos = [];
   for (const s of [-1, 1]) {
-    const f = add(new THREE.BoxGeometry(0.1, 0.046, 0.08), preto, 0.062 * s, 0.025, 0.2, cabeca);
-    f.rotation.z = -0.22 * s;
-    f.rotation.y = 0.3 * s;
+    const f = add(new THREE.SphereGeometry(1, 16, 10), preto, 0.06 * s, 0.025, 0.19, cabeca);
+    f.scale.set(0.055, 0.022, 0.05);
+    f.rotation.z = -0.28 * s;
+    f.rotation.y = 0.35 * s;
     const o = add(new THREE.SphereGeometry(0.02, 10, 8), olhoMat, 0.06 * s, 0.025, 0.215, cabeca);
     olhos.push(o);
   }
@@ -259,6 +269,23 @@ export async function montar(container, opcoes = {}) {
   const cristaPivo = new THREE.Group();
   cristaPivo.add(crista);
   cabeca.add(cristaPivo);
+  // volume: segunda camada e fios ao longo do arco
+  const crista2 = new THREE.Mesh(cristaGeo, crina);
+  crista2.rotation.y = -Math.PI / 2;
+  crista2.position.set(0, 0.235, -0.02);
+  crista2.scale.set(1.05, 1.06, 0.75);
+  cristaPivo.add(crista2);
+  for (let i = 0; i < 90; i++) {
+    const t = Math.random();
+    const ax = (1 - t) * (1 - t) * -0.4 + 2 * (1 - t) * t * -0.14 + t * t * 0.3;
+    const ay = (1 - t) * (1 - t) * 0.02 + 2 * (1 - t) * t * 0.78 + t * t * 0.26;
+    const dx = 2 * (1 - t) * (-0.14 + 0.4) + 2 * t * (0.3 + 0.14);
+    const dy = 2 * (1 - t) * (0.78 - 0.02) + 2 * t * (0.26 - 0.78);
+    const fio = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.05 + Math.random() * 0.05, 0.012), crina);
+    fio.position.set(ax, ay, (Math.random() - 0.5) * 0.12);
+    fio.rotation.z = Math.atan2(dy, dx) + Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+    crista.add(fio);
+  }
   // fios soltos na ponta de trás
   for (let i = 0; i < 14; i++) {
     const fio = add(new THREE.BoxGeometry(0.008, 0.16 + Math.random() * 0.08, 0.008), crina, (Math.random() - 0.5) * 0.06, 0.2, -0.32 - Math.random() * 0.03, cristaPivo);
@@ -266,18 +293,25 @@ export async function montar(container, opcoes = {}) {
   }
 
   // ---- braço da lança (lado direito da tela) ----
-  const ombroD = [0.37, 1.56, 0];
-  const cotoveloD = [0.47, 1.26, 0.06];
-  const maoD = [0.5, 1.28, 0.3];
-  membro(ombroD, cotoveloD, 0.085, 0.075, pele);
-  membro(cotoveloD, maoD, 0.07, 0.06, pele);
-  add(new THREE.CylinderGeometry(0.075, 0.07, 0.12, 14, 1, true), bronze, 0.49, 1.275, 0.2).rotation.x = Math.PI / 2;
-  add(new THREE.SphereGeometry(0.065, 14, 10), pele, ...maoD);
+  const ombroD = [0.4, 1.56, 0];
+  const cotoveloD = [0.5, 1.26, 0.06];
+  const maoD = [0.52, 1.28, 0.3];
+  // pivô no ombro (para os golpes)
+  const bracoD = new THREE.Group();
+  bracoD.position.set(...ombroD);
+  guerreiro.add(bracoD);
+  const bD = new THREE.Group();
+  bD.position.set(-ombroD[0], -ombroD[1], -ombroD[2]);
+  bracoD.add(bD);
+  membro(ombroD, cotoveloD, 0.1, 0.085, pele, bD);
+  membro(cotoveloD, maoD, 0.085, 0.07, pele, bD);
+  add(new THREE.CylinderGeometry(0.09, 0.082, 0.13, 14, 1, true), bronze, 0.515, 1.275, 0.19, bD).rotation.x = Math.PI / 2;
+  add(new THREE.SphereGeometry(0.075, 14, 10), pele, ...maoD, bD);
   // lança
   const lanca = new THREE.Group();
-  lanca.position.set(0.5, 1.28, 0.3);
+  lanca.position.set(0.52, 1.28, 0.3);
   lanca.rotation.z = -0.05;
-  guerreiro.add(lanca);
+  bD.add(lanca);
   add(new THREE.CylinderGeometry(0.022, 0.024, 3.0, 12), madeira, 0, 0.25, 0, lanca);
   const ponta = add(
     new THREE.LatheGeometry([[0, 0], [0.03, 0.02], [0.055, 0.12], [0.045, 0.22], [0.001, 0.36]].map(([r, y]) => new THREE.Vector2(r, y)), 24),
@@ -292,18 +326,24 @@ export async function montar(container, opcoes = {}) {
   add(new THREE.ConeGeometry(0.03, 0.16, 10), bronze, 0, -1.33, 0, lanca).rotation.x = Math.PI;
 
   // ---- braço do escudo (lado esquerdo da tela) ----
-  const ombroE = [-0.37, 1.56, 0];
-  const cotoveloE = [-0.46, 1.27, 0.14];
-  const maoE = [-0.4, 1.18, 0.36];
-  membro(ombroE, cotoveloE, 0.085, 0.075, pele);
-  membro(cotoveloE, maoE, 0.07, 0.06, pele);
+  const ombroE = [-0.4, 1.56, 0];
+  const cotoveloE = [-0.49, 1.27, 0.14];
+  const maoE = [-0.42, 1.18, 0.36];
+  const bracoE = new THREE.Group();
+  bracoE.position.set(...ombroE);
+  guerreiro.add(bracoE);
+  const bE = new THREE.Group();
+  bE.position.set(-ombroE[0], -ombroE[1], -ombroE[2]);
+  bracoE.add(bE);
+  membro(ombroE, cotoveloE, 0.1, 0.085, pele, bE);
+  membro(cotoveloE, maoE, 0.085, 0.07, pele, bE);
 
   // escudo (aspis) com Λ
   const escudo = new THREE.Group();
-  escudo.position.set(-0.42, 1.1, 0.42);
+  escudo.position.set(-0.46, 1.1, 0.44);
   escudo.rotation.y = 0.5;
-  escudo.scale.setScalar(0.8);
-  guerreiro.add(escudo);
+  escudo.scale.setScalar(heroi ? 0.72 : 0.8);
+  bE.add(escudo);
   const domo = add(
     new THREE.LatheGeometry([[0.001, 0.13], [0.2, 0.12], [0.4, 0.085], [0.55, 0.04], [0.63, 0.0]].map(([r, y]) => new THREE.Vector2(r, y)), 64),
     bronze.clone(),
@@ -350,6 +390,68 @@ export async function montar(container, opcoes = {}) {
   anel2.rotation.x = Math.PI / 2;
 
   sombras(guerreiro);
+
+  // ---- aura de fogo atrás e fumaça ----
+  const texAura = (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d");
+    const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    r.addColorStop(0, "rgba(255,190,110,.9)");
+    r.addColorStop(0.35, "rgba(255,110,30,.45)");
+    r.addColorStop(1, "rgba(120,30,0,0)");
+    g.fillStyle = r;
+    g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  const aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: texAura, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
+  aura.position.set(0, 1.85, -0.9);
+  aura.scale.set(3.2, 3.2, 1);
+  cena.add(aura);
+  // raios de luz girando atrás
+  const raios = new THREE.Group();
+  raios.position.set(0, 1.95, -1.1);
+  cena.add(raios);
+  for (let i = 0; i < 12; i++) {
+    const g = new THREE.PlaneGeometry(0.12, 3.2);
+    g.translate(0, 1.6, 0);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xff9a40, transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    m.rotation.z = (i / 12) * Math.PI * 2;
+    raios.add(m);
+  }
+  const texFumaca = (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d");
+    for (let i = 0; i < 40; i++) {
+      const x = 30 + Math.random() * 68, y = 30 + Math.random() * 68, rr = 10 + Math.random() * 30;
+      const r = g.createRadialGradient(x, y, 0, x, y, rr);
+      r.addColorStop(0, "rgba(70,40,25,.16)");
+      r.addColorStop(1, "rgba(70,40,25,0)");
+      g.fillStyle = r;
+      g.fillRect(0, 0, 128, 128);
+    }
+    return new THREE.CanvasTexture(c);
+  })();
+  const fumacas = [];
+  for (let i = 0; i < 9; i++) {
+    const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: texFumaca, transparent: true, depthWrite: false, opacity: 0.5 }));
+    f.position.set((Math.random() - 0.5) * 3, 0.1 + Math.random() * 1.6, -1.4 + Math.random() * 0.7);
+    const sc = 1.4 + Math.random() * 1.4;
+    f.scale.set(sc, sc * 0.6, 1);
+    f.userData.v = 0.001 + Math.random() * 0.002;
+    cena.add(f);
+    fumacas.push(f);
+  }
+
+  // ---- golpe de lança (sozinho de tempos em tempos e quando ganha XP) ----
+  let tGolpe = -10;
+  const golpe = () => (tGolpe = relogio.getElapsedTime());
+  window.addEventListener("inmovya-spartano-golpe", golpe);
+  const suave = (a, b, x) => {
+    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
 
   // ---- brasas subindo ----
   const N = 140;
@@ -429,40 +531,72 @@ export async function montar(container, opcoes = {}) {
     if (!arrastando) {
       velRot *= 0.93;
       rotY += velRot;
-      if (autoGiro && !reduzir && performance.now() - ultInteracao > 2500) rotY += 0.0045;
+      if (performance.now() - ultInteracao > 2500 && !reduzir) {
+        if (heroi) rotY += (-0.25 + Math.sin(t * 0.35) * 0.45 - rotY) * 0.02; // encara você, virando de leve
+        else if (autoGiro) rotY += 0.0045;
+      }
     }
     guerreiro.rotation.y = rotY;
+    // brado de guerra: ergue a lança bem alto, olha para cima, e crava no chão (tremor + faíscas)
+    if (golpes && !reduzir && t - tGolpe > 11) tGolpe = t; // a cada ~11 s
+    const g = t - tGolpe;
+    const ergue = suave(0, 0.45, g) * (1 - suave(0.7, 0.8, g));
+    const impacto = suave(0.7, 0.8, g) * (1 - suave(0.95, 1.8, g));
+    bracoD.rotation.z = ergue * 1.65;
+    bracoE.rotation.x = -impacto * 0.3 - ergue * 0.1;
+    guerreiro.position.z = impacto * 0.1;
+    tronco.rotation.x = impacto * 0.1 - ergue * 0.05;
+    const tremor = g > 0.76 && g < 1.15 ? (1.15 - g) * 0.16 : 0;
+    const flare = Math.max(ergue * 0.5, impacto);
     // respiração e postura
     const resp = Math.sin(t * 1.6);
     tronco.scale.set(1 + resp * 0.006, 1 + resp * 0.004, 1 + resp * 0.01);
-    cabeca.rotation.x = Math.sin(t * 0.8) * 0.03 + mouseY * 0.08;
+    cabeca.rotation.x = Math.sin(t * 0.8) * 0.03 + mouseY * 0.08 - ergue * 0.25;
     cabeca.rotation.y = mouseX * 0.25;
     cristaPivo.rotation.x = Math.sin(t * 2.2) * 0.04;
     escudo.position.y = 1.1 + Math.sin(t * 1.6 + 0.5) * 0.01;
-    lanca.rotation.z = -0.05 + Math.sin(t * 1.1) * 0.012;
+    lanca.rotation.z = -0.05 + Math.sin(t * 1.1) * 0.012 - ergue * 1.65;
+    // desliza a lança para cima pela mão, na vertical do mundo (o braço está girado)
+    const th = ergue * 1.65, sobe = ergue * 0.45;
+    lanca.position.x = 0.52 + Math.sin(th) * sobe;
+    lanca.position.y = 1.28 + Math.cos(th) * sobe;
     if (!reduzir) ondularCapa(t);
     // olhos de brasa
-    const brilho = 0.75 + Math.sin(t * 3.2) * 0.25;
+    const brilho = 0.75 + Math.sin(t * 3.2) * 0.25 + flare * 0.8;
     olhoMat.color.setRGB(1, 0.45 + brilho * 0.25, 0.12 * brilho);
     olhos.forEach((o) => o.scale.setScalar(0.8 + brilho * 0.5));
-    tocha.intensity = 2.5 + Math.sin(t * 9) * 0.5 + Math.sin(t * 23) * 0.3;
+    tocha.intensity = 2.5 + Math.sin(t * 9) * 0.5 + Math.sin(t * 23) * 0.3 + flare * 6;
+    aura.material.opacity = 0.45 + Math.sin(t * 1.3) * 0.1 + flare * 0.4;
+    aura.scale.setScalar(3.2 + Math.sin(t * 1.3) * 0.15 + flare * 0.8);
+    raios.rotation.z = t * 0.08;
+    fumacas.forEach((f, i) => {
+      f.position.x += f.userData.v;
+      if (f.position.x > 1.8) f.position.x = -1.8;
+      f.material.rotation = t * 0.05 * (i % 2 ? 1 : -1);
+    });
     // brasas
     for (let i = 0; i < N; i++) {
-      bp[i * 3 + 1] += vel[i];
+      bp[i * 3 + 1] += vel[i] * (1 + flare * 4);
       bp[i * 3] += Math.sin(t * 2 + i) * 0.0015;
       if (bp[i * 3 + 1] > 3.4) reset(i, false);
     }
     brasasGeo.attributes.position.needsUpdate = true;
     // câmera acompanha um pouco o mouse
-    camera.position.x += (mouseX * 0.5 - camera.position.x) * 0.05;
-    camera.position.y += (1.75 - mouseY * 0.3 - camera.position.y) * 0.05;
+    camera.position.x += (camBase.x + mouseX * 0.5 - camera.position.x) * 0.05;
+    camera.position.y += (camBase.y - mouseY * 0.3 - camera.position.y) * 0.05;
+    camera.position.z = camBase.z - (heroi ? Math.sin(t * 0.25) * 0.15 : 0);
     camera.lookAt(alvo);
+    if (tremor) {
+      camera.position.x += (Math.random() - 0.5) * tremor;
+      camera.position.y += (Math.random() - 0.5) * tremor;
+    }
     renderer.render(cena, camera);
   };
   quadro();
 
   return () => {
     cancelAnimationFrame(raf);
+    window.removeEventListener("inmovya-spartano-golpe", golpe);
     ro.disconnect();
     io.disconnect();
     el.removeEventListener("pointerdown", down);

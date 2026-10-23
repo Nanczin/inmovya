@@ -317,6 +317,9 @@ export function ArenaModule() {
   const [festa, setFesta] = useState<{ titulo: string; tipo: string; icone: string } | null>(null);
   const [pops, setPops] = useState<{ id: number; x: number; y: number; txt: string }[]>([]);
   const [pulsando, setPulsando] = useState<string | null>(null);
+  useEffect(() => {
+    if (festa) window.dispatchEvent(new Event("inmovya-spartano-golpe"));
+  }, [festa]);
 
   const hoje = new Date();
   const kHoje = chave(hoje);
@@ -513,6 +516,7 @@ export function ArenaModule() {
       setPops((p) => [...p, { id, x: ev.clientX, y: ev.clientY - 10, txt: `+${XP[m]} XP` }]);
       window.setTimeout(() => setPops((p) => p.filter((q) => q.id !== id)), 1400);
     }
+    window.dispatchEvent(new Event("inmovya-spartano-golpe"));
     setPulsando(m);
     window.setTimeout(() => setPulsando(null), 600);
     const {
@@ -578,9 +582,8 @@ export function ArenaModule() {
       <section className="arena-sobe arena-arena rounded-2xl border p-4 sm:p-6 shadow-card">
         <div className="arena-chao" />
         <Brasas />
-        <div className="relative flex flex-wrap items-center gap-6">
-          <Spartano3D largura={190} altura={270} className="hidden sm:block shrink-0 -my-2" />
-          <div className="flex-1 min-w-[260px]">
+        <div className="relative flex items-stretch gap-2">
+          <div className="flex-1 min-w-0 py-1">
         <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Medalha3D nivel={nivelIdx} />
@@ -624,6 +627,7 @@ export function ArenaModule() {
           </div>
         </div>
           </div>
+          <Spartano3D largura={300} altura={330} className="hidden md:block shrink-0 -my-6 -mr-4 sm:-mr-6" />
         </div>
       </section>
 

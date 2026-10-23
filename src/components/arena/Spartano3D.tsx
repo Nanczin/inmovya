@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 // Spartano em 3D de verdade (Three.js), modelado em código: public/arena/spartano3d.js.
 // Carrega sob demanda (não pesa o resto do Inmovya). Arraste para girar.
 
-export function Spartano3D({ largura = 180, altura, className = "", autoGiro = true }: { largura?: number; altura?: number; className?: string; autoGiro?: boolean }) {
+export function Spartano3D({ largura = 180, altura, className = "", autoGiro = true, modo = "heroi" }: { largura?: number; altura?: number; className?: string; autoGiro?: boolean; modo?: "heroi" | "inteiro" }) {
   const ref = useRef<HTMLDivElement>(null);
   const [falhou, setFalhou] = useState(false);
   const h = altura ?? Math.round(largura * 1.45);
@@ -15,7 +15,7 @@ export function Spartano3D({ largura = 180, altura, className = "", autoGiro = t
     import(/* @vite-ignore */ url)
       .then(async (m: any) => {
         if (!vivo || !ref.current) return;
-        const d = await m.montar(ref.current, { autoGiro });
+        const d = await m.montar(ref.current, { autoGiro, modo });
         if (vivo) desmontar = d;
         else d();
       })
@@ -24,7 +24,7 @@ export function Spartano3D({ largura = 180, altura, className = "", autoGiro = t
       vivo = false;
       desmontar?.();
     };
-  }, [autoGiro]);
+  }, [autoGiro, modo]);
 
   return (
     <div ref={ref} className={`relative ${className}`} style={{ width: largura, height: h }} title="Arraste para girar o spartano">
