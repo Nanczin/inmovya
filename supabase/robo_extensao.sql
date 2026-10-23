@@ -174,7 +174,8 @@ begin
     empreendimento = coalesce(excluded.empreendimento, c.empreendimento),
     etapa = case when p_dados ? 'etapa' then excluded.etapa else c.etapa end,
     respostas = case when p_dados ? 'respostas' then excluded.respostas else c.respostas end,
-    situacao = case when c.situacao in ('concluido', 'transferido') then c.situacao else excluded.situacao end,
+    situacao = case when coalesce((p_dados->>'reiniciar')::boolean, false) then excluded.situacao
+                    when c.situacao in ('concluido', 'transferido') then c.situacao else excluded.situacao end,
     atendido_por = 'extensao',
     resultado_inmovya = coalesce(excluded.resultado_inmovya, c.resultado_inmovya),
     ultima_msg_robo = case when p_dados ? 'ultima_msg_robo' then excluded.ultima_msg_robo else c.ultima_msg_robo end,

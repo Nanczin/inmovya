@@ -227,13 +227,19 @@ async function roboRodadaAgora() {
         try { info = await agenteRpc(cred, 'robo_ext_conversa', { p_token: cred.token, p_telefone: teste }); } catch (_) {}
         let conversa = info?.conversa || null;
         if (conversa && new Date(conversa.updated_at || 0).getTime() < desde) conversa = null; // conversa de antes do teste
+        const hhmm = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         if (!conversa || conversa.situacao === 'qualificando') {
           try {
-            await roboAtender(cred, estado, teste, conversa, pareceAnuncio, { desde });
+            const r = await roboAtender(cred, estado, teste, conversa, pareceAnuncio, { desde });
+            await aviso(`Teste ${hhmm}: ${r || 'respondi'}`);
           } catch (err) {
-            await aviso(`Robô (teste): erro: ${err.message}`);
+            await aviso(`Teste ${hhmm}: erro: ${err.message}`);
           }
+        } else {
+          await aviso(`Teste ${hhmm}: a conversa de teste está "${conversa.situacao}" — clique em Encerrar teste e Começar teste de novo.`);
         }
+      } else {
+        await aviso(`Teste: esperando mensagem nova do número de teste (conversa "${titulo}")`);
       }
       return;
     }
@@ -278,13 +284,14 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = n
     msgs = msgs.filter(m => { const q = roboQuando(m); return !q || q.getTime() >= teste.desde - 60000; })
       .filter(m => !(m.dir === 'out' && roboEhAviso(m.texto)));
   }
-  if (!msgs.length) return;
+  const diag = `li ${Array.isArray(leitura?.mensagens) ? leitura.mensagens.length : 0} mensagens${teste ? `, ${msgs.length} depois do início do teste` : ''}`;
+  if (!msgs.length) return `nada para responder (${diag})`;
 
   // mensagens do cliente que ainda não tiveram resposta
   let i = msgs.length - 1;
   while (i >= 0 && msgs[i].dir === 'in') i--;
   const pendentes = msgs.slice(i + 1);
-  if (!pendentes.length) return;
+  if (!pendentes.length) return `a última mensagem já é sua/do robô (${diag})`;
   const ultimaDele = roboQuando(pendentes[pendentes.length - 1]);
   const idadeMin = ultimaDele ? (Date.now() - ultimaDele.getTime()) / 60000 : 0;
   const atrasado = idadeMin > ROBO_ATRASO_MIN;
@@ -299,9 +306,10 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = n
     const saudacaoAuto = saidas.length === 1 && primeira && roboQuando(saidas[0]) && Math.abs(roboQuando(saidas[0]) - primeira) <= 2 * 60000;
     const novo = entradas.length <= 6 && (saidas.length === 0 || saudacaoAuto) && entradas.some(m => pareceAnuncio(m.texto));
     if (!novo) {
+      if (teste) return `não parece lead novo de anúncio: ${entradas.length} msg dele, ${saidas.length} sua(s), frase do anúncio ${entradas.some(m => pareceAnuncio(m.texto)) ? 'ok' : 'NÃO encontrada'} (${diag})`;
       await salvar({ situacao: 'ignorado', nome: '' });
       await roboAvisarVoce(estado, `📩 *Robô:* abri a conversa de +${tel} achando que era lead de anúncio, mas não é contato novo. *Não respondi* — confira você.\n👉 https://wa.me/${tel}`);
-      return;
+      return 'não é lead novo';
     }
     if (idadeMin > (Number(estado.recuperar_horas) || 12) * 60) {
       await salvar({ situacao: 'ignorado' });
@@ -315,10 +323,10 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = n
     if (motivo) return roboPassar(cred, estado, tel, nova, motivo, textoCliente, salvar);
     const texto = roboSaudacao(estado.meu_nome, atrasado);
     await roboEnviar(tel, texto);
-    await salvar({ ...nova, msgs_robo: 1, ultima_msg_robo: texto });
+    await salvar({ ...nova, msgs_robo: 1, ultima_msg_robo: texto, ...(teste ? { reiniciar: true } : {}) });
     // cadastra já no 1º contato: ninguém se perde se parar de responder
     await agenteRpc(cred, 'robo_ext_registrar', { p_token: cred.token, p_nome: '', p_telefone: tel, p_observacoes: 'Veio pelo anúncio — robô iniciou a qualificação' }).catch(() => {});
-    return;
+    return 'mandei a saudação';
   }
 
   // conversa em andamento: você entrou nela? (a última mensagem "sua" não é a do robô)
@@ -326,7 +334,7 @@ async function roboAtender(cred, estado, tel, conversa, pareceAnuncio, teste = n
   if (ultimaSua && conversa.ultima_msg_robo && roboNorm(ultimaSua.texto) && !roboNorm(conversa.ultima_msg_robo).startsWith(roboNorm(ultimaSua.texto).slice(0, 40))
       && !roboNorm(ultimaSua.texto).startsWith(roboNorm(conversa.ultima_msg_robo).slice(0, 40))) {
     await salvar({ situacao: 'transferido', resultado_inmovya: 'você assumiu a conversa' });
-    return;
+    return 'parei: você escreveu na conversa';
   }
 
   const jaComecou = Number(conversa.etapa || 0) > 0 || Object.keys(conversa.respostas || {}).length > 0;
