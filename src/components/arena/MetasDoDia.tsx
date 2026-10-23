@@ -131,9 +131,9 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
         <button className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white" onClick={fechar} aria-label="Fechar">
           <X className="w-5 h-5" />
         </button>
-        <div className="relative grid gap-5 p-5 sm:p-7 md:grid-cols-[200px_1fr] items-center">
+        <div className="relative grid gap-5 p-5 sm:p-7 md:grid-cols-[220px_1fr] items-center">
           <div className="hidden md:flex justify-center">
-            <Spartano3D largura={190} />
+            <Spartano3D largura={210} altura={320} />
           </div>
           <div>
             <div className="text-xs uppercase tracking-[.25em] text-orange-300 font-bold">{dataTxt}</div>

@@ -579,7 +579,7 @@ export function ArenaModule() {
         <div className="arena-chao" />
         <Brasas />
         <div className="relative flex flex-wrap items-center gap-6">
-          <Spartano3D largura={150} className="hidden sm:block shrink-0" />
+          <Spartano3D largura={190} altura={270} className="hidden sm:block shrink-0 -my-2" />
           <div className="flex-1 min-w-[260px]">
         <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">

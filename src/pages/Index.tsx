@@ -26,7 +26,7 @@ import { MetasDoDia } from "@/components/arena/MetasDoDia";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
 
 const Index = () => {
-  const [activeModule, setActiveModule] = useState("dashboard");
+  const [activeModule, setActiveModule] = useState("arena");
   const [navigationParams, setNavigationParams] = useState<any>(null);
   const [globalViewTaskId, setGlobalViewTaskId] = useState<string | null>(null);
   const { user, loading, signOut } = useAuth();

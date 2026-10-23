@@ -41,8 +41,8 @@ const grupos: { titulo: string; itens: Item[] }[] = [
   {
     titulo: "Dia a dia",
     itens: [
-      { id: "dashboard", label: "Início", icon: Home },
       { id: "arena", label: "Arena", icon: Trophy },
+      { id: "dashboard", label: "Início", icon: Home },
       { id: "agenda", label: "Agenda", icon: CalendarIcon },
       { id: "leads", label: "Leads", icon: Users },
       { id: "negocios", label: "Negócios", icon: Briefcase },
@@ -106,7 +106,7 @@ export function AppSidebar({ activeModule, onModuleChange }: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader className={recolhido ? "px-0 pt-5 pb-3 items-center" : "px-4 pt-5 pb-3"}>
-        <button type="button" onClick={() => ir("dashboard")} className={`flex items-center gap-2.5 min-w-0 ${recolhido ? "justify-center w-full" : ""}`} title="Início">
+        <button type="button" onClick={() => ir("arena")} className={`flex items-center gap-2.5 min-w-0 ${recolhido ? "justify-center w-full" : ""}`} title="Arena">
           <img src="/brand/marca-branca.png" alt="" className={`${recolhido ? "h-7" : "h-8"} w-auto shrink-0`} />
           {!recolhido && <span className="text-white text-lg font-extrabold tracking-tight">Inmovya</span>}
         </button>
