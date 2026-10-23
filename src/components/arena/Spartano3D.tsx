@@ -27,7 +27,18 @@ export function Spartano3D({ largura = 180, altura, className = "", autoGiro = t
   }, [autoGiro, modo]);
 
   return (
-    <div ref={ref} className={`relative ${className}`} style={{ width: largura, height: h }} title="Arraste para girar o spartano">
+    <div
+      ref={ref}
+      className={`relative ${className}`}
+      style={{
+        width: largura,
+        height: h,
+        // bordas do quadro somem aos poucos (sem retângulo em volta)
+        WebkitMaskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, #000 62%, transparent 100%)",
+        maskImage: "radial-gradient(ellipse 50% 50% at 50% 50%, #000 62%, transparent 100%)",
+      }}
+      title="Arraste para girar o spartano"
+    >
       {falhou && <div className="absolute inset-0 flex items-center justify-center text-6xl">🛡️</div>}
     </div>
   );

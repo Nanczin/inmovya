@@ -131,42 +131,32 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-3 animate-in fade-in">
       <style>{CSS}</style>
-      <div className="md-caixa relative overflow-hidden rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+      <div className="md-caixa relative overflow-hidden rounded-3xl shadow-2xl w-full max-w-4xl">
         <div className="md-chao" />
         <button className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white" onClick={fechar} aria-label="Fechar">
           <X className="w-5 h-5" />
         </button>
-        <div className="relative grid gap-5 p-5 sm:p-7 md:grid-cols-[220px_1fr] items-center">
-          <div className="hidden md:flex justify-center">
-            <Spartano3D largura={210} altura={320} />
+        <div className="relative flex items-center">
+          <div className="hidden md:block shrink-0 -my-4 -ml-4">
+            <Spartano3D largura={260} altura={430} />
           </div>
-          <div>
+          <div className="flex-1 min-w-0 p-5 sm:p-6 md:pl-1">
             <div className="text-xs uppercase tracking-[.25em] text-orange-300 font-bold">{dataTxt}</div>
             <h2 className="md-num text-3xl sm:text-4xl font-black mt-1">{saudacao}, spartano!</h2>
             <p className="text-white/70 text-sm mt-1">Estes são os números de hoje para vencer a batalha.</p>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 grid grid-cols-3 gap-2">
               {linhas.map((l, i) => {
                 const falta = Math.max(0, l.alvo - l.feito);
                 const pct = Math.min(100, (l.feito / Math.max(1, l.alvo)) * 100);
                 return (
-                  <div key={l.nome} className="md-linha rounded-xl bg-white/5 border border-white/10 p-3" style={{ animationDelay: `${300 + i * 120}ms` }}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">{l.icone}</span>
-                        <div>
-                          <div className="font-bold">{l.nome}</div>
-                          {l.obs && <div className="text-[11px] text-white/50">{l.obs}</div>}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="md-num text-3xl font-black tabular-nums text-amber-300 leading-none">{falta ? falta : "✓"}</div>
-                        <div className="text-[11px] text-white/60">
-                          {falta ? `faltam · meta ${l.alvo}` : `meta ${l.alvo} batida`}
-                        </div>
-                      </div>
+                  <div key={l.nome} className="md-linha rounded-xl bg-white/5 border border-white/10 p-3 text-center" style={{ animationDelay: `${300 + i * 120}ms` }}>
+                    <div className="text-sm font-bold flex items-center justify-center gap-1.5">
+                      <span className="text-lg">{l.icone}</span> {l.nome}
                     </div>
-                    <div className="h-2 mt-2 rounded-full bg-white/10 overflow-hidden">
+                    <div className="md-num text-4xl font-black tabular-nums text-amber-300 leading-none mt-2">{falta ? falta : "✓"}</div>
+                    <div className="text-[11px] text-white/60 mt-1">{falta ? `faltam · meta ${l.alvo}` : `meta ${l.alvo} batida`}</div>
+                    <div className="h-1.5 mt-2 rounded-full bg-white/10 overflow-hidden">
                       <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-600" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
@@ -175,24 +165,24 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
             </div>
 
             <div className="mt-4 text-xs uppercase tracking-widest text-white/50 font-bold">Metas do mês</div>
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
               {mesLinhas.map((l, i) => (
                 <div key={l.nome} className="md-linha rounded-xl bg-white/5 border border-white/10 p-2.5" style={{ animationDelay: `${700 + i * 100}ms` }}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-xs font-bold truncate">
                       {l.icone} {l.nome}
                     </span>
-                    <span className="tabular-nums text-sm">
+                    <span className="tabular-nums text-sm shrink-0">
                       <b className="text-amber-300">{l.feito}</b>
                       <span className="text-white/50">/{l.alvo}</span>
                     </span>
                   </div>
-                  <div className="text-[11px] text-white/60 mt-0.5">{l.obs}</div>
+                  <div className="text-[10px] text-white/60 mt-0.5 leading-tight">{l.obs}</div>
                 </div>
               ))}
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Button
                 className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-6 shadow-[0_4px_0_#9a3412] active:translate-y-[3px] active:shadow-[0_1px_0_#9a3412] transition-all"
                 onClick={() => {
