@@ -1,0 +1,187 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+body{margin:0;background:#111;display:flex;gap:0}
+.av{width:400px;height:500px;position:relative;overflow:hidden}
+.av svg{width:100%;height:100%;display:block}
+.tinta{stroke:#111;stroke-width:4;stroke-linejoin:round;stroke-linecap:round}
+.fino{stroke:#111;stroke-width:2.5;stroke-linecap:round;fill:none}
+@keyframes respira{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.012)}}
+@keyframes cabeca{0%,100%{transform:rotate(-1.2deg)}50%{transform:rotate(1.5deg)}}
+@keyframes pisca{0%,95%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
+@keyframes vibra{0%{transform:rotate(-8deg) translate(0,0)}25%{transform:rotate(-5deg) translate(2px,-1px)}50%{transform:rotate(-10deg) translate(-2px,1px)}75%{transform:rotate(-6deg) translate(1px,1px)}100%{transform:rotate(-8deg)}}
+@keyframes estoura{0%{transform:scale(.2) rotate(-12deg);opacity:0}15%{transform:scale(1.15) rotate(-6deg);opacity:1}25%{transform:scale(1) rotate(-6deg)}85%{opacity:1}100%{transform:scale(1) rotate(-6deg);opacity:0}}
+@keyframes gira{to{transform:rotate(360deg)}}
+@keyframes ajeita{0%,70%,100%{transform:translate(0,0)}80%{transform:translate(-3px,-4px)}90%{transform:translate(0,-1px)}}
+.corpo{transform-origin:200px 500px;animation:respira 3.6s ease-in-out infinite}
+.cabeca{transform-origin:200px 285px;animation:cabeca 5s ease-in-out infinite}
+.olho{transform-box:fill-box;transform-origin:center;animation:pisca 4.2s infinite}
+.mao-gravata{animation:ajeita 6s ease-in-out infinite}
+.raios{transform-origin:200px 190px;animation:gira 60s linear infinite}
+.tocando .fone{transform-box:fill-box;transform-origin:center;animation:vibra .09s 14}
+.sfx{transform-box:fill-box;transform-origin:center;opacity:0}
+.tocando .trim{animation:estoura 1.5s ease-out forwards}
+.tocando .linhas{opacity:1}
+.linhas{opacity:0;transition:opacity .1s}
+.pow-on .pow{animation:estoura 1.3s ease-out forwards}
+.fechou-on .fechou{animation:estoura 2.4s ease-out forwards}
+</style></head><body>
+<div class="av" id="a1"></div><div class="av" id="a2"></div><div class="av" id="a3"></div>
+<template id="t">
+<svg viewBox="0 0 400 500" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <pattern id="ret" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="4.5" cy="4.5" r="2.1" fill="#d2381c" opacity=".5"/></pattern>
+  <pattern id="retEsc" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="3" cy="3" r="1.4" fill="#0a0f24" opacity=".55"/></pattern>
+  <pattern id="retPele" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(30)"><circle cx="2.5" cy="2.5" r="1.1" fill="#8a4a2a" opacity=".35"/></pattern>
+  <radialGradient id="vinheta" cx="50%" cy="38%" r="70%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".35"/></radialGradient>
+</defs>
+<!-- fundo: explosão + retícula + cidade -->
+<rect width="400" height="500" fill="#ffc21f"/>
+<g class="raios" id="raios"></g>
+<rect width="400" height="500" fill="url(#ret)"/>
+<g id="cidade"></g>
+<rect width="400" height="500" fill="url(#vinheta)"/>
+
+<g class="corpo">
+  <!-- paletó -->
+  <path class="tinta" fill="#26325c" d="M40,500 L52,372 C58,330 100,306 166,290 L200,334 L234,290 C300,306 342,330 348,372 L360,500 Z"/>
+  <path fill="#18204a" d="M262,300 C310,312 340,334 346,372 L358,500 L292,500 C300,440 296,360 262,300 Z"/>
+  <path fill="url(#retEsc)" d="M262,300 C310,312 340,334 346,372 L358,500 L292,500 C300,440 296,360 262,300 Z"/>
+  <path fill="#3f4f8c" d="M70,350 C84,326 120,312 150,304 C118,320 96,340 86,380 Z"/>
+  <!-- camisa -->
+  <path class="tinta" fill="#f7f8fc" d="M172,286 L228,286 L214,430 L186,430 Z"/>
+  <path fill="#d5dae8" d="M205,300 L228,286 L214,430 L206,430 Z"/>
+  <!-- gravata -->
+  <path class="tinta" fill="#d0161e" d="M191,322 L209,322 L219,428 L200,452 L181,428 Z"/>
+  <path fill="#8e0c12" d="M203,322 L209,322 L219,428 L200,452 L206,420 Z"/>
+  <path class="tinta" fill="#d0161e" d="M188,300 L212,300 L208,324 L192,324 Z"/>
+  <!-- gola -->
+  <path class="tinta" fill="#ffffff" d="M176,280 L200,312 L186,330 L164,294 Z"/>
+  <path class="tinta" fill="#ffffff" d="M224,280 L200,312 L214,330 L236,294 Z"/>
+  <!-- lapelas -->
+  <path class="tinta" fill="#33417a" d="M166,290 L200,334 L188,440 L140,334 L156,300 Z"/>
+  <path class="tinta" fill="#202a54" d="M234,290 L200,334 L212,440 L260,334 L244,300 Z"/>
+  <!-- lenço no bolso -->
+  <path class="tinta" fill="#f2b630" d="M96,392 L126,392 L118,378 L110,388 L104,376 Z" stroke-width="3"/>
+  <line class="fino" x1="92" y1="394" x2="132" y2="394"/>
+  <!-- pescoço -->
+  <path class="tinta" fill="#eba57a" d="M178,236 L176,292 L200,312 L224,292 L222,236 Z"/>
+  <path fill="#c98058" d="M208,236 L222,236 L224,292 L212,302 C214,280 212,258 208,236 Z"/>
+  <path fill="#b46c48" d="M178,262 C192,272 208,272 222,262 L222,252 L178,252 Z" opacity=".55"/>
+
+  <!-- cabeça -->
+  <g class="cabeca">
+    <ellipse class="tinta" cx="146" cy="172" rx="10" ry="17" fill="#eba57a"/>
+    <ellipse class="tinta" cx="254" cy="172" rx="10" ry="17" fill="#d08e66"/>
+    <path class="tinta" fill="#f0b48a" d="M150,122 C150,96 250,96 250,122 L253,156 C254,186 250,206 243,219 L222,245 Q200,257 178,245 L157,219 C150,206 146,186 147,156 Z"/>
+    <!-- sombra dura do lado direito -->
+    <path fill="#cf8d65" d="M230,118 C246,130 252,150 252,166 C252,190 248,206 242,219 L222,245 Q212,251 204,252 C222,233 234,206 236,180 C238,150 234,132 230,118 Z"/>
+    <path fill="url(#retPele)" d="M230,118 C246,130 252,150 252,166 C252,190 248,206 242,219 L222,245 Q212,251 204,252 C222,233 234,206 236,180 C238,150 234,132 230,118 Z"/>
+    <!-- cabelo social repartido -->
+    <path class="tinta" fill="#1a1f33" d="M141,166 C132,122 150,78 202,72 C250,68 270,104 260,166 L252,150 C253,130 246,118 236,112 C216,104 188,106 170,110 C157,114 151,130 150,152 Z"/>
+    <path class="tinta" fill="#262d4a" d="M170,96 C192,80 244,80 256,112 C238,100 214,98 196,104 C184,108 174,106 170,96 Z"/>
+    <path fill="#4b66b8" d="M190,86 C210,80 232,82 244,92 C226,88 208,88 192,92 Z"/>
+    <path fill="#4b66b8" d="M150,120 C152,104 160,94 170,90 C162,100 156,110 154,124 Z"/>
+    <path class="fino" d="M168,94 C164,100 160,108 158,118" stroke-width="3"/>
+    <path fill="#1a1f33" class="tinta" d="M146,150 L152,150 L152,178 L146,176 Z" stroke-width="2.5"/>
+    <path fill="#1a1f33" class="tinta" d="M254,150 L248,150 L248,178 L254,176 Z" stroke-width="2.5"/>
+    <!-- sobrancelhas grossas (olhar determinado) -->
+    <path fill="#111" d="M160,146 L195,151 L193,159 L161,154 Z"/>
+    <path fill="#111" d="M205,151 L240,146 L239,154 L207,159 Z"/>
+    <!-- olhos -->
+    <g class="olho"><path fill="#fff" class="fino" d="M167,168 Q180,159 193,167 Q180,173 167,168 Z" stroke-width="2"/><circle cx="182" cy="166.5" r="4" fill="#1e2a44"/><circle cx="183.5" cy="165" r="1.2" fill="#fff"/></g>
+    <g class="olho"><path fill="#fff" class="fino" d="M207,167 Q220,159 233,168 Q220,173 207,167 Z" stroke-width="2"/><circle cx="218" cy="166.5" r="4" fill="#1e2a44"/><circle cx="219.5" cy="165" r="1.2" fill="#fff"/></g>
+    <path class="fino" d="M166,166 Q180,157 194,165" stroke-width="3.5"/>
+    <path class="fino" d="M206,165 Q220,157 234,166" stroke-width="3.5"/>
+    <path class="fino" d="M171,177 L188,176" stroke-width="1.6"/>
+    <path class="fino" d="M212,176 L229,177" stroke-width="1.6"/>
+    <!-- nariz -->
+    <path fill="#cf8d65" d="M201,164 L210,196 L201,200 Z"/>
+    <path class="fino" d="M200,162 L195,194" stroke-width="2.5"/>
+    <path class="fino" d="M188,198 Q194,204 200,201 Q206,204 212,198" stroke-width="2.5"/>
+    <!-- maçãs do rosto -->
+    <path class="fino" d="M161,192 L169,208" stroke-width="2"/>
+    <path class="fino" d="M240,190 L232,206" stroke-width="2"/>
+    <!-- boca: meio sorriso confiante -->
+    <path class="fino" d="M183,220 Q200,226 221,214" stroke-width="3.2"/>
+    <path class="fino" d="M218,212 L224,216" stroke-width="2.2"/>
+    <path class="fino" d="M194,231 L207,230" stroke-width="2"/>
+    <!-- queixo -->
+    <path class="fino" d="M201,240 L201,248" stroke-width="2.4"/>
+  </g>
+
+  <!-- braço com o celular -->
+  <g transform="translate(-22 6)">
+    <path class="tinta" fill="#26325c" d="M58,500 L104,500 L162,268 L126,252 Z"/>
+    <path fill="#3f4f8c" d="M66,488 L80,488 L134,262 L128,258 Z"/>
+    <path class="tinta" fill="#f7f8fc" d="M124,252 L164,268 L161,280 L121,264 Z"/>
+    <g class="fone">
+      <rect class="tinta" x="133" y="118" width="26" height="84" rx="6" fill="#141420" transform="rotate(-8 146 160)"/>
+      <rect x="138" y="124" width="5" height="70" rx="2" fill="#4b66b8" transform="rotate(-8 146 160)"/>
+    </g>
+    <path class="tinta" fill="#eba57a" d="M122,256 C112,232 116,200 132,188 C142,182 156,186 160,198 C164,212 164,236 164,266 Z"/>
+    <path class="fino" d="M134,196 C142,198 150,200 158,204" stroke-width="2.2"/>
+    <path class="fino" d="M131,212 C140,214 150,216 160,220" stroke-width="2.2"/>
+    <path class="fino" d="M130,228 C140,230 150,232 161,236" stroke-width="2.2"/>
+    <path fill="#c98058" d="M150,190 C158,194 162,206 163,220 L163,262 L152,258 C156,238 156,210 150,190 Z"/>
+    <g class="linhas"><path class="fino" d="M112,140 L98,128" stroke-width="4"/><path class="fino" d="M108,160 L90,158" stroke-width="4"/><path class="fino" d="M114,118 L106,100" stroke-width="4"/></g>
+  </g>
+
+  <!-- mão ajeitando a gravata -->
+  <g class="mao-gravata">
+    <path class="tinta" fill="#202a54" d="M300,500 L352,500 L268,326 L238,340 Z"/>
+    <path fill="url(#retEsc)" d="M300,500 L352,500 L268,326 L238,340 Z"/>
+    <path class="tinta" fill="#f7f8fc" d="M236,336 L268,322 L274,334 L242,348 Z"/>
+    <rect class="tinta" x="244" y="330" width="22" height="12" rx="3" fill="#f2b630" transform="rotate(-24 255 336)" stroke-width="3"/>
+    <path class="tinta" fill="#eba57a" d="M240,340 C226,336 212,328 208,316 C205,306 212,298 222,300 L246,306 C254,310 258,322 252,334 Z"/>
+    <path class="fino" d="M214,304 C220,310 232,312 242,310" stroke-width="2"/>
+    <path class="fino" d="M211,314 C220,320 232,322 244,320" stroke-width="2"/>
+  </g>
+</g>
+
+<!-- onomatopeias -->
+<g class="sfx trim">
+  <g transform="translate(78 70) rotate(-10)">
+    <text x="0" y="0" font-family="Impact, 'Arial Black', sans-serif" font-size="46" font-weight="900" text-anchor="middle" fill="#c81e1e" stroke="#111" stroke-width="8" paint-order="stroke" dx="3" dy="4">TRIIIM!</text>
+    <text x="0" y="0" font-family="Impact, 'Arial Black', sans-serif" font-size="46" font-weight="900" text-anchor="middle" fill="#ffe600" stroke="#111" stroke-width="8" paint-order="stroke">TRIIIM!</text>
+  </g>
+</g>
+<g class="sfx pow">
+  <g transform="translate(318 110)">
+    <path id="estrela1" fill="#fff" stroke="#111" stroke-width="5" stroke-linejoin="round"/>
+    <text x="0" y="14" font-family="Impact, 'Arial Black', sans-serif" font-size="40" text-anchor="middle" fill="#ffe600" stroke="#111" stroke-width="7" paint-order="stroke" transform="rotate(-8)">POW!</text>
+  </g>
+</g>
+<g class="sfx fechou">
+  <g transform="translate(200 82)">
+    <path id="estrela2" fill="#2a7fff" stroke="#111" stroke-width="6" stroke-linejoin="round"/>
+    <text x="0" y="18" font-family="Impact, 'Arial Black', sans-serif" font-size="58" text-anchor="middle" fill="#ffe600" stroke="#111" stroke-width="9" paint-order="stroke" transform="rotate(-6)">FECHOU!</text>
+  </g>
+</g>
+<rect width="400" height="500" fill="none" stroke="#111" stroke-width="10"/>
+</svg>
+</template>
+<script>
+function estrela(rx, ry, n){let d='';for(let i=0;i<n*2;i++){const r=i%2?0.62:1;const a=i/(n*2)*Math.PI*2;d+=(i?'L':'M')+(Math.cos(a)*rx*r).toFixed(1)+','+(Math.sin(a)*ry*r).toFixed(1)}return d+'Z'}
+let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
+function montar(el, cls){
+  el.innerHTML=document.getElementById('t').innerHTML;
+  const svg=el.querySelector('svg');
+  const ns='http://www.w3.org/2000/svg';
+  const raios=svg.querySelector('#raios');
+  for(let i=0;i<24;i++){const a0=i/24*Math.PI*2,a1=(i+.5)/24*Math.PI*2;const p=document.createElementNS(ns,'path');
+    p.setAttribute('d',`M200,190 L${200+Math.cos(a0)*700},${190+Math.sin(a0)*700} L${200+Math.cos(a1)*700},${190+Math.sin(a1)*700}Z`);p.setAttribute('fill','#ff8f1f');raios.appendChild(p)}
+  const cid=svg.querySelector('#cidade');let x=-10;
+  while(x<410){const w=34+rnd()*40,h=90+rnd()*150;const r=document.createElementNS(ns,'rect');
+    r.setAttribute('x',x);r.setAttribute('y',500-h);r.setAttribute('width',w);r.setAttribute('height',h);r.setAttribute('fill','#1d2a5c');r.setAttribute('stroke','#0a0f24');r.setAttribute('stroke-width','3');cid.appendChild(r);
+    for(let yy=500-h+10;yy<492;yy+=15)for(let xx=x+6;xx<x+w-8;xx+=11)if(rnd()<.5){const j=document.createElementNS(ns,'rect');j.setAttribute('x',xx);j.setAttribute('y',yy);j.setAttribute('width',5);j.setAttribute('height',7);j.setAttribute('fill','#ffe27a');cid.appendChild(j)}
+    x+=w+3}
+  svg.querySelector('#estrela1').setAttribute('d',estrela(70,44,12));
+  svg.querySelector('#estrela2').setAttribute('d',estrela(150,62,14));
+  if(cls) el.classList.add(cls);
+}
+montar(document.getElementById('a1'),'tocando');
+montar(document.getElementById('a2'),'fechou-on');
+montar(document.getElementById('a3'),'pow-on');
+</script>
+</body></html>
