@@ -248,12 +248,28 @@ async function roboRodadaAgora() {
   if (Date.now() < roboOcupadoAte) return;
 
   const aba = await roboAbaPrincipal();
-  if (!aba?.id) return aviso('Abra o WhatsApp Web numa aba do Chrome para o robô ver as conversas novas.');
+  if (!aba?.id) {
+    // sem aba do WhatsApp: o robô abre uma, fixada e em segundo plano (não rouba o foco)
+    const { roboAbriuAba = 0 } = await chrome.storage.local.get('roboAbriuAba');
+    if (Date.now() - roboAbriuAba > 3 * 60 * 1000) {
+      await chrome.storage.local.set({ roboAbriuAba: Date.now() });
+      await chrome.tabs.create({ url: 'https://web.whatsapp.com/', active: false, pinned: true }).catch(() => {});
+      return aviso('Abri o WhatsApp Web numa aba fixada (canto esquerdo do Chrome). O robô começa assim que ela carregar — não feche essa aba.');
+    }
+    return aviso('Carregando o WhatsApp Web na aba fixada…');
+  }
   let lista;
   try {
     lista = await chrome.tabs.sendMessage(aba.id, { action: 'robo_listar_conversas' });
   } catch (err) {
-    return aviso('O WhatsApp Web não respondeu ao robô. Dê F5 na aba do WhatsApp.');
+    // aba aberta antes da extensão ser atualizada: recarrega uma vez (no máximo a cada 10 min)
+    const { roboRecarregouAba = 0 } = await chrome.storage.local.get('roboRecarregouAba');
+    if (/Receiving end|Could not establish/i.test(err?.message || '') && Date.now() - roboRecarregouAba > 10 * 60 * 1000) {
+      await chrome.storage.local.set({ roboRecarregouAba: Date.now() });
+      await chrome.tabs.reload(aba.id).catch(() => {});
+      return aviso('Recarreguei a aba do WhatsApp Web para o robô funcionar (a extensão foi atualizada).');
+    }
+    return aviso('O WhatsApp Web ainda está carregando ou não respondeu ao robô.');
   }
   if (!lista?.ok) return aviso(lista?.error || 'Não consegui ler a lista de conversas.');
   await aviso(null);
