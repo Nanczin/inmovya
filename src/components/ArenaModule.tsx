@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as EventoMouse } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -82,6 +82,95 @@ function lerMetasLocal(): Metas {
   }
 }
 
+// ---------- animações ----------
+const CSS_ARENA = `
+@keyframes arena-sobe { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes arena-brilho { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes arena-chama { 0%,100% { transform: scale(1) rotate(-3deg); } 50% { transform: scale(1.15) rotate(3deg); } }
+@keyframes arena-xp { 0% { opacity: 0; transform: translate(-50%, 0) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -12px) scale(1.15); } 100% { opacity: 0; transform: translate(-50%, -90px) scale(1); } }
+@keyframes arena-confete { 0% { transform: translateY(-10vh) rotate(0); opacity: 1; } 100% { transform: translateY(110vh) rotate(720deg); opacity: .9; } }
+@keyframes arena-pulo { 0% { transform: scale(.3) rotate(-12deg); opacity: 0; } 60% { transform: scale(1.15) rotate(4deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+@keyframes arena-pop { 0% { transform: scale(1); } 40% { transform: scale(1.06); } 100% { transform: scale(1); } }
+@keyframes arena-cresce { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes arena-escudo { 0%,100% { box-shadow: 0 0 0 0 hsl(var(--primary) / .45); } 50% { box-shadow: 0 0 0 10px hsl(var(--primary) / 0); } }
+.arena-sobe { animation: arena-sobe .55s cubic-bezier(.2,.8,.2,1) both; }
+.arena-barra { position: relative; overflow: hidden; transition: width 1.1s cubic-bezier(.2,.8,.2,1); }
+.arena-barra::after { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); animation: arena-brilho 2.4s ease-in-out infinite; }
+.arena-chama { animation: arena-chama 1.1s ease-in-out infinite; transform-origin: 50% 90%; }
+.arena-xp { position: fixed; z-index: 60; pointer-events: none; font-weight: 900; font-size: 1.35rem; color: hsl(var(--primary)); text-shadow: 0 2px 8px rgba(0,0,0,.18); animation: arena-xp 1.3s ease-out forwards; }
+.arena-confete { position: fixed; top: 0; width: 9px; height: 14px; border-radius: 2px; pointer-events: none; z-index: 70; animation: arena-confete linear forwards; }
+.arena-pulo { animation: arena-pulo .7s cubic-bezier(.2,.8,.2,1) both; }
+.arena-pop { animation: arena-pop .5s ease-out; }
+.arena-cresce { transform-origin: bottom; animation: arena-cresce .8s cubic-bezier(.2,.8,.2,1) both; }
+.arena-escudo { animation: arena-escudo 2.2s ease-in-out infinite; }
+.arena-card { transition: transform .2s ease, box-shadow .2s ease; }
+.arena-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px -12px rgba(0,0,0,.35); }
+@media (prefers-reduced-motion: reduce) {
+  .arena-sobe, .arena-chama, .arena-xp, .arena-confete, .arena-pulo, .arena-pop, .arena-cresce, .arena-escudo, .arena-barra::after { animation: none !important; }
+  .arena-barra, .arena-card { transition: none !important; }
+}
+`;
+
+/** Número que sobe contando até o valor. */
+function Contador({ valor }: { valor: number }) {
+  const [mostra, setMostra] = useState(0);
+  const atual = useRef(0);
+  useEffect(() => {
+    const de = atual.current;
+    const ate = valor;
+    if (de === ate) return;
+    const inicio = performance.now();
+    const dur = Math.min(1400, 400 + Math.abs(ate - de) * 4);
+    let raf = 0;
+    const passo = (t: number) => {
+      const p = Math.min(1, (t - inicio) / dur);
+      const v = Math.round(de + (ate - de) * (1 - Math.pow(1 - p, 3)));
+      atual.current = v;
+      setMostra(v);
+      if (p < 1) raf = requestAnimationFrame(passo);
+    };
+    raf = requestAnimationFrame(passo);
+    return () => cancelAnimationFrame(raf);
+  }, [valor]);
+  return <>{mostra.toLocaleString("pt-BR")}</>;
+}
+
+/** Barra que enche de 0 até a % (com brilho passando). */
+function Barra({ pct, className }: { pct: number; className: string }) {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const t = window.setTimeout(() => setW(pct), 80);
+    return () => window.clearTimeout(t);
+  }, [pct]);
+  return <div className={`arena-barra h-full rounded-full ${className}`} style={{ width: `${w}%` }} />;
+}
+
+const CORES_CONFETE = ["#f59e0b", "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#eab308", "#ec4899"];
+function Confete() {
+  const pedacos = useMemo(
+    () =>
+      Array.from({ length: 90 }, (_, i) => ({
+        left: Math.random() * 100,
+        cor: CORES_CONFETE[i % CORES_CONFETE.length],
+        dur: 2.2 + Math.random() * 2,
+        atraso: Math.random() * 0.8,
+        giro: Math.random() * 360,
+      })),
+    []
+  );
+  return (
+    <>
+      {pedacos.map((p, i) => (
+        <span
+          key={i}
+          className="arena-confete"
+          style={{ left: `${p.left}vw`, background: p.cor, animationDuration: `${p.dur}s`, animationDelay: `${p.atraso}s` }}
+        />
+      ))}
+    </>
+  );
+}
+
 export function ArenaModule() {
   const { toast } = useToast();
   const [dias, setDias] = useState<Record<string, Dia>>({});
@@ -89,7 +178,9 @@ export function ArenaModule() {
   const [metas, setMetas] = useState<Metas>(lerMetasLocal);
   const [editando, setEditando] = useState<Metas | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [festa, setFesta] = useState<string | null>(null);
+  const [festa, setFesta] = useState<{ titulo: string; tipo: string; icone: string } | null>(null);
+  const [pops, setPops] = useState<{ id: number; x: number; y: number; txt: string }[]>([]);
+  const [pulsando, setPulsando] = useState<string | null>(null);
 
   const hoje = new Date();
   const kHoje = chave(hoje);
@@ -162,6 +253,20 @@ export function ArenaModule() {
   const nivelIdx = NIVEIS.reduce((acc, n, i) => (xpMes >= n.xp ? i : acc), 0);
   const nivel = NIVEIS[nivelIdx];
   const prox = NIVEIS[nivelIdx + 1];
+  // subiu de nível? (guarda o último nível visto do mês neste navegador)
+  useEffect(() => {
+    if (carregando) return;
+    const k = `inmovya_arena_nivel_${kHoje.slice(0, 7)}`;
+    let visto: number | null = null;
+    try {
+      const v = localStorage.getItem(k);
+      visto = v === null ? null : Number(v);
+      localStorage.setItem(k, String(nivelIdx));
+    } catch {
+      /* ignora */
+    }
+    if (visto !== null && nivelIdx > visto) setFesta({ titulo: NIVEIS[nivelIdx].nome, tipo: "Subiu de nível!", icone: "🛡️" });
+  }, [carregando, nivelIdx]);
   const pctNivel = prox ? Math.min(100, ((xpMes - nivel.xp) / (prox.xp - nivel.xp)) * 100) : 100;
 
   // dias úteis que faltam no mês (contando hoje)
@@ -250,8 +355,10 @@ export function ArenaModule() {
     // 1ª vez que abre (sem histórico): só guarda, sem festa pelo que já existia
     const novasMis = misVistas ? misFeitas.filter((f) => !misVistas.includes(f)) : [];
     const novasCon = conVistas ? conFeitas.filter((f) => !conVistas.includes(f)) : [];
-    const nova = novasCon[0] ? conquistas.find((c) => novasCon[0].startsWith(c.id + ":"))?.nome : novasMis[0] ? missoes.find((x) => x.id === novasMis[0])?.titulo : null;
-    if (nova) setFesta(nova);
+    const con = novasCon[0] ? conquistas.find((c) => novasCon[0].startsWith(c.id + ":")) : null;
+    const mis = !con && novasMis[0] ? missoes.find((x) => x.id === novasMis[0]) : null;
+    if (con) setFesta({ titulo: con.nome, tipo: "Conquista desbloqueada", icone: con.icone });
+    else if (mis) setFesta({ titulo: mis.titulo, tipo: "Missão cumprida", icone: "⚔️" });
     try {
       localStorage.setItem(kMis, JSON.stringify(misFeitas));
       localStorage.setItem(kCon, JSON.stringify([...new Set([...(conVistas || []), ...conFeitas])]));
@@ -261,9 +368,17 @@ export function ArenaModule() {
   }, [carregando, dias, metas]);
 
   // +1 rápido (interação, negociação, visita, documentação, venda) → mesma linha do dia usada em Relatórios
-  const somarUm = async (m: Metrica) => {
+  const somarUm = async (m: Metrica, ev?: EventoMouse) => {
     const col = COLUNA[m];
     if (!col) return;
+    // "+XP" subindo de onde clicou
+    if (ev) {
+      const id = Date.now() + Math.random();
+      setPops((p) => [...p, { id, x: ev.clientX, y: ev.clientY - 10, txt: `+${XP[m]} XP` }]);
+      window.setTimeout(() => setPops((p) => p.filter((q) => q.id !== id)), 1400);
+    }
+    setPulsando(m);
+    window.setTimeout(() => setPulsando(null), 600);
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -283,7 +398,7 @@ export function ArenaModule() {
     novo[col] = (Number(r[col]) || 0) + 1;
     const { error } = await supabase.from("powerbi_funnel_metrics").upsert(novo, { onConflict: "user_id, period" });
     if (error) return toast({ title: "Não consegui registrar", description: error.message, variant: "destructive" });
-    toast({ title: `+${XP[m]} XP`, description: `${NOMES[m]} registrada hoje.` });
+    if (!ev) toast({ title: `+${XP[m]} XP`, description: `${NOMES[m]} registrada hoje.` });
     carregar();
   };
 
@@ -322,22 +437,25 @@ export function ArenaModule() {
 
   return (
     <div className="space-y-4 max-w-6xl">
+      <style>{CSS_ARENA}</style>
       {/* cabeçalho: nível e XP da temporada */}
-      <section className="rounded-2xl border bg-gradient-to-br from-primary/10 via-card to-card p-4 sm:p-5 shadow-card">
+      <section className="arena-sobe rounded-2xl border bg-gradient-to-br from-primary/10 via-card to-card p-4 sm:p-5 shadow-card">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shadow">
+            <div className="arena-escudo w-14 h-14 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shadow">
               <Shield className="w-7 h-7" />
             </div>
             <div>
               <div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Arena Spartana · temporada de {mesNome}</div>
-              <div className="text-2xl font-bold leading-tight">{nivel.nome}</div>
+              <div key={nivel.nome} className="arena-pulo text-2xl font-bold leading-tight">{nivel.nome}</div>
               <div className="text-sm text-muted-foreground">{frase}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="text-right">
-              <div className="text-3xl font-black tabular-nums">{xpMes.toLocaleString("pt-BR")}</div>
+              <div className="text-3xl font-black tabular-nums">
+                <Contador valor={xpMes} />
+              </div>
               <div className="text-xs text-muted-foreground">XP no mês</div>
             </div>
             <Button variant="outline" size="icon" onClick={() => setEditando(metas)} title="Definir metas">
@@ -351,50 +469,50 @@ export function ArenaModule() {
             <span>{prox ? `faltam ${(prox.xp - xpMes).toLocaleString("pt-BR")} XP para ${prox.nome}` : "nível máximo!"}</span>
           </div>
           <div className="h-3 rounded-full bg-muted overflow-hidden">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pctNivel}%` }} />
+            <Barra pct={pctNivel} className="bg-gradient-to-r from-primary to-orange-500" />
           </div>
         </div>
       </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* missões de hoje */}
-        <section className="rounded-2xl border bg-card p-4 sm:p-5 shadow-card lg:col-span-2">
+        <section className="arena-sobe rounded-2xl border bg-card p-4 sm:p-5 shadow-card lg:col-span-2" style={{ animationDelay: "80ms" }}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold flex items-center gap-2">
               <Swords className="w-4 h-4" /> Missões de hoje
             </h3>
             <span className="text-sm font-semibold tabular-nums">
-              {missoesFeitas}/{missoes.length} · +{xpDoDia(dHoje)} XP hoje
+              {missoesFeitas}/{missoes.length} · +<Contador valor={xpDoDia(dHoje)} /> XP hoje
             </span>
           </div>
           <div className="space-y-3">
-            {missoes.map((x) => {
+            {missoes.map((x, i) => {
               const v = dHoje[x.m];
               const pct = Math.min(100, (v / Math.max(1, x.alvo)) * 100);
               const ok = v >= x.alvo;
               return (
-                <div key={x.id} className={`rounded-xl border p-3 ${ok ? "border-success/50 bg-success/5" : ""}`}>
+                <div key={x.id} className={`arena-sobe arena-card rounded-xl border p-3 ${ok ? "border-success/50 bg-success/5" : ""} ${pulsando === x.m ? "arena-pop" : ""}`} style={{ animationDelay: `${150 + i * 70}ms` }}>
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="font-semibold text-sm">
-                        {ok ? "✅ " : ""}
+                        {ok ? <span className="arena-pulo inline-block">✅ </span> : ""}
                         {x.titulo}
                       </div>
                       <div className="text-xs text-muted-foreground">{x.dica}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="tabular-nums font-bold">
-                        {v}/{x.alvo}
+                        <Contador valor={v} />/{x.alvo}
                       </span>
                       {COLUNA[x.m] && (
-                        <Button size="sm" variant="outline" className="h-8" onClick={() => somarUm(x.m)} title={`Registrar +1 ${NOMES[x.m]}`}>
+                        <Button size="sm" variant="outline" className="h-8" onClick={(e) => somarUm(x.m, e)} title={`Registrar +1 ${NOMES[x.m]}`}>
                           <Plus className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>
                   </div>
                   <div className="h-2 mt-2 rounded-full bg-muted overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${ok ? "bg-success" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+                    <Barra pct={pct} className={ok ? "bg-success" : "bg-primary"} />
                   </div>
                 </div>
               );
@@ -402,7 +520,7 @@ export function ArenaModule() {
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {(["negociacoes", "visitas", "documentacoes", "vendas"] as Metrica[]).map((m) => (
-              <Button key={m} variant="secondary" size="sm" onClick={() => somarUm(m)}>
+              <Button key={m} variant="secondary" size="sm" className={`transition-transform active:scale-95 ${pulsando === m ? "arena-pop" : ""}`} onClick={(e) => somarUm(m, e)}>
                 <Plus className="w-3.5 h-3.5 mr-1" /> {SINGULAR[m]} <span className="ml-1 text-xs text-muted-foreground">+{XP[m]} XP</span>
               </Button>
             ))}
@@ -410,14 +528,14 @@ export function ArenaModule() {
         </section>
 
         {/* sequência e recordes */}
-        <section className="rounded-2xl border bg-card p-4 sm:p-5 shadow-card space-y-4">
+        <section className="arena-sobe rounded-2xl border bg-card p-4 sm:p-5 shadow-card space-y-4" style={{ animationDelay: "160ms" }}>
           <div className="flex items-center gap-3">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${sequencia ? "bg-orange-100 text-orange-600 dark:bg-orange-950" : "bg-muted text-muted-foreground"}`}>
-              <Flame className="w-6 h-6" />
+              <Flame className={`w-6 h-6 ${sequencia ? "arena-chama" : ""}`} />
             </div>
             <div>
               <div className="text-2xl font-black tabular-nums">
-                {sequencia} {sequencia === 1 ? "dia" : "dias"}
+                <Contador valor={sequencia} /> {sequencia === 1 ? "dia" : "dias"}
               </div>
               <div className="text-xs text-muted-foreground">seguidos batendo {metas.diaLigacoes} ligações</div>
             </div>
@@ -425,21 +543,25 @@ export function ArenaModule() {
           <div className="grid grid-cols-2 gap-2 text-center">
             <div className="rounded-xl bg-muted/60 p-2">
               <div className="text-xs text-muted-foreground">Recorde de ligações</div>
-              <div className="text-lg font-bold tabular-nums">{Math.max(recordeLig, dHoje.ligacoes)}</div>
+              <div className="text-lg font-bold tabular-nums">
+                <Contador valor={Math.max(recordeLig, dHoje.ligacoes)} />
+              </div>
             </div>
             <div className="rounded-xl bg-muted/60 p-2">
               <div className="text-xs text-muted-foreground">Melhor dia (XP)</div>
-              <div className="text-lg font-bold tabular-nums">{Math.max(recordeXp, xpDoDia(dHoje))}</div>
+              <div className="text-lg font-bold tabular-nums">
+                <Contador valor={Math.max(recordeXp, xpDoDia(dHoje))} />
+              </div>
             </div>
           </div>
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">XP da semana</div>
             <div className="flex items-end gap-1.5 h-20">
-              {semana.map((s) => (
+              {semana.map((s, i) => (
                 <div key={s.k} className="flex-1 flex flex-col items-center gap-1">
                   <div
-                    className={`w-full rounded-md ${s.k === kHoje ? "bg-primary" : s.bateu ? "bg-success/70" : "bg-primary/30"}`}
-                    style={{ height: `${s.futuro ? 4 : Math.max(4, (s.xp / maxSemana) * 64)}px`, opacity: s.futuro ? 0.3 : 1 }}
+                    className={`arena-cresce w-full rounded-md transition-all duration-700 ${s.k === kHoje ? "bg-primary" : s.bateu ? "bg-success/70" : "bg-primary/30"}`}
+                    style={{ height: `${s.futuro ? 4 : Math.max(4, (s.xp / maxSemana) * 64)}px`, opacity: s.futuro ? 0.3 : 1, animationDelay: `${250 + i * 60}ms` }}
                     title={`${s.xp} XP`}
                   />
                   <span className="text-[10px] text-muted-foreground">{s.rot}</span>
@@ -451,7 +573,7 @@ export function ArenaModule() {
       </div>
 
       {/* metas do mês com ritmo */}
-      <section className="rounded-2xl border bg-card p-4 sm:p-5 shadow-card">
+      <section className="arena-sobe rounded-2xl border bg-card p-4 sm:p-5 shadow-card" style={{ animationDelay: "240ms" }}>
         <h3 className="font-bold flex items-center gap-2 mb-3">
           <Target className="w-4 h-4" /> Metas de {mesNome}
           <span className="text-xs font-normal text-muted-foreground">· {diasRestantes} dias úteis restantes</span>
@@ -464,16 +586,18 @@ export function ArenaModule() {
             const projecao = diasUteisPassados > 0 ? Math.round((v / diasUteisPassados) * (diasUteisPassados + diasRestantes)) : v;
             const noRitmo = projecao >= alvo || v >= alvo;
             return (
-              <div key={m} className="rounded-xl border p-3">
+              <div key={m} className={`arena-card rounded-xl border p-3 ${pulsando === m ? "arena-pop" : ""}`}>
                 <div className="flex items-baseline justify-between">
                   <span className="font-semibold text-sm">{NOMES[m]}</span>
                   <span className="tabular-nums">
-                    <b className="text-lg">{v}</b>
+                    <b className="text-lg">
+                      <Contador valor={v} />
+                    </b>
                     <span className="text-muted-foreground">/{alvo}</span>
                   </span>
                 </div>
                 <div className="h-2 mt-2 rounded-full bg-muted overflow-hidden">
-                  <div className={`h-full rounded-full ${v >= alvo ? "bg-success" : noRitmo ? "bg-primary" : "bg-warning"}`} style={{ width: `${pct}%` }} />
+                  <Barra pct={pct} className={v >= alvo ? "bg-success" : noRitmo ? "bg-primary" : "bg-warning"} />
                 </div>
                 <div className={`text-xs mt-1.5 ${v >= alvo ? "text-success font-semibold" : noRitmo ? "text-muted-foreground" : "text-warning font-semibold"}`}>
                   {v >= alvo
@@ -489,7 +613,7 @@ export function ArenaModule() {
       </section>
 
       {/* conquistas */}
-      <section className="rounded-2xl border bg-card p-4 sm:p-5 shadow-card">
+      <section className="arena-sobe rounded-2xl border bg-card p-4 sm:p-5 shadow-card" style={{ animationDelay: "320ms" }}>
         <h3 className="font-bold flex items-center gap-2 mb-3">
           <Trophy className="w-4 h-4" /> Conquistas
           <span className="text-xs font-normal text-muted-foreground">
@@ -497,9 +621,9 @@ export function ArenaModule() {
           </span>
         </h3>
         <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          {conquistas.map((c) => (
-            <div key={c.id} className={`rounded-xl border p-3 text-center ${c.ok ? "border-warning/50 bg-warning/5" : "opacity-60"}`} title={c.desc}>
-              <div className="text-2xl">{c.ok ? c.icone : <Lock className="w-6 h-6 mx-auto text-muted-foreground" />}</div>
+          {conquistas.map((c, i) => (
+            <div key={c.id} className={`arena-sobe arena-card rounded-xl border p-3 text-center ${c.ok ? "border-warning/50 bg-warning/5" : "opacity-60 grayscale"}`} style={{ animationDelay: `${380 + i * 50}ms` }} title={c.desc}>
+              <div className={`text-2xl ${c.ok ? "arena-pulo" : ""}`} style={{ animationDelay: `${500 + i * 50}ms` }}>{c.ok ? c.icone : <Lock className="w-6 h-6 mx-auto text-muted-foreground" />}</div>
               <div className="font-semibold text-sm mt-1">{c.nome}</div>
               <div className="text-[11px] text-muted-foreground leading-tight">{c.desc}</div>
             </div>
@@ -512,12 +636,19 @@ export function ArenaModule() {
       </section>
 
       {/* comemoração */}
+      {pops.map((p) => (
+        <span key={p.id} className="arena-xp" style={{ left: p.x, top: p.y }}>
+          {p.txt}
+        </span>
+      ))}
+
       {festa && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setFesta(null)}>
-          <div className="rounded-3xl bg-card p-8 text-center shadow-2xl animate-in zoom-in-95 max-w-sm mx-4">
-            <div className="text-6xl mb-2">🏆</div>
-            <div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Conquista desbloqueada</div>
-            <div className="text-2xl font-black mt-1">{festa}</div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-in fade-in" onClick={() => setFesta(null)}>
+          <Confete />
+          <div className="rounded-3xl bg-card p-8 text-center shadow-2xl animate-in zoom-in-75 duration-500 max-w-sm mx-4">
+            <div className="arena-pulo text-7xl mb-2">{festa.icone}</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">{festa.tipo}</div>
+            <div className="text-2xl font-black mt-1">{festa.titulo}</div>
             <div className="text-sm text-muted-foreground mt-2">Isso é Esparta! Continue assim.</div>
             <Button className="mt-4" onClick={() => setFesta(null)}>
               Bora!
