@@ -1,43 +1,32 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Bot, CheckCircle2, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Megaphone, RefreshCw } from "lucide-react";
 import { checarExtensao, extensaoAtualizada, versaoExtensao } from "@/lib/esteiras";
-import {
-  ConfigRobo,
-  ConversaRobo,
-  SinalRobo,
-  VERSAO_SCALE_ROBO,
-  carregarRobo,
-  lerConversasRobo,
-  salvarRobo,
-  testarIA,
-} from "@/lib/roboAnuncios";
+import { ConfigRobo, ConversaRobo, SinalRobo, VERSAO_SCALE_ROBO, carregarRobo, lerConversasRobo, salvarRobo } from "@/lib/roboAnuncios";
 
 const hora = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
 
-const SITUACAO: Record<string, { txt: string; cor: string }> = {
-  qualificando: { txt: "qualificando", cor: "bg-blue-50 text-blue-700 border-blue-200" },
-  concluido: { txt: "qualificado", cor: "bg-green-50 text-green-700 border-green-200" },
-  transferido: { txt: "passado para você", cor: "bg-amber-50 text-amber-700 border-amber-200" },
-  ignorado: { txt: "não respondido", cor: "bg-gray-50 text-gray-600 border-gray-200" },
+const RESULTADO: Record<string, string> = {
+  na_fila_whatsapp: "cadastrado (vai para Validação)",
+  ja_na_fila: "já estava na fila",
+  ja_cadastrado: "já era lead",
 };
 
+/** Cadastro automático dos leads de anúncio que chegam direto no WhatsApp (feito pela extensão Inmovya Scale). */
 export function RoboAnunciosPainel() {
   const { toast } = useToast();
   const [cfg, setCfg] = useState<ConfigRobo | null>(null);
   const [sinal, setSinal] = useState<SinalRobo | null>(null);
   const [erroBanco, setErroBanco] = useState("");
-  const [conversas, setConversas] = useState<ConversaRobo[]>([]);
+  const [cadastrados, setCadastrados] = useState<ConversaRobo[]>([]);
   const [extensao, setExtensao] = useState<{ ok: boolean; atual: boolean; versao: string | null } | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [alterado, setAlterado] = useState(false);
-  const [testando, setTestando] = useState(false);
 
   const recarregar = useCallback(async () => {
     try {
@@ -46,9 +35,9 @@ export function RoboAnunciosPainel() {
       setSinal(r.sinal);
       setErroBanco("");
     } catch (e: any) {
-      setErroBanco(e?.message || "Não consegui ler a configuração do robô.");
+      setErroBanco(e?.message || "Não consegui ler a configuração.");
     }
-    setConversas(await lerConversasRobo());
+    setCadastrados((await lerConversasRobo()).filter((c) => c.situacao === "cadastrado"));
   }, [alterado]);
 
   useEffect(() => {
@@ -61,16 +50,12 @@ export function RoboAnunciosPainel() {
     checarExtensao().then((ok) => setExtensao({ ok, atual: ok && extensaoAtualizada(VERSAO_SCALE_ROBO), versao: versaoExtensao }));
   }, []);
 
-  const mudar = (p: Partial<ConfigRobo>) => {
-    setCfg((c) => (c ? { ...c, ...p } : c));
-    setAlterado(true);
-  };
-
-  const salvar = async (p: Partial<ConfigRobo> = {}, titulo = "Configuração do robô salva") => {
+  const salvar = async (p: Partial<ConfigRobo> = {}, titulo = "Configuração salva") => {
     if (!cfg) return;
     setSalvando(true);
     try {
-      const novo = { ...cfg, ...p };
+      // sem robô de conversa: nada de IA, modo teste ou tempo de resposta
+      const novo = { ...cfg, ...p, testeNumero: "", testeDesde: null };
       const { entregue } = await salvarRobo(novo);
       setCfg(novo);
       setAlterado(false);
@@ -80,7 +65,7 @@ export function RoboAnunciosPainel() {
         description: precisaAtualizar
           ? `A extensão não recebeu: atualize o Inmovya Scale para a versão ${VERSAO_SCALE_ROBO} (chrome://extensions → Recarregar) e abra esta tela de novo.`
           : novo.ativo
-            ? "O robô responde as conversas novas sozinho. Deixe o WhatsApp Web aberto neste Chrome."
+            ? "Deixe o WhatsApp Web aberto numa aba deste Chrome. Nenhuma mensagem é enviada: só o cadastro."
             : undefined,
         variant: precisaAtualizar ? "destructive" : undefined,
       });
@@ -92,21 +77,8 @@ export function RoboAnunciosPainel() {
     }
   };
 
-  const testar = async () => {
-    if (!cfg?.iaChave.trim()) return;
-    setTestando(true);
-    try {
-      const r = await testarIA(cfg.iaChave, cfg.iaModelo);
-      toast({ title: "IA funcionando", description: r.slice(0, 200) });
-    } catch (e: any) {
-      toast({ title: "A IA não respondeu", description: e?.message, variant: "destructive" });
-    } finally {
-      setTestando(false);
-    }
-  };
-
-  const minutosDesdeSinal = sinal?.ultimoSinal ? (Date.now() - new Date(sinal.ultimoSinal).getTime()) / 60000 : null;
-  const extensaoViva = minutosDesdeSinal !== null && minutosDesdeSinal < 3;
+  const minutos = sinal?.ultimoSinal ? (Date.now() - new Date(sinal.ultimoSinal).getTime()) / 60000 : null;
+  const extensaoViva = minutos !== null && minutos < 3;
 
   if (erroBanco) {
     return (
@@ -129,18 +101,22 @@ export function RoboAnunciosPainel() {
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Bot className="w-5 h-5" />
+            <Megaphone className="w-5 h-5" />
             <div>
-              <div className="font-semibold">Robô de anúncios</div>
+              <div className="font-semibold">Cadastro automático de leads de anúncio</div>
               <div className="text-xs text-muted-foreground">
-                Qualifica no seu WhatsApp Business só quem é <b>lead novo de anúncio</b>: nunca falou com você, não está no Inmovya e mandou a
-                mensagem do anúncio.
+                Quando alguém de anúncio escreve no seu WhatsApp (número não salvo, com a frase do anúncio e fora do Inmovya), a extensão
+                cadastra no Inmovya. <b>Não manda nenhuma mensagem</b> — o atendimento é seu.
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">{cfg.ativo ? "Ligado" : "Desligado"}</span>
-            <Switch checked={cfg.ativo} disabled={salvando} onCheckedChange={(v) => salvar({ ativo: v }, v ? "Robô de anúncios ligado" : "Robô de anúncios desligado")} />
+            <Switch
+              checked={cfg.ativo}
+              disabled={salvando}
+              onCheckedChange={(v) => salvar({ ativo: v }, v ? "Cadastro automático ligado" : "Cadastro automático desligado")}
+            />
           </div>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
@@ -153,7 +129,11 @@ export function RoboAnunciosPainel() {
           </span>
           {cfg.ativo && (
             <span className={extensaoViva ? "text-green-700" : "text-amber-700"}>
-              {extensaoViva ? `Extensão conferindo (última vez ${hora(sinal?.ultimoSinal)})` : sinal?.ultimoSinal ? `Extensão parada desde ${hora(sinal.ultimoSinal)} — o Chrome está aberto?` : "A extensão ainda não conferiu"}
+              {extensaoViva
+                ? `Conferindo o WhatsApp (última vez ${hora(sinal?.ultimoSinal)})`
+                : sinal?.ultimoSinal
+                  ? `Parado desde ${hora(sinal.ultimoSinal)} — o Chrome está aberto?`
+                  : "A extensão ainda não conferiu"}
             </span>
           )}
         </div>
@@ -164,62 +144,19 @@ export function RoboAnunciosPainel() {
         )}
       </div>
 
-      <div className="rounded-lg border bg-card p-4 space-y-4">
-        <div className="space-y-1.5">
-          <Label className="flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> Chave da IA (Groq — gratuita)</Label>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              name="groq-api-key"
-              autoComplete="new-password"
-              data-lpignore="true"
-              placeholder="gsk_..."
-              value={cfg.iaChave}
-              onChange={(e) => mudar({ iaChave: e.target.value.trim() })}
-              onPaste={(e) => {
-                const v = e.clipboardData.getData("text").trim();
-                if (v) {
-                  e.preventDefault();
-                  salvar({ iaChave: v }, "Chave da IA salva");
-                }
-              }}
-              onBlur={() => alterado && salvar({}, "Chave da IA salva")}
-            />
-            <Button variant="outline" onClick={testar} disabled={!cfg.iaChave.trim() || testando}>
-              {testando ? <Loader2 className="w-4 h-4 animate-spin" /> : "Testar"}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Modelo aberto <code>{cfg.iaModelo}</code>. Crie a chave grátis em console.groq.com → API Keys. Sem chave — ou se a IA falhar ou demorar —
-            o robô segue o roteiro fixo de 5 perguntas, do ponto onde a conversa parou. Com ou sem IA, preço, desconto, condições e financiamento sempre passam para você.
-          </p>
-        </div>
-
+      <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="space-y-1.5">
           <Label>Frases da mensagem do anúncio (uma por linha)</Label>
-          <Textarea rows={5} value={cfg.frases.join("\n")} onChange={(e) => mudar({ frases: e.target.value.split("\n") })} />
-          <p className="text-xs text-muted-foreground">O robô só abre a conversa se a mensagem do lead tiver uma destas frases (sem acento, tanto faz maiúscula).</p>
+          <Textarea
+            rows={5}
+            value={cfg.frases.join("\n")}
+            onChange={(e) => {
+              setCfg({ ...cfg, frases: e.target.value.split("\n") });
+              setAlterado(true);
+            }}
+          />
+          <p className="text-xs text-muted-foreground">Só cadastra se a mensagem do lead tiver uma destas frases (sem acento, tanto faz maiúscula).</p>
         </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>Responder quem esperou até (horas)</Label>
-            <Input type="number" min={1} max={72} value={cfg.recuperarHoras} onChange={(e) => mudar({ recuperarHoras: Number(e.target.value) })} />
-            <p className="text-xs text-muted-foreground">Ao abrir o Chrome, responde quem escreveu nesse período ("Desculpe a demora").</p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Tempo de resposta (segundos)</Label>
-            <Input type="number" min={0} max={600} step={5} value={cfg.esperaSegundos} onChange={(e) => mudar({ esperaSegundos: Number(e.target.value) })} />
-            <p className="text-xs text-muted-foreground">
-              Quanto o robô espera depois da mensagem do cliente antes de responder. 0 = o mais rápido possível (uns 15–30 s). Ex.: 60 parece mais humano.
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Seu WhatsApp pessoal (recebe os avisos)</Label>
-            <Input value={cfg.numeroAviso} onChange={(e) => mudar({ numeroAviso: e.target.value })} />
-          </div>
-        </div>
-
         <div className="flex gap-2">
           <Button onClick={() => salvar()} disabled={salvando}>
             {salvando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Salvar
@@ -230,59 +167,19 @@ export function RoboAnunciosPainel() {
         </div>
       </div>
 
-      <div className={`rounded-lg border p-4 space-y-2 ${cfg.testeNumero ? "border-blue-300 bg-blue-50" : "bg-card"}`}>
-        <div className="font-semibold text-sm">Modo teste</div>
-        <p className="text-xs text-muted-foreground">
-          Com o modo teste ligado, o robô conversa <b>só</b> com o número de teste (pode ser o seu pessoal, mesmo salvo) e ignora tudo que
-          aconteceu nessa conversa antes do início do teste. Ninguém mais recebe mensagem.
-        </p>
-        {cfg.testeNumero ? (
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span>
-              Testando com <b>+{cfg.testeNumero}</b> desde {hora(cfg.testeDesde)}. Mande do celular de teste: <i>"Olá! Tenho interesse"</i>.
-            </span>
-            <Button size="sm" variant="outline" disabled={salvando} onClick={() => salvar({ testeNumero: "", testeDesde: null }, "Modo teste encerrado — robô atende os leads de anúncio")}>
-              Encerrar teste
-            </Button>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            <Input id="robo-teste" className="max-w-[220px]" placeholder="Ex.: 11988782027" defaultValue="" />
-            <Button
-              size="sm"
-              disabled={salvando}
-              onClick={() => {
-                const v = ((document.getElementById("robo-teste") as HTMLInputElement)?.value || "").replace(/\D/g, "");
-                if (v.length < 10) return toast({ title: "Digite o número de teste com DDD", variant: "destructive" });
-                const tel = v.length <= 11 ? "55" + v : v;
-                salvar({ testeNumero: tel, testeDesde: new Date().toISOString(), ativo: true }, "Modo teste ligado");
-              }}
-            >
-              Começar teste
-            </Button>
-          </div>
-        )}
-      </div>
-
       <div className="rounded-lg border bg-card p-4 space-y-2">
-        <div className="font-semibold text-sm">Últimas conversas do robô</div>
-        {!conversas.length ? (
-          <p className="text-xs text-muted-foreground">Nenhuma ainda.</p>
+        <div className="font-semibold text-sm">Últimos cadastrados pelo WhatsApp</div>
+        {!cadastrados.length ? (
+          <p className="text-xs text-muted-foreground">Nenhum ainda.</p>
         ) : (
           <div className="divide-y">
-            {conversas.map((c) => (
+            {cadastrados.map((c) => (
               <div key={c.telefone} className="py-2 text-sm flex flex-wrap items-center gap-2">
-                <span className={`text-xs px-2 py-0.5 rounded border ${SITUACAO[c.situacao]?.cor || ""}`}>{SITUACAO[c.situacao]?.txt || c.situacao}</span>
                 <a className="font-medium hover:underline" href={`https://wa.me/${c.telefone}`} target="_blank" rel="noreferrer">
-                  {c.nome || `+${c.telefone}`}
+                  +{c.telefone}
                 </a>
                 <span className="text-xs text-muted-foreground">{hora(c.updated_at)}</span>
-                {c.resultado_inmovya && <span className="text-xs text-muted-foreground">· {c.resultado_inmovya}</span>}
-                {Object.keys(c.respostas || {}).length > 0 && (
-                  <div className="w-full text-xs text-muted-foreground">
-                    {Object.entries(c.respostas).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}
-                  </div>
-                )}
+                {c.resultado_inmovya && <span className="text-xs text-muted-foreground">· {RESULTADO[c.resultado_inmovya] || c.resultado_inmovya}</span>}
               </div>
             ))}
           </div>

@@ -977,7 +977,7 @@ export function EsteirasModule() {
             <TabsTrigger value="hoje" className="font-semibold">Hoje <span className="ml-1.5 tabular-nums text-muted-foreground">{fila.length}</span></TabsTrigger>
             <TabsTrigger value="esteiras" className="font-semibold">Esteiras</TabsTrigger>
             <TabsTrigger value="primeiro" className="font-semibold">1º contato</TabsTrigger>
-            <TabsTrigger value="robo" className="font-semibold">Robô de anúncios</TabsTrigger>
+            <TabsTrigger value="robo" className="font-semibold">Leads de anúncio</TabsTrigger>
             <TabsTrigger value="importar" className="font-semibold">Backup</TabsTrigger>
           </TabsList>
           <span
