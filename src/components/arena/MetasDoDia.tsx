@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { Spartano3D } from "./Spartano3D";
 import { METAS_PADRAO, Metas, chave, ehDiaUtil, interessado, lerMetasLocal } from "@/components/ArenaModule";
 
-// Pop-up que abre 1x por dia, na primeira vez que entra no Inmovya: os números que precisa fazer hoje.
+// Pop-up que abre toda vez que entra no Inmovya (cada vez que a página é aberta/recarregada): os números que precisa fazer hoje.
 
 interface Linha {
   icone: string;
@@ -35,34 +35,40 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
   const [mesLinhas, setMesLinhas] = useState<Linha[]>([]);
   const hoje = new Date();
   const kHoje = chave(hoje);
-  const kGuardado = "inmovya_popup_metas_dia";
-
   useEffect(() => {
-    let jaViu = false;
-    try {
-      jaViu = localStorage.getItem(kGuardado) === kHoje;
-    } catch {
-      /* ignora */
-    }
     let vivo = true;
+    // cada consulta isolada: se uma falhar, o pop-up abre do mesmo jeito (com zero naquela linha)
+    const tentar = async <T,>(f: () => PromiseLike<T>, padrao: T): Promise<T> => {
+      try {
+        return await f();
+      } catch (e) {
+        console.warn("[Inmovya metas do dia]", e);
+        return padrao;
+      }
+    };
     const carregar = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: sessao } = await supabase.auth.getSession();
+      const user = sessao?.session?.user;
       if (!user) return;
       let metas: Metas = lerMetasLocal();
-      const { data: g } = await supabase.from("arena_metas" as any).select("metas").eq("user_id", user.id).maybeSingle();
-      if ((g as any)?.metas) metas = { ...METAS_PADRAO, ...(g as any).metas };
+      const g: any = await tentar(async () => (await supabase.from("arena_metas" as any).select("metas").eq("user_id", user.id).maybeSingle()).data, null);
+      if (g?.metas) metas = { ...METAS_PADRAO, ...g.metas };
 
       // hoje: ligações e interessados
       const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
-      const { data: ligs } = await supabase.from("ligacoes").select("resultado").eq("user_id", user.id).gte("data_ligacao", inicioDia.toISOString()).limit(5000);
-      const lig = ligs?.length || 0;
-      const int = (ligs || []).filter((l: any) => interessado(l.resultado)).length;
+      const ligs: any[] = await tentar(
+        async () => (await supabase.from("ligacoes").select("resultado").eq("user_id", user.id).gte("data_ligacao", inicioDia.toISOString()).limit(5000)).data || [],
+        []
+      );
+      const lig = ligs.length;
+      const int = ligs.filter((l: any) => interessado(l.resultado)).length;
 
       // registros do mês (powerbi_funnel_metrics "dia:AAAA-MM-DD")
       const mesPref = `dia:${kHoje.slice(0, 7)}`;
-      const { data: rows } = await supabase.from("powerbi_funnel_metrics").select("*").eq("user_id", user.id).like("period", `${mesPref}%`);
+      const rows: any[] = await tentar(
+        async () => ((await supabase.from("powerbi_funnel_metrics").select("*").eq("user_id", user.id)).data || []).filter((r: any) => String(r.period || "").startsWith(mesPref)),
+        []
+      );
       const soma = { interacoes: 0, negociacoes: 0, visitas: 0, documentacoes: 0, vendas: 0, interacoesHoje: 0 };
       (rows || []).forEach((r: any) => {
         soma.interacoes += Number(r.interacao_ajuste) || 0;
@@ -97,9 +103,9 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
         { icone: "🚶", nome: "Visitas", feito: soma.visitas, alvo: metas.mesVisitas, obs: porDia(soma.visitas, metas.mesVisitas) },
         { icone: "🤝", nome: "Negociações", feito: soma.negociacoes, alvo: metas.mesNegociacoes, obs: porDia(soma.negociacoes, metas.mesNegociacoes) },
       ]);
-      window.setTimeout(() => vivo && setAberto(true), 700);
+      window.setTimeout(() => vivo && setAberto(true), 600);
     };
-    if (!jaViu) carregar().catch(() => {});
+    carregar().catch((e) => console.warn("[Inmovya metas do dia]", e));
     // a Arena pode pedir para abrir de novo (botão "Números do dia")
     const abrir = () => carregar().catch(() => {});
     window.addEventListener("inmovya-metas-dia", abrir);
@@ -109,14 +115,13 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
     };
   }, [kHoje]);
 
-  const fechar = () => {
-    setAberto(false);
-    try {
-      localStorage.setItem(kGuardado, kHoje);
-    } catch {
-      /* ignora */
-    }
-  };
+  const fechar = () => setAberto(false);
+  useEffect(() => {
+    if (!aberto) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && fechar();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [aberto]);
 
   if (!aberto) return null;
   const h = hoje.getHours();
@@ -124,9 +129,9 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
   const dataTxt = hoje.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-3 animate-in fade-in" onClick={fechar}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-3 animate-in fade-in">
       <style>{CSS}</style>
-      <div className="md-caixa relative overflow-hidden rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="md-caixa relative overflow-hidden rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
         <div className="md-chao" />
         <button className="absolute right-3 top-3 z-10 rounded-full p-1.5 text-white/60 hover:bg-white/10 hover:text-white" onClick={fechar} aria-label="Fechar">
           <X className="w-5 h-5" />

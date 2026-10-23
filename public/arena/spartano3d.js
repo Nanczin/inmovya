@@ -8,7 +8,7 @@ function ambiente(renderer) {
   const geo = new THREE.SphereGeometry(10, 32, 16);
   const cores = [];
   const pos = geo.attributes.position;
-  const cTopo = new THREE.Color("#ffd9a0"), cMeio = new THREE.Color("#6b3412"), cBase = new THREE.Color("#0a0604");
+  const cTopo = new THREE.Color("#8a8070"), cMeio = new THREE.Color("#1c1410"), cBase = new THREE.Color("#030202");
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i) / 10;
     const c = y > 0 ? cMeio.clone().lerp(cTopo, y) : cMeio.clone().lerp(cBase, -y);
@@ -22,9 +22,9 @@ function ambiente(renderer) {
     m.lookAt(0, 0, 0);
     cena.add(m);
   };
-  painel("#fff1d6", -5, 5, 5, 4, 3);
-  painel("#ff7a2a", 6, 1, -4, 3, 5);
-  painel("#ffe0b0", 4, 6, 3, 2, 2);
+  painel("#d8d0c0", -5, 6, 3, 3, 2);
+  painel("#7a0a06", 6, -1, -4, 3, 4);
+  painel("#b0a898", 3, 7, -3, 2, 2);
   const pm = new THREE.PMREMGenerator(renderer);
   const tex = pm.fromScene(cena, 0.04).texture;
   pm.dispose();
@@ -36,17 +36,48 @@ function texturaCrina() {
   c.width = 128;
   c.height = 16;
   const g = c.getContext("2d");
-  g.fillStyle = "#8e0d14";
+  g.fillStyle = "#4a0508";
   g.fillRect(0, 0, 128, 16);
   for (let i = 0; i < 128; i++) {
     const l = 20 + Math.random() * 40;
-    g.fillStyle = `hsl(${355 + Math.random() * 8}, ${70 + Math.random() * 20}%, ${l}%)`;
+    g.fillStyle = `hsl(${355 + Math.random() * 8}, ${60 + Math.random() * 25}%, ${l * 0.55}%)`;
     g.fillRect(i, 0, 1, 16);
   }
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(3, 1);
+  t.repeat.set(5, 1);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function texturaDesgaste() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d");
+  g.fillStyle = "#808080";
+  g.fillRect(0, 0, 256, 256);
+  // manchas de sujeira/oxidação
+  for (let i = 0; i < 160; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256, r = 4 + Math.random() * 28;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    const v = Math.random() < 0.5 ? 30 : 200;
+    gr.addColorStop(0, `rgba(${v},${v},${v},${0.12 + Math.random() * 0.2})`);
+    gr.addColorStop(1, `rgba(${v},${v},${v},0)`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 256, 256);
+  }
+  // arranhões
+  for (let i = 0; i < 260; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256, a = Math.random() * Math.PI, l = 4 + Math.random() * 40;
+    g.strokeStyle = `rgba(${Math.random() < 0.5 ? "255,255,255" : "0,0,0"},${0.15 + Math.random() * 0.35})`;
+    g.lineWidth = 0.5 + Math.random();
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
 
@@ -55,9 +86,9 @@ function texturaBrasa() {
   c.width = c.height = 32;
   const g = c.getContext("2d");
   const r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
-  r.addColorStop(0, "rgba(255,240,200,1)");
-  r.addColorStop(0.3, "rgba(255,150,60,.9)");
-  r.addColorStop(1, "rgba(255,80,0,0)");
+  r.addColorStop(0, "rgba(255,200,170,1)");
+  r.addColorStop(0.3, "rgba(230,50,20,.9)");
+  r.addColorStop(1, "rgba(120,0,0,0)");
   g.fillStyle = r;
   g.fillRect(0, 0, 32, 32);
   return new THREE.CanvasTexture(c);
@@ -70,7 +101,7 @@ export async function montar(container, opcoes = {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
+  renderer.toneMappingExposure = 0.95;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.style.cssText = "width:100%;height:100%;display:block;touch-action:pan-y;cursor:grab";
@@ -78,16 +109,17 @@ export async function montar(container, opcoes = {}) {
 
   const cena = new THREE.Scene();
   cena.environment = ambiente(renderer);
+  cena.fog = new THREE.FogExp2(0x0a0605, 0.12);
   const camera = new THREE.PerspectiveCamera(heroi ? 36 : 30, 1, 0.1, 50);
   // herói: câmera baixa olhando para cima (imponente), enquadrando da cintura para cima
-  const alvo = heroi ? new THREE.Vector3(0, 1.7, 0) : new THREE.Vector3(0, 1.3, 0);
-  const camBase = heroi ? new THREE.Vector3(0, 1.05, 3.55) : new THREE.Vector3(0, 1.75, 7.4);
+  const alvo = heroi ? new THREE.Vector3(0, 1.78, 0) : new THREE.Vector3(0, 1.3, 0);
+  const camBase = heroi ? new THREE.Vector3(0, 0.8, 3.35) : new THREE.Vector3(0, 1.75, 7.4);
   camera.position.copy(camBase);
   camera.lookAt(alvo);
 
   // luzes
-  cena.add(new THREE.HemisphereLight(0xffe2b8, 0x1a0c05, 0.55));
-  const chave = new THREE.DirectionalLight(0xfff0dc, 2.4);
+  cena.add(new THREE.HemisphereLight(0x8a8478, 0x0a0303, 0.18));
+  const chave = new THREE.DirectionalLight(0xffe6c8, 2.0);
   chave.position.set(-3, 5, 4);
   chave.castShadow = true;
   chave.shadow.mapSize.set(1024, 1024);
@@ -97,29 +129,35 @@ export async function montar(container, opcoes = {}) {
   chave.shadow.camera.bottom = -0.5;
   chave.shadow.bias = -0.0008;
   cena.add(chave);
-  const contorno = new THREE.DirectionalLight(0xff6a1a, 2.2);
+  const contorno = new THREE.DirectionalLight(0xc8d4ff, 3.2); // contraluz fria (silhueta)
   contorno.position.set(3, 3, -4);
   cena.add(contorno);
-  const contorno2 = new THREE.DirectionalLight(0xffa040, 1.6);
+  const contorno2 = new THREE.DirectionalLight(0xff2a10, 2.4); // contraluz vermelha
   contorno2.position.set(-4, 2, -3);
   cena.add(contorno2);
-  const tocha = new THREE.PointLight(0xff7a2a, 2.5, 4, 1.8);
-  tocha.position.set(0.9, 0.25, 1.1);
+  const tocha = new THREE.PointLight(0xff2a0a, 3.5, 5, 1.6); // luz de baixo, vermelha (sinistra)
+  tocha.position.set(0.2, 0.15, 1.3);
+  const luzOlhos = new THREE.PointLight(0xff1a00, 0.5, 0.7, 2);
+  cena.add(luzOlhos);
+  const relampago = new THREE.DirectionalLight(0xdfe6ff, 0);
+  relampago.position.set(2, 6, 3);
+  cena.add(relampago);
   cena.add(tocha);
 
   // materiais
-  const bronze = new THREE.MeshStandardMaterial({ color: 0xc08a3e, metalness: 0.92, roughness: 0.32 });
-  const bronzeEsc = new THREE.MeshStandardMaterial({ color: 0x7a5420, metalness: 0.9, roughness: 0.42 });
-  const pele = new THREE.MeshStandardMaterial({ color: 0x9a6a50, roughness: 0.7, metalness: 0.0 });
-  const couro = new THREE.MeshStandardMaterial({ color: 0x3e2414, roughness: 0.85 });
-  const vermelho = new THREE.MeshStandardMaterial({ color: 0x8c0f16, roughness: 0.78, side: THREE.DoubleSide });
+  const desgaste = texturaDesgaste();
+  const bronze = new THREE.MeshStandardMaterial({ color: 0x8a6c48, metalness: 0.88, roughness: 0.5, roughnessMap: desgaste, bumpMap: desgaste, bumpScale: 0.006 });
+  const bronzeEsc = new THREE.MeshStandardMaterial({ color: 0x3e2e1c, metalness: 0.85, roughness: 0.6, roughnessMap: desgaste, bumpMap: desgaste, bumpScale: 0.006 });
+  const pele = new THREE.MeshStandardMaterial({ color: 0x5e3e2c, roughness: 0.75, metalness: 0.0, bumpMap: desgaste, bumpScale: 0.004 });
+  const couro = new THREE.MeshStandardMaterial({ color: 0x1e120a, roughness: 0.9, bumpMap: desgaste, bumpScale: 0.004 });
+  const vermelho = new THREE.MeshStandardMaterial({ color: 0x3e0406, roughness: 0.9, side: THREE.DoubleSide, bumpMap: desgaste, bumpScale: 0.01 });
   const crinaTex = texturaCrina();
   const crina = new THREE.MeshStandardMaterial({ map: crinaTex, bumpMap: crinaTex, bumpScale: 0.004, roughness: 0.95 });
   const preto = new THREE.MeshStandardMaterial({ color: 0x050302, roughness: 1 });
-  const madeira = new THREE.MeshStandardMaterial({ color: 0x4f3119, roughness: 0.7 });
-  const aco = new THREE.MeshStandardMaterial({ color: 0xd7d2c8, metalness: 1, roughness: 0.18 });
-  const olhoMat = new THREE.MeshBasicMaterial({ color: 0xffa23a });
-  const lambdaMat = new THREE.MeshStandardMaterial({ color: 0x7d0b12, roughness: 0.55, metalness: 0.25 });
+  const madeira = new THREE.MeshStandardMaterial({ color: 0x2a1a0e, roughness: 0.8, bumpMap: desgaste, bumpScale: 0.004 });
+  const aco = new THREE.MeshStandardMaterial({ color: 0xb0aaa0, metalness: 1, roughness: 0.25, roughnessMap: desgaste });
+  const olhoMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+  const lambdaMat = new THREE.MeshStandardMaterial({ color: 0x4a0306, roughness: 0.7, metalness: 0.2, bumpMap: desgaste, bumpScale: 0.01 });
 
   const guerreiro = new THREE.Group();
   cena.add(guerreiro);
@@ -218,6 +256,8 @@ export async function montar(container, opcoes = {}) {
   cabeca.scale.setScalar(1.24);
   cabeca.position.y = 1.95;
   tronco.add(cabeca);
+  luzOlhos.position.set(0, 0.02, 0.5);
+  cabeca.add(luzOlhos);
   const perfilElmo = [
     [0.155, -0.2], [0.18, -0.16], [0.195, -0.08], [0.2, 0.0], [0.205, 0.06], [0.19, 0.13], [0.155, 0.19], [0.09, 0.235], [0.001, 0.25],
   ].map(([r, y]) => new THREE.Vector2(r, y));
@@ -226,14 +266,20 @@ export async function montar(container, opcoes = {}) {
   elmo.material = bronze.clone();
   elmo.material.side = THREE.DoubleSide;
   // fendas dos olhos (escuras) e brilho de brasa dentro
-  const olhos = [];
+  const olhos = [], halos = [];
+  const texOlho = texturaBrasa();
   for (const s of [-1, 1]) {
     const f = add(new THREE.SphereGeometry(1, 16, 10), preto, 0.06 * s, 0.025, 0.19, cabeca);
     f.scale.set(0.055, 0.022, 0.05);
-    f.rotation.z = -0.28 * s;
+    f.rotation.z = 0.38 * s;
     f.rotation.y = 0.35 * s;
     const o = add(new THREE.SphereGeometry(0.02, 10, 8), olhoMat, 0.06 * s, 0.025, 0.215, cabeca);
     olhos.push(o);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: texOlho, color: 0xff1a00, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    halo.position.set(0.062 * s, 0.025, 0.24);
+    halo.scale.set(0.16, 0.09, 1);
+    cabeca.add(halo);
+    halos.push(halo);
   }
   // abertura vertical da boca entre as bochecheiras
   add(new THREE.BoxGeometry(0.05, 0.17, 0.09), preto, 0, -0.115, 0.195, cabeca);
@@ -247,8 +293,17 @@ export async function montar(container, opcoes = {}) {
   const arc = Math.PI * 0.62;
   arcoG.rotation.y = -Math.PI / 2 - arc / 2;
   cabeca.add(arcoG);
-  const sobrancelha = add(new THREE.TorusGeometry(0.205, 0.014, 8, 30, arc), bronzeEsc, 0, 0, 0, arcoG);
-  sobrancelha.rotation.x = -Math.PI / 2;
+  for (const s of [-1, 1]) {
+    const sb = add(new THREE.BoxGeometry(0.13, 0.028, 0.05), bronzeEsc, 0.068 * s, 0.062, 0.2, cabeca);
+    sb.rotation.z = 0.42 * s;
+    sb.rotation.y = 0.32 * s;
+    // bochecheiras salientes, terminando em ponta
+    const boc = add(new THREE.ConeGeometry(0.06, 0.2, 4), bronze, 0.075 * s, -0.12, 0.19, cabeca);
+    boc.rotation.x = Math.PI;
+    boc.rotation.y = Math.PI / 4;
+    boc.scale.set(1, 1, 0.45);
+    boc.rotation.z = -0.12 * s;
+  }
   // borda inferior
   const bordaElmo = add(new THREE.TorusGeometry(0.157, 0.01, 8, 40), bronzeEsc, 0, -0.2, 0, cabeca);
   bordaElmo.rotation.x = Math.PI / 2;
@@ -384,9 +439,9 @@ export async function montar(container, opcoes = {}) {
   // ---- palco da arena ----
   const palco = add(new THREE.CylinderGeometry(1.15, 1.25, 0.14, 64), new THREE.MeshStandardMaterial({ color: 0x2b211a, roughness: 0.9, metalness: 0.1 }), 0, -0.07, 0, cena);
   palco.receiveShadow = true;
-  const anel = add(new THREE.TorusGeometry(1.15, 0.012, 8, 96), new THREE.MeshBasicMaterial({ color: 0xff8a3d }), 0, 0.001, 0, cena);
+  const anel = add(new THREE.TorusGeometry(1.15, 0.012, 8, 96), new THREE.MeshBasicMaterial({ color: 0x7a0c04 }), 0, 0.001, 0, cena);
   anel.rotation.x = Math.PI / 2;
-  const anel2 = add(new THREE.TorusGeometry(0.95, 0.006, 8, 96), new THREE.MeshBasicMaterial({ color: 0xb4541c }), 0, 0.002, 0, cena);
+  const anel2 = add(new THREE.TorusGeometry(0.95, 0.006, 8, 96), new THREE.MeshBasicMaterial({ color: 0x3a0602 }), 0, 0.002, 0, cena);
   anel2.rotation.x = Math.PI / 2;
 
   sombras(guerreiro);
@@ -397,9 +452,9 @@ export async function montar(container, opcoes = {}) {
     c.width = c.height = 128;
     const g = c.getContext("2d");
     const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    r.addColorStop(0, "rgba(255,190,110,.9)");
-    r.addColorStop(0.35, "rgba(255,110,30,.45)");
-    r.addColorStop(1, "rgba(120,30,0,0)");
+    r.addColorStop(0, "rgba(200,30,10,.8)");
+    r.addColorStop(0.4, "rgba(110,8,4,.4)");
+    r.addColorStop(1, "rgba(40,0,0,0)");
     g.fillStyle = r;
     g.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(c);
@@ -415,7 +470,7 @@ export async function montar(container, opcoes = {}) {
   for (let i = 0; i < 12; i++) {
     const g = new THREE.PlaneGeometry(0.12, 3.2);
     g.translate(0, 1.6, 0);
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xff9a40, transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x8a0a04, transparent: true, opacity: 0.05, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
     m.rotation.z = (i / 12) * Math.PI * 2;
     raios.add(m);
   }
@@ -426,17 +481,17 @@ export async function montar(container, opcoes = {}) {
     for (let i = 0; i < 40; i++) {
       const x = 30 + Math.random() * 68, y = 30 + Math.random() * 68, rr = 10 + Math.random() * 30;
       const r = g.createRadialGradient(x, y, 0, x, y, rr);
-      r.addColorStop(0, "rgba(70,40,25,.16)");
-      r.addColorStop(1, "rgba(70,40,25,0)");
+      r.addColorStop(0, "rgba(40,30,28,.22)");
+      r.addColorStop(1, "rgba(40,30,28,0)");
       g.fillStyle = r;
       g.fillRect(0, 0, 128, 128);
     }
     return new THREE.CanvasTexture(c);
   })();
   const fumacas = [];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 18; i++) {
     const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: texFumaca, transparent: true, depthWrite: false, opacity: 0.5 }));
-    f.position.set((Math.random() - 0.5) * 3, 0.1 + Math.random() * 1.6, -1.4 + Math.random() * 0.7);
+    f.position.set((Math.random() - 0.5) * 3.6, i < 6 ? 0.05 + Math.random() * 0.4 : 0.3 + Math.random() * 2.2, i < 6 ? 0.4 + Math.random() * 0.8 : -1.6 + Math.random() * 0.9);
     const sc = 1.4 + Math.random() * 1.4;
     f.scale.set(sc, sc * 0.6, 1);
     f.userData.v = 0.001 + Math.random() * 0.002;
@@ -445,7 +500,7 @@ export async function montar(container, opcoes = {}) {
   }
 
   // ---- golpe de lança (sozinho de tempos em tempos e quando ganha XP) ----
-  let tGolpe = -10;
+  let tGolpe = -10, tRelampago = -10, proxRelampago = 3;
   const golpe = () => (tGolpe = relogio.getElapsedTime());
   window.addEventListener("inmovya-spartano-golpe", golpe);
   const suave = (a, b, x) => {
@@ -551,7 +606,7 @@ export async function montar(container, opcoes = {}) {
     // respiração e postura
     const resp = Math.sin(t * 1.6);
     tronco.scale.set(1 + resp * 0.006, 1 + resp * 0.004, 1 + resp * 0.01);
-    cabeca.rotation.x = Math.sin(t * 0.8) * 0.03 + mouseY * 0.08 - ergue * 0.25;
+    cabeca.rotation.x = 0.16 + Math.sin(t * 0.8) * 0.025 + mouseY * 0.06 - ergue * 0.4;
     cabeca.rotation.y = mouseX * 0.25;
     cristaPivo.rotation.x = Math.sin(t * 2.2) * 0.04;
     escudo.position.y = 1.1 + Math.sin(t * 1.6 + 0.5) * 0.01;
@@ -563,12 +618,20 @@ export async function montar(container, opcoes = {}) {
     if (!reduzir) ondularCapa(t);
     // olhos de brasa
     const brilho = 0.75 + Math.sin(t * 3.2) * 0.25 + flare * 0.8;
-    olhoMat.color.setRGB(1, 0.45 + brilho * 0.25, 0.12 * brilho);
+    olhoMat.color.setRGB(1, 0.08 + brilho * 0.18, 0.02);
+    luzOlhos.intensity = 0.3 + brilho * 0.5;
     olhos.forEach((o) => o.scale.setScalar(0.8 + brilho * 0.5));
-    tocha.intensity = 2.5 + Math.sin(t * 9) * 0.5 + Math.sin(t * 23) * 0.3 + flare * 6;
-    aura.material.opacity = 0.45 + Math.sin(t * 1.3) * 0.1 + flare * 0.4;
+    halos.forEach((h) => (h.material.opacity = 0.55 + brilho * 0.45));
+    tocha.intensity = 3.2 + Math.sin(t * 7) * 0.6 + Math.sin(t * 19) * 0.4 + flare * 6;
+    aura.material.opacity = 0.35 + Math.sin(t * 1.3) * 0.1 + flare * 0.4;
     aura.scale.setScalar(3.2 + Math.sin(t * 1.3) * 0.15 + flare * 0.8);
-    raios.rotation.z = t * 0.08;
+    raios.rotation.z = t * 0.05;
+    if (!reduzir && t > proxRelampago) {
+      tRelampago = t;
+      proxRelampago = t + 6 + Math.random() * 7;
+    }
+    const r1 = t - tRelampago;
+    relampago.intensity = r1 < 0.07 ? 7 : r1 > 0.13 && r1 < 0.2 ? 4.5 : r1 > 0.2 && r1 < 0.5 ? (0.5 - r1) * 6 : 0;
     fumacas.forEach((f, i) => {
       f.position.x += f.userData.v;
       if (f.position.x > 1.8) f.position.x = -1.8;
