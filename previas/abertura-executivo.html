@@ -1,0 +1,240 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+body{margin:0;background:#111;display:flex;flex-wrap:wrap}
+.ab{width:400px;height:500px;position:relative;overflow:hidden;background:#000}
+.cena{position:absolute;inset:0;opacity:0}
+.cena svg{width:100%;height:100%;display:block}
+.cena.ativa{opacity:1;z-index:2;animation:entra .9s cubic-bezier(.7,0,.2,1) both}
+.cena.saindo{opacity:1;z-index:1}
+.cena .kb{transform-origin:50% 40%}
+.cena.ativa .kb{animation:kb 7s linear both}
+.cena.k2 .kb{transform-origin:70% 60%}
+.cena.k3 .kb{transform-origin:30% 50%}
+@keyframes entra{from{clip-path:polygon(100% 0,140% 0,120% 100%,80% 100%)}to{clip-path:polygon(-40% 0,140% 0,120% 100%,-60% 100%)}}
+@keyframes kb{from{transform:scale(1.02) translate(0,0)}to{transform:scale(1.12) translate(-8px,-6px)}}
+.ink{stroke:#17110c;stroke-width:3.2;stroke-linejoin:round;stroke-linecap:round}
+.ink2{stroke:#17110c;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;fill:none}
+@keyframes fala{0%,100%{transform:scaleY(.35)}20%{transform:scaleY(1)}40%{transform:scaleY(.5)}60%{transform:scaleY(.9)}80%{transform:scaleY(.3)}}
+.boca{transform-box:fill-box;transform-origin:50% 0;animation:fala 1.1s infinite}
+@keyframes aponta{0%,100%{transform:rotate(0)}50%{transform:rotate(-5deg) translate(0,-3px)}}
+.dedo{transform-origin:100px 300px;animation:aponta 1.6s ease-in-out infinite}
+@keyframes cabeca{0%,100%{transform:rotate(0)}50%{transform:rotate(-2deg)}}
+.cab{transform-origin:215px 235px;animation:cabeca 3.2s ease-in-out infinite}
+@keyframes fio{0%,100%{transform:skewX(0)}50%{transform:skewX(3deg)}}
+.fio{transform-origin:240px 230px;animation:fio 2.4s ease-in-out infinite}
+@keyframes assina{0%{transform:translate(0,0)}25%{transform:translate(18px,-4px)}50%{transform:translate(32px,2px)}75%{transform:translate(50px,-3px)}100%{transform:translate(64px,0)}}
+.caneta{animation:assina 1.8s ease-in-out infinite alternate}
+@keyframes carimbo{0%,40%{transform:scale(3) rotate(-30deg);opacity:0}52%{transform:scale(.92) rotate(-14deg);opacity:1}58%{transform:scale(1.04) rotate(-14deg)}64%,100%{transform:scale(1) rotate(-14deg);opacity:1}}
+.carimbo{transform-box:fill-box;transform-origin:center;opacity:0}
+.cena.ativa .carimbo{animation:carimbo 3.2s ease-out both}
+@keyframes heli{from{transform:translate(-80px,0)}to{transform:translate(480px,-40px)}}
+.heli{animation:heli 9s linear infinite}
+@keyframes pisca{0%,49%{opacity:1}50%,100%{opacity:.15}}
+.luzv{animation:pisca 1.4s infinite}
+.titulo{font-family:'Arial Narrow','Roboto Condensed',Impact,sans-serif;font-weight:900;font-style:italic;letter-spacing:1px}
+</style></head><body>
+<div class="ab" id="ab"></div><div class="ab" id="f1"></div><div class="ab" id="f2"></div><div class="ab" id="f3"></div>
+
+<template id="t">
+<!-- ===== CENA 1: a ligação ===== -->
+<div class="cena k1"><svg viewBox="0 0 400 500"><defs>
+  <linearGradient id="ceu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6f9ad0"/><stop offset="1" stop-color="#d7e5f2"/></linearGradient>
+  <pattern id="pontos" width="5" height="5" patternUnits="userSpaceOnUse"><circle cx="2.5" cy="2.5" r=".9" fill="#3a4a80"/></pattern>
+  <filter id="desfoque"><feGaussianBlur stdDeviation="1.6"/></filter>
+</defs>
+<g class="kb">
+  <rect width="400" height="500" fill="url(#ceu)"/>
+  <g fill="#fff" opacity=".85"><ellipse cx="70" cy="70" rx="50" ry="14"/><ellipse cx="110" cy="62" rx="34" ry="12"/><ellipse cx="300" cy="50" rx="60" ry="13"/></g>
+  <g class="predios"></g>
+  <!-- caixilhos da janela e teto -->
+  <rect x="0" y="0" width="400" height="26" fill="#cfcac0"/><rect x="40" y="8" width="70" height="8" fill="#fffbe8"/><rect x="250" y="8" width="70" height="8" fill="#fffbe8"/>
+  <rect x="0" y="26" width="400" height="6" fill="#2a2a30"/>
+  <rect x="88" y="26" width="9" height="300" fill="#2a2a30"/><rect x="262" y="26" width="9" height="300" fill="#2a2a30"/>
+  <rect width="400" height="500" fill="#ffb060" opacity=".10"/>
+  <!-- cadeira -->
+  <path class="ink" fill="#1b1b21" d="M118,128 C140,92 282,90 306,126 L326,340 L104,350 Z"/>
+  <path fill="#33333d" d="M132,130 C150,104 200,98 222,100 C190,108 160,120 146,140 Z"/>
+  <!-- perna cruzada e calça -->
+  <path class="ink" fill="#1d2a55" d="M170,410 C230,396 330,392 392,404 L400,470 C330,470 250,476 190,478 Z"/>
+  <path fill="#131c3c" d="M210,452 C280,446 350,444 400,446 L400,470 C330,470 250,476 200,478 Z"/>
+  <!-- paletó -->
+  <path class="ink" fill="#1f2d5a" d="M92,302 C108,262 140,248 172,240 L215,236 C252,236 280,246 302,264 C322,282 332,322 336,362 L342,432 L120,442 C106,402 96,352 92,302 Z"/>
+  <path fill="#141d3d" d="M282,256 C312,276 326,314 330,360 L338,432 L296,436 C300,380 298,310 282,256 Z"/>
+  <path fill="#33488a" d="M104,300 C114,276 136,262 160,254 C140,270 126,290 120,330 Z"/>
+  <!-- camisa, gola e gravata -->
+  <path class="ink" fill="#f1f1ee" d="M190,238 L236,236 L248,300 L254,420 L186,426 L194,300 Z"/>
+  <path fill="#c9ccd8" d="M226,236 L236,236 L248,300 L254,420 L232,422 C238,360 234,290 226,236 Z"/>
+  <path class="ink" fill="#1b2550" d="M209,262 L223,262 L234,382 L217,400 L202,382 Z"/>
+  <path fill="url(#pontos)" d="M209,262 L223,262 L234,382 L217,400 L202,382 Z" opacity=".6"/>
+  <path class="ink" fill="#1b2550" d="M205,246 L227,246 L223,264 L209,264 Z"/>
+  <path class="ink" fill="#fff" d="M194,236 L214,252 L205,264 L188,248 Z"/>
+  <path class="ink" fill="#fff" d="M238,234 L218,252 L227,264 L244,246 Z"/>
+  <!-- lapelas -->
+  <path class="ink" fill="#26366c" d="M172,240 L192,238 L200,292 L186,370 L156,300 L166,264 Z"/>
+  <path class="ink" fill="#18234a" d="M236,236 L264,246 L270,270 L256,304 L238,356 L242,292 Z"/>
+  <circle cx="246" cy="398" r="3.5" fill="#d9a63a" class="ink" stroke-width="1.5"/>
+  <!-- pescoço -->
+  <path class="ink" fill="#d99a72" d="M196,200 L194,242 L216,256 L238,240 L234,196 Z"/>
+  <path fill="#b0704f" d="M218,200 L234,196 L238,240 L222,250 C224,232 222,214 218,200 Z"/>
+  <!-- fio do telefone (espiral) -->
+  <g class="fio"><path class="espiral" fill="none" stroke="#111" stroke-width="3.2"/></g>
+  <!-- cabeça -->
+  <g class="cab">
+    <path class="ink" fill="#e2a47c" d="M180,114 C176,126 172,140 173,154 C174,174 178,188 186,199 C193,208 201,215 211,215 C223,215 233,207 239,197 L245,177 L247,151 C247,129 239,111 223,105 C207,99 187,102 180,114 Z"/>
+    <path fill="#b9785a" d="M227,109 C241,119 247,135 247,153 L245,177 L239,197 C233,207 223,215 213,215 C225,201 231,181 231,161 C231,139 229,121 227,109 Z"/>
+    <path fill="#f4c4a0" d="M184,120 C190,112 200,108 208,108 C198,114 192,124 190,136 Z"/>
+    <!-- barba por fazer -->
+    <path fill="#5a3a2a" opacity=".22" d="M178,170 C182,190 194,212 211,214 C228,214 240,198 245,176 L240,172 C236,194 226,206 212,207 C198,206 188,192 184,170 Z"/>
+    <!-- orelha -->
+    <path class="ink" fill="#d99a72" d="M241,150 C254,146 258,162 252,174 C249,180 243,178 241,174 Z"/>
+    <!-- cabelo penteado para trás -->
+    <path class="ink" fill="#2b1a10" d="M176,126 C170,100 186,80 213,78 C238,76 256,90 258,113 C260,131 256,147 251,156 L247,151 C247,129 239,111 223,105 C207,99 187,104 179,120 Z"/>
+    <path fill="#6b4428" d="M188,92 C200,84 222,82 238,90 C222,88 206,90 194,98 Z"/>
+    <path fill="#6b4428" d="M196,84 C210,78 232,78 246,92 C232,84 214,84 200,88 Z" opacity=".7"/>
+    <path class="ink2" d="M186,104 C200,94 222,92 240,100" stroke-width="1.4"/>
+    <path class="ink2" d="M190,96 C206,88 226,88 244,96" stroke-width="1.2"/>
+    <!-- sobrancelhas e olhos (olhando para o lado, confiante) -->
+    <path fill="#2b1a10" d="M176,138 L196,134 L198,139 L178,143 Z"/>
+    <path fill="#2b1a10" d="M206,134 L230,136 L229,141 L206,140 Z"/>
+    <path fill="#fff" class="ink2" d="M179,149 Q187,144 195,149 Q187,152 179,149 Z" stroke-width="1.5"/>
+    <circle cx="183.5" cy="148.6" r="2.6" fill="#3d6a86"/><circle cx="183.5" cy="148.6" r="1.1" fill="#111"/>
+    <path fill="#fff" class="ink2" d="M207,148 Q217,142 228,148 Q217,152 207,148 Z" stroke-width="1.5"/>
+    <circle cx="212.5" cy="147.6" r="2.9" fill="#3d6a86"/><circle cx="212.5" cy="147.6" r="1.2" fill="#111"/>
+    <path class="ink2" d="M178,148 Q187,142 196,148" stroke-width="2.4"/>
+    <path class="ink2" d="M206,147 Q217,140 229,147" stroke-width="2.4"/>
+    <!-- nariz -->
+    <path fill="#b9785a" d="M196,150 L186,176 L196,180 Z"/>
+    <path class="ink2" d="M196,150 L186,174 Q190,180 198,178" stroke-width="2.2"/>
+    <!-- boca falando -->
+    <g class="boca"><path class="ink" fill="#5a1e1e" d="M188,192 Q200,188 213,191 Q203,201 188,192 Z" stroke-width="2"/><path fill="#fff" d="M192,192 Q200,190 208,191 L207,194 Q200,193 193,194 Z"/></g>
+    <path class="ink2" d="M200,206 Q205,208 210,206" stroke-width="1.4"/>
+  </g>
+  <!-- telefone antigo e a mão segurando -->
+  <path class="ink" fill="#141416" d="M236,150 C250,143 263,152 263,166 C263,174 257,179 252,179 L242,207 C246,212 246,223 238,229 C228,235 215,229 215,219 C215,211 222,206 228,204 L238,177 C232,172 230,160 236,150 Z"/>
+  <path fill="#3a3a46" d="M241,152 C250,150 257,156 258,163 C252,158 246,156 241,156 Z"/>
+  <path class="ink" fill="#e2a47c" d="M244,170 C259,165 276,176 278,197 C280,215 271,233 259,241 L250,247 C243,236 239,223 241,211 Z"/>
+  <path fill="#b9785a" d="M266,178 C274,186 278,196 278,206 C276,222 268,234 258,241 C266,226 270,206 266,178 Z"/>
+  <path class="ink2" d="M250,186 C258,184 266,186 272,192" stroke-width="1.6"/>
+  <path class="ink2" d="M248,200 C256,198 266,200 274,206" stroke-width="1.6"/>
+  <path class="ink2" d="M248,214 C256,212 264,214 272,220" stroke-width="1.6"/>
+  <!-- relógio de ouro, punho e manga -->
+  <path class="ink" fill="#1f2d5a" d="M254,252 L286,236 C302,262 314,292 318,322 L290,334 C282,302 270,278 254,252 Z"/>
+  <path class="ink" fill="#f1f1ee" d="M250,246 L280,230 L287,240 L256,256 Z" stroke-width="2.4"/>
+  <path class="ink" fill="#e3b23c" d="M252,238 L276,224 L283,236 L259,250 Z" stroke-width="2.4"/>
+  <path d="M258,236 L262,244 M264,232 L268,240 M270,228 L274,236" stroke="#8a6512" stroke-width="1.6"/>
+  <path fill="#fff4c0" d="M256,236 L270,228 L272,231 L258,239 Z" opacity=".8"/>
+  <!-- mão apontando (finger gun) -->
+  <g class="dedo">
+    <path class="ink" fill="#1f2d5a" d="M100,330 C96,300 88,276 80,256 L104,244 C114,264 124,290 128,318 Z"/>
+    <path fill="#33488a" d="M86,262 L96,256 C104,276 110,294 114,318 L106,322 C102,300 94,280 86,262 Z"/>
+    <path class="ink" fill="#f1f1ee" d="M76,252 L102,240 L106,250 L80,262 Z" stroke-width="2.4"/>
+    <path class="ink" fill="#e2a47c" d="M66,246 C58,228 64,210 78,206 L98,210 C106,220 106,236 98,246 Z"/>
+    <path class="ink" fill="#e2a47c" d="M86,212 L124,200 C131,199 133,207 127,210 L94,222 Z"/>
+    <path class="ink" fill="#e2a47c" d="M72,212 C66,198 68,184 76,181 C83,180 85,190 84,206 Z"/>
+    <path class="ink2" d="M74,228 C82,226 92,228 98,232" stroke-width="1.6"/>
+    <path class="ink2" d="M72,238 C80,236 90,238 96,242" stroke-width="1.6"/>
+    <path fill="#b9785a" d="M66,240 C62,228 64,216 70,212 C70,224 72,234 78,244 Z"/>
+  </g>
+  <!-- mesa em primeiro plano -->
+  <g filter="url(#desfoque)">
+    <path fill="#241d18" d="M0,452 L400,440 L400,500 L0,500 Z"/>
+    <path fill="#3c3128" d="M0,452 L400,440 L400,448 L0,460 Z"/>
+    <path fill="#efece4" d="M30,452 L150,446 L156,480 L36,488 Z"/>
+    <rect x="300" y="420" width="34" height="40" rx="3" fill="#1a1a1a"/>
+    <path d="M308,420 L304,396 M316,420 L318,392 M324,420 L330,398" stroke="#d9a63a" stroke-width="4"/>
+  </g>
+</g>
+<g class="rot"><rect x="16" y="430" width="190" height="44" fill="#000" opacity=".0"/></g>
+</svg></div>
+
+<!-- ===== CENA 2: o fechamento ===== -->
+<div class="cena k2"><svg viewBox="0 0 400 500"><g class="kb">
+  <rect width="400" height="500" fill="#3a2a1e"/>
+  <path fill="#4a3627" d="M0,0 L400,0 L400,500 L0,500 Z"/>
+  <path d="M0,60 L400,40 M0,160 L400,130 M0,270 L400,240 M0,390 L400,350" stroke="#3a2a1e" stroke-width="3" opacity=".6"/>
+  <!-- contrato -->
+  <g transform="rotate(-8 200 250)">
+    <rect class="ink" x="70" y="70" width="250" height="340" fill="#f6f2e8"/>
+    <rect x="70" y="70" width="250" height="340" fill="#e6dfcc" opacity=".0"/>
+    <text x="195" y="110" text-anchor="middle" font-family="Georgia,serif" font-size="13" font-weight="700" fill="#2a2a2a">CONTRATO DE COMPRA E VENDA</text>
+    <g stroke="#9a948a" stroke-width="3"><line x1="95" y1="140" x2="295" y2="140"/><line x1="95" y1="158" x2="290" y2="158"/><line x1="95" y1="176" x2="295" y2="176"/><line x1="95" y1="194" x2="270" y2="194"/><line x1="95" y1="222" x2="295" y2="222"/><line x1="95" y1="240" x2="285" y2="240"/><line x1="95" y1="258" x2="295" y2="258"/></g>
+    <line x1="110" y1="352" x2="280" y2="352" stroke="#2a2a2a" stroke-width="2"/>
+    <path d="M120,346 C130,330 140,356 150,338 C158,326 164,350 176,340 C184,334 190,344 198,338" fill="none" stroke="#1b2a6b" stroke-width="3" stroke-linecap="round"/>
+    <!-- carimbo -->
+    <g class="carimbo"><g transform="translate(205 260)">
+      <rect x="-110" y="-34" width="220" height="68" rx="6" fill="none" stroke="#c4161c" stroke-width="7"/>
+      <rect x="-100" y="-25" width="200" height="50" rx="4" fill="none" stroke="#c4161c" stroke-width="2.5"/>
+      <text x="0" y="16" text-anchor="middle" font-family="Impact,'Arial Black',sans-serif" font-size="46" fill="#c4161c" letter-spacing="3">VENDIDO</text>
+    </g></g>
+  </g>
+  <!-- mão com caneta de ouro -->
+  <g class="caneta">
+    <path class="ink" fill="#1f2d5a" d="M400,330 L318,388 L336,430 L400,400 Z"/>
+    <path class="ink" fill="#f1f1ee" d="M318,384 L300,394 L314,426 L334,420 Z" stroke-width="2.4"/>
+    <path class="ink" fill="#e3b23c" d="M300,396 L290,402 L302,428 L312,422 Z" stroke-width="2.2"/>
+    <path class="ink" fill="#e2a47c" d="M292,404 C270,398 248,384 236,368 C230,358 240,350 252,354 L280,366 C292,372 300,386 300,400 Z"/>
+    <path class="ink" fill="#1a1a1a" d="M236,368 L186,322 L182,326 L230,374 Z" stroke-width="2"/>
+    <path class="ink" fill="#e3b23c" d="M232,370 L200,340 L196,344 L228,374 Z" stroke-width="1.5"/>
+    <path d="M186,322 L180,316" stroke="#e3b23c" stroke-width="3"/>
+    <path class="ink2" d="M252,362 C262,366 272,372 280,380" stroke-width="1.6"/>
+  </g>
+  <rect width="400" height="500" fill="#ffb060" opacity=".08"/>
+</g></svg></div>
+
+<!-- ===== CENA 3: o império ===== -->
+<div class="cena k3"><svg viewBox="0 0 400 500"><defs>
+  <linearGradient id="por" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b2a6e"/><stop offset=".45" stop-color="#d9586a"/><stop offset=".75" stop-color="#ffb35a"/><stop offset="1" stop-color="#ffd98a"/></linearGradient>
+</defs><g class="kb">
+  <rect width="400" height="500" fill="url(#por)"/>
+  <circle cx="250" cy="300" r="60" fill="#ffe7a0" opacity=".9"/>
+  <g class="skyline"></g>
+  <g class="heli"><g transform="translate(0 110)"><path fill="#111" d="M0,0 C6,-6 22,-6 28,0 L44,0 L50,-4 L50,2 L28,4 C20,8 6,8 0,0 Z"/><path d="M-4,-8 L34,-8" stroke="#111" stroke-width="2"/><circle class="luzv" cx="2" cy="2" r="2.4" fill="#ff3030"/></g></g>
+  <!-- silhueta do executivo na janela -->
+  <rect x="0" y="0" width="34" height="500" fill="#120d14"/><rect x="0" y="460" width="400" height="40" fill="#120d14"/>
+  <g fill="#120d14">
+    <path d="M70,500 L78,380 C82,350 96,336 112,332 L124,330 L130,312 C120,306 116,290 118,276 C120,258 132,248 146,250 C160,252 168,266 166,282 C165,296 160,306 152,312 L156,330 L170,334 C186,340 196,356 198,384 L204,500 Z"/>
+    <path d="M168,280 C178,270 184,268 188,272 L190,300 L176,330 L164,318 Z"/>
+    <rect x="182" y="262" width="9" height="34" rx="3" transform="rotate(12 186 278)"/>
+  </g>
+  <path d="M146,252 C156,252 166,262 166,280" fill="none" stroke="#ffcf7a" stroke-width="2" opacity=".7"/>
+  <path d="M112,334 C100,340 86,356 82,380" fill="none" stroke="#ffcf7a" stroke-width="2" opacity=".6"/>
+</g></svg></div>
+</template>
+
+<script>
+let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
+const ns='http://www.w3.org/2000/svg';
+function el(tag,attrs,pai){const e=document.createElementNS(ns,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);pai&&pai.appendChild(e);return e}
+function preparar(raiz){
+  // prédios do escritório (dia)
+  raiz.querySelectorAll('.predios').forEach(g=>{let x=-10;while(x<410){const w=26+rnd()*40,h=120+rnd()*230;const y=330-h;
+    el('rect',{x,y,width:w,height:h,fill:'#6a83a8'},g);el('rect',{x:x+w*0.65,y,width:w*0.35,height:h,fill:'#4d6286'},g);
+    for(let yy=y+8;yy<330;yy+=12)el('line',{x1:x+3,y1:yy,x2:x+w-3,y2:yy,stroke:'#8fa6c6','stroke-width':1.2},g);
+    if(rnd()<.25)el('rect',{x:x+w/2-1.5,y:y-24,width:3,height:24,fill:'#4d6286'},g);x+=w+4}
+    el('rect',{x:0,y:326,width:400,height:130,fill:'#8a96a8'},g)});
+  // skyline do pôr do sol
+  raiz.querySelectorAll('.skyline').forEach(g=>{let x=-10;while(x<410){const w=24+rnd()*36,h=90+rnd()*200;const y=470-h;
+    el('rect',{x,y,width:w,height:h,fill:'#3a2340'},g);el('rect',{x:x+w*.6,y,width:w*.4,height:h,fill:'#2a1830'},g);
+    for(let yy=y+8;yy<462;yy+=11)for(let xx=x+4;xx<x+w-5;xx+=8)if(rnd()<.35)el('rect',{x:xx,y:yy,width:4,height:5,fill:'#ffd27a'},g);x+=w+3}});
+  // fio em espiral do telefone
+  raiz.querySelectorAll('.espiral').forEach(p=>{let d='M232,228';const N=60;for(let i=1;i<=N;i++){const t=i/N;const bx=232+t*120,by=228+t*250+Math.sin(t*3)*10;const r=6;
+    d+=` Q${(bx+r*Math.cos(i*2.2)).toFixed(1)},${(by+r*Math.sin(i*2.2)).toFixed(1)} ${bx.toFixed(1)},${by.toFixed(1)}`}p.setAttribute('d',d)});
+  // títulos de abertura
+  const titulos=['A LIGAÇÃO','O FECHAMENTO','O IMPÉRIO'];
+  raiz.querySelectorAll('.cena').forEach((c,i)=>{const svg=c.querySelector('svg');const g=el('g',{},svg);
+    el('rect',{x:0,y:0,width:400,height:500,fill:'none',stroke:'#000','stroke-width':14},g);
+    const t=el('text',{x:22,y:470,class:'titulo','font-size':34,fill:'#fff',stroke:'#000','stroke-width':6,'paint-order':'stroke'},g);t.textContent=titulos[i]});
+}
+function montar(div,fixa){
+  div.innerHTML=document.getElementById('t').innerHTML;preparar(div);
+  const cenas=[...div.querySelectorAll('.cena')];
+  if(fixa!==undefined){cenas[fixa].classList.add('ativa');return}
+  let i=0;cenas[0].classList.add('ativa');
+  setInterval(()=>{cenas.forEach(c=>c.classList.remove('saindo'));cenas[i].classList.remove('ativa');cenas[i].classList.add('saindo');i=(i+1)%cenas.length;
+    void cenas[i].offsetWidth;cenas[i].classList.add('ativa')},6500);
+}
+montar(document.getElementById('ab'));
+montar(document.getElementById('f1'),0);montar(document.getElementById('f2'),1);montar(document.getElementById('f3'),2);
+</script>
+</body></html>
