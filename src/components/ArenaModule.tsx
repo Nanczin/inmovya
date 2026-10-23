@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as EventoMouse } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as EventoMouse, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,61 @@ const CSS_ARENA = `
   .arena-sobe, .arena-chama, .arena-xp, .arena-confete, .arena-pulo, .arena-pop, .arena-cresce, .arena-escudo, .arena-barra::after { animation: none !important; }
   .arena-barra, .arena-card { transition: none !important; }
 }
+/* ---- 3D ---- */
+@keyframes arena-chao-anda { to { background-position: 0 44px, 0 0; } }
+@keyframes arena-brasa { 0% { transform: translate3d(0,0,0) scale(1); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate3d(var(--dx), -220px, 0) scale(.3); opacity: 0; } }
+@keyframes arena-gira { from { transform: rotateX(14deg) rotateY(0); } to { transform: rotateX(14deg) rotateY(360deg); } }
+@keyframes arena-raios { to { transform: rotate(360deg); } }
+@keyframes arena-revela { from { transform: rotateY(180deg) scale(.8); } to { transform: rotateY(0) scale(1); } }
+@keyframes arena-flutua { 0%,100% { transform: translateZ(40px) translateY(0); } 50% { transform: translateZ(40px) translateY(-6px); } }
+@keyframes arena-confete3d { 0% { transform: translate3d(0,-10vh,0) rotateX(0) rotateY(0) rotateZ(0); } 100% { transform: translate3d(var(--dx),110vh,0) rotateX(900deg) rotateY(540deg) rotateZ(180deg); } }
+@keyframes arena-entra3d { from { opacity: 0; transform: perspective(900px) rotateX(55deg) translateY(60px) scale(.6); } to { opacity: 1; transform: perspective(900px) rotateX(0) translateY(0) scale(1); } }
+@keyframes arena-xp3d { 0% { opacity: 0; transform: translate(-50%,0) perspective(400px) rotateX(90deg) scale(.5); } 20% { opacity: 1; transform: translate(-50%,-16px) perspective(400px) rotateX(0) scale(1.35); } 100% { opacity: 0; transform: translate(-50%,-110px) perspective(400px) rotateX(-30deg) scale(1); } }
+.arena-arena { position: relative; overflow: hidden; background: radial-gradient(120% 90% at 50% 0%, #3b1d0e 0%, #140b06 55%, #07070a 100%); color: #fff; border-color: rgba(251,146,60,.25); }
+.arena-chao { position: absolute; left: -50%; right: -50%; bottom: -30%; height: 110%; pointer-events: none;
+  background-image: linear-gradient(rgba(251,146,60,.35) 1px, transparent 1px), linear-gradient(90deg, rgba(251,146,60,.35) 1px, transparent 1px);
+  background-size: 44px 44px; transform: perspective(260px) rotateX(62deg); transform-origin: bottom; animation: arena-chao-anda 1.6s linear infinite;
+  -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 75%); mask-image: linear-gradient(to top, #000 10%, transparent 75%); }
+.arena-brasa { position: absolute; bottom: -8px; width: 5px; height: 5px; border-radius: 50%; background: #fb923c; box-shadow: 0 0 8px 2px #f97316; pointer-events: none; animation: arena-brasa linear infinite; }
+.arena-texto3d { text-shadow: 0 1px 0 #f59e0b, 0 2px 0 #d97706, 0 3px 0 #b45309, 0 4px 0 #92400e, 0 5px 0 #78350f, 0 8px 14px rgba(0,0,0,.55); }
+.arena-moeda-cena { perspective: 700px; flex-shrink: 0; }
+.arena-moeda { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; animation: arena-gira 7s linear infinite; }
+.arena-moeda:hover { animation-duration: 1.4s; }
+.arena-moeda-borda { position: absolute; inset: 0; border-radius: 50%; background: var(--c3); }
+.arena-moeda-face { position: absolute; inset: 0; border-radius: 50%; backface-visibility: hidden; -webkit-backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 32% 28%, var(--c1), var(--c2) 58%, var(--c3)); color: rgba(0,0,0,.65);
+  box-shadow: inset 0 0 0 4px rgba(255,255,255,.35), inset 0 -8px 16px rgba(0,0,0,.3), 0 0 26px var(--c2); }
+.arena-moeda-face.verso { transform: rotateY(180deg) translateZ(6px); }
+.arena-barra3d { height: 16px; border-radius: 999px; background: rgba(255,255,255,.08); box-shadow: inset 0 3px 6px rgba(0,0,0,.6), 0 1px 0 rgba(255,255,255,.08); overflow: hidden; }
+.arena-barra3d .arena-barra { box-shadow: inset 0 2px 0 rgba(255,255,255,.45), inset 0 -3px 0 rgba(0,0,0,.25), 0 0 14px #f97316; }
+.arena-inclina { transform-style: preserve-3d; transition: transform .15s ease-out, box-shadow .2s; will-change: transform; position: relative; }
+.arena-reflexo { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .2s; }
+.arena-inclina:hover .arena-reflexo { opacity: 1; }
+.arena-botao3d { transition: transform .08s, box-shadow .08s !important; box-shadow: 0 4px 0 rgba(0,0,0,.28); }
+.arena-botao3d:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.28); }
+.arena-coluna { position: relative; width: 100%; }
+.arena-coluna-topo { position: absolute; left: 4px; top: -6px; width: 100%; height: 6px; transform: skewX(-45deg); transform-origin: bottom left; filter: brightness(1.35); background: inherit; }
+.arena-coluna-lado { position: absolute; right: -6px; top: -3px; width: 6px; height: 100%; transform: skewY(-45deg); transform-origin: top left; filter: brightness(.65); background: inherit; }
+.arena-carta { perspective: 900px; height: 132px; }
+.arena-carta-in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .7s cubic-bezier(.2,.8,.2,1); }
+.arena-carta:hover .arena-carta-in { transform: rotateY(180deg); }
+.arena-carta-in.revela { animation: arena-revela 1s cubic-bezier(.2,.8,.2,1) backwards; }
+.arena-carta-face { position: absolute; inset: 0; border-radius: .9rem; backface-visibility: hidden; -webkit-backface-visibility: hidden; transform-style: preserve-3d;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; padding: .6rem; text-align: center; overflow: hidden; }
+.arena-carta-verso { transform: rotateY(180deg); }
+.arena-carta-ouro { background: linear-gradient(145deg, #fde68a, #f59e0b 55%, #b45309); color: #451a03; box-shadow: inset 0 0 0 2px rgba(255,255,255,.4), 0 10px 22px -10px #b45309; }
+.arena-carta-pedra { background: linear-gradient(145deg, #52525b, #27272a); color: #d4d4d8; box-shadow: inset 0 0 0 2px rgba(255,255,255,.08); }
+.arena-carta-icone { font-size: 2.2rem; animation: arena-flutua 2.4s ease-in-out infinite; filter: drop-shadow(0 6px 4px rgba(0,0,0,.35)); }
+.arena-carta-ouro::after { content: ""; position: absolute; inset: 0; width: 45%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.6), transparent); animation: arena-brilho 3s ease-in-out infinite; }
+.arena-confete3d { position: fixed; top: 0; width: 10px; height: 16px; border-radius: 2px; pointer-events: none; z-index: 70; animation: arena-confete3d linear forwards; }
+.arena-festa { animation: arena-entra3d .8s cubic-bezier(.2,.8,.2,1) both; background: radial-gradient(120% 100% at 50% 0%, #3b1d0e, #0b0705); color: #fff; border: 1px solid rgba(251,146,60,.35); }
+.arena-raios { position: absolute; width: 520px; height: 520px; left: 50%; top: 50%; margin: -260px 0 0 -260px; pointer-events: none; border-radius: 50%;
+  background: repeating-conic-gradient(rgba(251,191,36,.35) 0 8deg, transparent 8deg 22deg); animation: arena-raios 12s linear infinite;
+  -webkit-mask-image: radial-gradient(circle, #000 15%, transparent 65%); mask-image: radial-gradient(circle, #000 15%, transparent 65%); }
+.arena-xp { animation-name: arena-xp3d !important; font-size: 1.6rem !important; color: #fbbf24 !important; text-shadow: 0 1px 0 #d97706, 0 2px 0 #b45309, 0 3px 0 #92400e, 0 6px 10px rgba(0,0,0,.45) !important; }
+@media (prefers-reduced-motion: reduce) {
+  .arena-chao, .arena-brasa, .arena-moeda, .arena-carta-icone, .arena-raios, .arena-confete3d, .arena-festa, .arena-carta-in.revela { animation: none !important; }
+}
 `;
 
 /** Número que sobe contando até o valor. */
@@ -154,7 +209,7 @@ function Confete() {
         cor: CORES_CONFETE[i % CORES_CONFETE.length],
         dur: 2.2 + Math.random() * 2,
         atraso: Math.random() * 0.8,
-        giro: Math.random() * 360,
+        dx: (Math.random() - 0.5) * 300,
       })),
     []
   );
@@ -163,9 +218,89 @@ function Confete() {
       {pedacos.map((p, i) => (
         <span
           key={i}
-          className="arena-confete"
-          style={{ left: `${p.left}vw`, background: p.cor, animationDuration: `${p.dur}s`, animationDelay: `${p.atraso}s` }}
+          className="arena-confete3d"
+          style={{ left: `${p.left}vw`, background: p.cor, animationDuration: `${p.dur}s`, animationDelay: `${p.atraso}s`, ["--dx" as any]: `${p.dx}px` }}
         />
+      ))}
+    </>
+  );
+}
+
+/** Cartão que inclina em 3D seguindo o mouse, com reflexo de luz. */
+function Inclina({ children, className = "", forca = 9 }: { children: ReactNode; className?: string; forca?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [t, setT] = useState({ rx: 0, ry: 0, gx: 50, gy: 50 });
+  const mover = (e: EventoMouse<HTMLDivElement>) => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    setT({ rx: (0.5 - y) * forca, ry: (x - 0.5) * forca, gx: x * 100, gy: y * 100 });
+  };
+  return (
+    <div
+      ref={ref}
+      onMouseMove={mover}
+      onMouseLeave={() => setT({ rx: 0, ry: 0, gx: 50, gy: 50 })}
+      className={`arena-inclina ${className}`}
+      style={{ transform: `perspective(900px) rotateX(${t.rx}deg) rotateY(${t.ry}deg) ${t.rx || t.ry ? "scale(1.015)" : ""}` }}
+    >
+      {children}
+      <div className="arena-reflexo" style={{ background: `radial-gradient(circle at ${t.gx}% ${t.gy}%, rgba(255,255,255,.22), transparent 55%)` }} />
+    </div>
+  );
+}
+
+const CORES_NIVEL = [
+  ["#f3d2b3", "#b8733f", "#6b3a17"], // Recruta — bronze
+  ["#f1f5f9", "#94a3b8", "#475569"], // Soldado — prata
+  ["#fef3c7", "#f59e0b", "#92400e"], // Hoplita — ouro
+  ["#d1fae5", "#10b981", "#065f46"], // Veterano — esmeralda
+  ["#dbeafe", "#3b82f6", "#1e3a8a"], // Centurião — safira
+  ["#fee2e2", "#ef4444", "#7f1d1d"], // Spartano — rubi
+  ["#f5d0fe", "#a855f7", "#4c1d95"], // Lenda — ametista
+];
+
+/** Medalha de nível em 3D, girando (frente: escudo; verso: número do nível). */
+function Medalha3D({ nivel, tamanho = 96, icone }: { nivel: number; tamanho?: number; icone?: string }) {
+  const [c1, c2, c3] = CORES_NIVEL[Math.min(nivel, CORES_NIVEL.length - 1)];
+  const borda = Array.from({ length: 11 }, (_, i) => i - 5);
+  return (
+    <div className="arena-moeda-cena" style={{ width: tamanho, height: tamanho, ["--c1" as any]: c1, ["--c2" as any]: c2, ["--c3" as any]: c3 }}>
+      <div className="arena-moeda">
+        {borda.map((z) => (
+          <div key={z} className="arena-moeda-borda" style={{ transform: `translateZ(${z}px)` }} />
+        ))}
+        <div className="arena-moeda-face" style={{ transform: "translateZ(6px)" }}>
+          {icone ? <span style={{ fontSize: tamanho * 0.48 }}>{icone}</span> : <Shield style={{ width: tamanho * 0.42, height: tamanho * 0.42 }} strokeWidth={2.4} />}
+        </div>
+        <div className="arena-moeda-face verso">
+          {icone ? (
+            <span style={{ fontSize: tamanho * 0.48 }}>{icone}</span>
+          ) : (
+            <>
+              <span className="text-[10px] font-black uppercase tracking-widest">nível</span>
+              <span className="font-black leading-none" style={{ fontSize: tamanho * 0.4 }}>
+                {nivel + 1}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Brasas subindo no fundo da arena. */
+function Brasas() {
+  const b = useMemo(
+    () => Array.from({ length: 22 }, () => ({ left: Math.random() * 100, dur: 3 + Math.random() * 4, atraso: Math.random() * 5, dx: (Math.random() - 0.5) * 80 })),
+    []
+  );
+  return (
+    <>
+      {b.map((x, i) => (
+        <span key={i} className="arena-brasa" style={{ left: `${x.left}%`, animationDuration: `${x.dur}s`, animationDelay: `${x.atraso}s`, ["--dx" as any]: `${x.dx}px` }} />
       ))}
     </>
   );
@@ -438,38 +573,47 @@ export function ArenaModule() {
   return (
     <div className="space-y-4 max-w-6xl">
       <style>{CSS_ARENA}</style>
-      {/* cabeçalho: nível e XP da temporada */}
-      <section className="arena-sobe rounded-2xl border bg-gradient-to-br from-primary/10 via-card to-card p-4 sm:p-5 shadow-card">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="arena-escudo w-14 h-14 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shadow">
-              <Shield className="w-7 h-7" />
-            </div>
+      {/* cabeçalho: arena 3D com medalha de nível */}
+      <section className="arena-sobe arena-arena rounded-2xl border p-4 sm:p-6 shadow-card">
+        <div className="arena-chao" />
+        <Brasas />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Medalha3D nivel={nivelIdx} />
             <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">Arena Spartana · temporada de {mesNome}</div>
-              <div key={nivel.nome} className="arena-pulo text-2xl font-bold leading-tight">{nivel.nome}</div>
-              <div className="text-sm text-muted-foreground">{frase}</div>
+              <div className="text-xs uppercase tracking-[.2em] text-orange-300/90 font-bold">Arena Spartana · temporada de {mesNome}</div>
+              <div key={nivel.nome} className="arena-pulo arena-texto3d text-3xl sm:text-4xl font-black leading-tight">
+                {nivel.nome}
+              </div>
+              <div className="text-sm text-white/70 mt-1">{frase}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="text-3xl font-black tabular-nums">
+              <div className="arena-texto3d text-4xl sm:text-5xl font-black tabular-nums text-amber-300">
                 <Contador valor={xpMes} />
               </div>
-              <div className="text-xs text-muted-foreground">XP no mês</div>
+              <div className="text-xs text-white/60 uppercase tracking-widest">XP no mês</div>
             </div>
-            <Button variant="outline" size="icon" onClick={() => setEditando(metas)} title="Definir metas">
+            <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white" onClick={() => setEditando(metas)} title="Definir metas">
               <Settings2 className="w-4 h-4" />
             </Button>
           </div>
         </div>
-        <div className="mt-4">
-          <div className="flex justify-between text-xs text-muted-foreground mb-1">
+        <div className="relative mt-5">
+          <div className="flex justify-between text-xs text-white/70 mb-1.5 font-semibold">
             <span>{nivel.nome}</span>
             <span>{prox ? `faltam ${(prox.xp - xpMes).toLocaleString("pt-BR")} XP para ${prox.nome}` : "nível máximo!"}</span>
           </div>
-          <div className="h-3 rounded-full bg-muted overflow-hidden">
-            <Barra pct={pctNivel} className="bg-gradient-to-r from-primary to-orange-500" />
+          <div className="arena-barra3d">
+            <Barra pct={pctNivel} className="bg-gradient-to-r from-amber-400 via-orange-500 to-red-500" />
+          </div>
+          <div className="flex justify-between mt-2">
+            {NIVEIS.map((n, i) => (
+              <span key={n.nome} className={`text-[10px] font-bold uppercase tracking-wide ${i <= nivelIdx ? "text-amber-300" : "text-white/30"}`} title={`${n.xp} XP`}>
+                {i <= nivelIdx ? "★" : "☆"} <span className="hidden sm:inline">{n.nome}</span>
+              </span>
+            ))}
           </div>
         </div>
       </section>
@@ -491,7 +635,9 @@ export function ArenaModule() {
               const pct = Math.min(100, (v / Math.max(1, x.alvo)) * 100);
               const ok = v >= x.alvo;
               return (
-                <div key={x.id} className={`arena-sobe arena-card rounded-xl border p-3 ${ok ? "border-success/50 bg-success/5" : ""} ${pulsando === x.m ? "arena-pop" : ""}`} style={{ animationDelay: `${150 + i * 70}ms` }}>
+                <div key={x.id} className="arena-sobe" style={{ animationDelay: `${150 + i * 70}ms` }}>
+                <div className={pulsando === x.m ? "arena-pop" : ""}>
+                <Inclina className={`rounded-xl border p-3 ${ok ? "border-success/50 bg-success/10" : "bg-card"}`} forca={6}>
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="font-semibold text-sm">
@@ -505,22 +651,24 @@ export function ArenaModule() {
                         <Contador valor={v} />/{x.alvo}
                       </span>
                       {COLUNA[x.m] && (
-                        <Button size="sm" variant="outline" className="h-8" onClick={(e) => somarUm(x.m, e)} title={`Registrar +1 ${NOMES[x.m]}`}>
+                        <Button size="sm" variant="outline" className="h-8 arena-botao3d" onClick={(e) => somarUm(x.m, e)} title={`Registrar +1 ${NOMES[x.m]}`}>
                           <Plus className="w-3.5 h-3.5" />
                         </Button>
                       )}
                     </div>
                   </div>
-                  <div className="h-2 mt-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-2.5 mt-2 rounded-full bg-muted overflow-hidden shadow-inner">
                     <Barra pct={pct} className={ok ? "bg-success" : "bg-primary"} />
                   </div>
+                </Inclina>
+                </div>
                 </div>
               );
             })}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {(["negociacoes", "visitas", "documentacoes", "vendas"] as Metrica[]).map((m) => (
-              <Button key={m} variant="secondary" size="sm" className={`transition-transform active:scale-95 ${pulsando === m ? "arena-pop" : ""}`} onClick={(e) => somarUm(m, e)}>
+              <Button key={m} variant="secondary" size="sm" className={`arena-botao3d ${pulsando === m ? "arena-pop" : ""}`} onClick={(e) => somarUm(m, e)}>
                 <Plus className="w-3.5 h-3.5 mr-1" /> {SINGULAR[m]} <span className="ml-1 text-xs text-muted-foreground">+{XP[m]} XP</span>
               </Button>
             ))}
@@ -530,7 +678,7 @@ export function ArenaModule() {
         {/* sequência e recordes */}
         <section className="arena-sobe rounded-2xl border bg-card p-4 sm:p-5 shadow-card space-y-4" style={{ animationDelay: "160ms" }}>
           <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${sequencia ? "bg-orange-100 text-orange-600 dark:bg-orange-950" : "bg-muted text-muted-foreground"}`}>
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center arena-botao3d ${sequencia ? "bg-orange-100 text-orange-600 dark:bg-orange-950" : "bg-muted text-muted-foreground"}`}>
               <Flame className={`w-6 h-6 ${sequencia ? "arena-chama" : ""}`} />
             </div>
             <div>
@@ -556,14 +704,17 @@ export function ArenaModule() {
           </div>
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-1.5">XP da semana</div>
-            <div className="flex items-end gap-1.5 h-20">
+            <div className="flex items-end gap-3 h-20 pr-2 pt-2">
               {semana.map((s, i) => (
                 <div key={s.k} className="flex-1 flex flex-col items-center gap-1">
                   <div
-                    className={`arena-cresce w-full rounded-md transition-all duration-700 ${s.k === kHoje ? "bg-primary" : s.bateu ? "bg-success/70" : "bg-primary/30"}`}
-                    style={{ height: `${s.futuro ? 4 : Math.max(4, (s.xp / maxSemana) * 64)}px`, opacity: s.futuro ? 0.3 : 1, animationDelay: `${250 + i * 60}ms` }}
+                    className={`arena-cresce arena-coluna transition-all duration-700 ${s.k === kHoje ? "bg-orange-500" : s.bateu ? "bg-emerald-500" : "bg-slate-400"}`}
+                    style={{ height: `${s.futuro ? 4 : Math.max(4, (s.xp / maxSemana) * 58)}px`, opacity: s.futuro ? 0.3 : 1, animationDelay: `${250 + i * 60}ms` }}
                     title={`${s.xp} XP`}
-                  />
+                  >
+                    <div className="arena-coluna-topo" />
+                    <div className="arena-coluna-lado" />
+                  </div>
                   <span className="text-[10px] text-muted-foreground">{s.rot}</span>
                 </div>
               ))}
@@ -586,7 +737,8 @@ export function ArenaModule() {
             const projecao = diasUteisPassados > 0 ? Math.round((v / diasUteisPassados) * (diasUteisPassados + diasRestantes)) : v;
             const noRitmo = projecao >= alvo || v >= alvo;
             return (
-              <div key={m} className={`arena-card rounded-xl border p-3 ${pulsando === m ? "arena-pop" : ""}`}>
+              <div key={m} className={pulsando === m ? "arena-pop" : ""}>
+              <Inclina className="rounded-xl border p-3 bg-card h-full">
                 <div className="flex items-baseline justify-between">
                   <span className="font-semibold text-sm">{NOMES[m]}</span>
                   <span className="tabular-nums">
@@ -606,6 +758,7 @@ export function ArenaModule() {
                       ? `No ritmo: projeção de ${projecao}`
                       : `Fora do ritmo (projeção ${projecao}). Precisa de ${(falta / diasRestantes).toFixed(1).replace(".", ",")}/dia`}
                 </div>
+              </Inclina>
               </div>
             );
           })}
@@ -617,15 +770,24 @@ export function ArenaModule() {
         <h3 className="font-bold flex items-center gap-2 mb-3">
           <Trophy className="w-4 h-4" /> Conquistas
           <span className="text-xs font-normal text-muted-foreground">
-            · {conquistas.filter((c) => c.ok).length}/{conquistas.length}
+            · {conquistas.filter((c) => c.ok).length}/{conquistas.length} · passe o mouse para virar a carta
           </span>
         </h3>
-        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
           {conquistas.map((c, i) => (
-            <div key={c.id} className={`arena-sobe arena-card rounded-xl border p-3 text-center ${c.ok ? "border-warning/50 bg-warning/5" : "opacity-60 grayscale"}`} style={{ animationDelay: `${380 + i * 50}ms` }} title={c.desc}>
-              <div className={`text-2xl ${c.ok ? "arena-pulo" : ""}`} style={{ animationDelay: `${500 + i * 50}ms` }}>{c.ok ? c.icone : <Lock className="w-6 h-6 mx-auto text-muted-foreground" />}</div>
-              <div className="font-semibold text-sm mt-1">{c.nome}</div>
-              <div className="text-[11px] text-muted-foreground leading-tight">{c.desc}</div>
+            <div key={c.id} className="arena-sobe arena-carta" style={{ animationDelay: `${380 + i * 50}ms` }}>
+              <div className={`arena-carta-in ${c.ok ? "revela" : ""}`} style={{ animationDelay: `${600 + i * 90}ms` }}>
+                <div className={`arena-carta-face ${c.ok ? "arena-carta-ouro" : "arena-carta-pedra"}`}>
+                  {c.ok ? <div className="arena-carta-icone">{c.icone}</div> : <Lock className="w-8 h-8 opacity-70" />}
+                  <div className="font-black text-sm mt-1.5">{c.ok ? c.nome : "???"}</div>
+                  <div className="text-[10px] uppercase tracking-widest font-bold opacity-70">{c.ok ? "desbloqueada" : "bloqueada"}</div>
+                </div>
+                <div className={`arena-carta-face arena-carta-verso ${c.ok ? "arena-carta-ouro" : "arena-carta-pedra"}`}>
+                  <div className="font-black text-sm">{c.nome}</div>
+                  <div className="text-[11px] leading-tight mt-1 opacity-90">{c.desc}</div>
+                  <div className="text-[10px] uppercase tracking-widest font-bold mt-2 opacity-70">{c.ok ? "✓ feito" : "como destravar"}</div>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -643,14 +805,17 @@ export function ArenaModule() {
       ))}
 
       {festa && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-in fade-in" onClick={() => setFesta(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-in fade-in" onClick={() => setFesta(null)}>
           <Confete />
-          <div className="rounded-3xl bg-card p-8 text-center shadow-2xl animate-in zoom-in-75 duration-500 max-w-sm mx-4">
-            <div className="arena-pulo text-7xl mb-2">{festa.icone}</div>
-            <div className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">{festa.tipo}</div>
-            <div className="text-2xl font-black mt-1">{festa.titulo}</div>
-            <div className="text-sm text-muted-foreground mt-2">Isso é Esparta! Continue assim.</div>
-            <Button className="mt-4" onClick={() => setFesta(null)}>
+          <div className="arena-festa relative overflow-hidden rounded-3xl p-8 text-center shadow-2xl max-w-sm mx-4 w-full">
+            <div className="arena-raios" />
+            <div className="relative flex justify-center mb-4">
+              <Medalha3D nivel={festa.tipo === "Subiu de nível!" ? nivelIdx : 2} tamanho={140} icone={festa.icone} />
+            </div>
+            <div className="relative text-xs uppercase tracking-[.25em] text-orange-300 font-bold">{festa.tipo}</div>
+            <div className="relative arena-texto3d text-3xl font-black mt-2">{festa.titulo}</div>
+            <div className="relative text-sm text-white/70 mt-3">Isso é Esparta! Continue assim.</div>
+            <Button className="relative mt-5 arena-botao3d bg-orange-500 hover:bg-orange-600 text-white px-8" onClick={() => setFesta(null)}>
               Bora!
             </Button>
           </div>
