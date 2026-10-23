@@ -30,9 +30,18 @@ chrome.alarms.onAlarm.addListener(a => {
   if (a.name === ROBO_ALARME) roboRodada().catch(err => console.error('[Inmovya robô]', err));
 });
 // a aba do WhatsApp avisa quando aparece mensagem não lida: o robô confere na hora (sem esperar o alarme)
-chrome.runtime.onMessage.addListener(msg => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.action === 'robo_acordar') roboRodada().catch(err => console.error('[Inmovya robô]', err));
+  if (msg?.action === 'robo_pode_usar_aqui') {
+    // só volta a usar a aba principal se nenhuma janelinha do 1º contato/robô estiver aberta
+    roboJanelaAutoAberta().then(aberta => sendResponse({ ok: !aberta })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
 });
+async function roboJanelaAutoAberta() {
+  const abas = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+  return abas.some(t => String(t.url || '').includes('inmovya_auto=1'));
+}
 
 // ---------- Roteiro ----------
 const ROBO_CAMPOS = {
@@ -258,9 +267,17 @@ async function roboRodadaAgora() {
     }
     return aviso('Carregando o WhatsApp Web na aba fixada…');
   }
+  // o Chrome não pode "adormecer" essa aba (economia de memória), senão o robô fica cego
+  if (aba.autoDiscardable !== false) await chrome.tabs.update(aba.id, { autoDiscardable: false }).catch(() => {});
+  if (aba.discarded) { await chrome.tabs.reload(aba.id).catch(() => {}); return aviso('Acordei a aba do WhatsApp Web (o Chrome tinha posto ela para dormir).'); }
   let lista;
   try {
     lista = await chrome.tabs.sendMessage(aba.id, { action: 'robo_listar_conversas' });
+    if (!lista?.ok && lista?.usarAqui && !(await roboJanelaAutoAberta())) {
+      await chrome.tabs.sendMessage(aba.id, { action: 'robo_usar_aqui' }).catch(() => {});
+      await new Promise(r => setTimeout(r, 6000));
+      lista = await chrome.tabs.sendMessage(aba.id, { action: 'robo_listar_conversas' });
+    }
   } catch (err) {
     // aba aberta antes da extensão ser atualizada: recarrega uma vez (no máximo a cada 10 min)
     const { roboRecarregouAba = 0 } = await chrome.storage.local.get('roboRecarregouAba');

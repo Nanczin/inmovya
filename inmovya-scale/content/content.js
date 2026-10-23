@@ -378,9 +378,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Robô de anúncios: lê a lista de conversas (sem abrir nenhuma) e devolve as que têm mensagem não lida
   // de número NÃO salvo (o título da conversa é o próprio número).
+  if (request.action === 'robo_usar_aqui') {
+    sendResponse({ ok: true, clicou: roboClicarUsarAqui() });
+    return true;
+  }
+
   if (request.action === 'robo_listar_conversas') {
     try {
-      if (!document.querySelector('#pane-side')) return sendResponse({ ok: false, error: 'O WhatsApp Web ainda não carregou.' });
+      if (!document.querySelector('#pane-side')) {
+        const usarAqui = !!roboBotaoUsarAqui();
+        return sendResponse({ ok: false, usarAqui, error: usarAqui ? 'O WhatsApp Web está na tela "Usar aqui" (outra janela usou o WhatsApp).' : 'O WhatsApp Web ainda não carregou.' });
+      }
       const linhas = agenteLinhasVisiveis().map(agenteLerLinha).map(info => {
         const soNumero = /^\+?[\d\s().-]{10,22}$/.test(String(info.nome || '').replace(/[‪-‮‎‏]/g, '').trim());
         const telefone = soNumero ? String(info.nome).replace(/\D/g, '') : '';
@@ -866,4 +874,26 @@ async function agenteItemDoLote(request) {
       assinaturaAnterior = assinatura;
     } catch (_) { /* extensão recarregada: ignora */ }
   }, 3000);
+})();
+
+// "WhatsApp está aberto em outra janela — Usar aqui": acontece quando o 1º contato/robô abre a janelinha de envio.
+function roboBotaoUsarAqui() {
+  return Array.from(document.querySelectorAll('button, div[role="button"]'))
+    .find(b => /^(usar aqui|use here)$/i.test((b.innerText || b.textContent || '').trim())) || null;
+}
+function roboClicarUsarAqui() {
+  const b = roboBotaoUsarAqui();
+  if (!b) return false;
+  b.click();
+  return true;
+}
+// Na aba principal: quando cair em "Usar aqui", pergunta à extensão se nenhuma janelinha está usando o WhatsApp e volta sozinho.
+(() => {
+  if (location.search.includes('inmovya_auto')) return;
+  setInterval(() => {
+    try {
+      if (!roboBotaoUsarAqui()) return;
+      chrome.runtime.sendMessage({ action: 'robo_pode_usar_aqui' }).then(r => { if (r?.ok) roboClicarUsarAqui(); }).catch(() => {});
+    } catch (_) { /* extensão recarregada */ }
+  }, 4000);
 })();
