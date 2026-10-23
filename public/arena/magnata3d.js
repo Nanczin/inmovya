@@ -92,8 +92,8 @@ export async function montar(container, opcoes = {}) {
   cena.add(lua);
 
   const camera = new THREE.PerspectiveCamera(heroi ? 36 : 32, 1, 0.1, 400);
-  const alvo = heroi ? new THREE.Vector3(0, 1.5, 0) : new THREE.Vector3(0, 1.1, 0);
-  const camBase = heroi ? new THREE.Vector3(0.35, 0.75, 3.1) : new THREE.Vector3(0.3, 1.3, 5.6);
+  const alvo = heroi ? new THREE.Vector3(0, 1.42, 0) : new THREE.Vector3(0, 1.0, 0);
+  const camBase = heroi ? new THREE.Vector3(0.25, 0.85, 2.35) : new THREE.Vector3(0.3, 1.2, 4.6);
   camera.position.copy(camBase);
 
   // luzes: lua fria por trás, brilho quente da cidade por baixo, tela do celular no rosto
@@ -106,15 +106,15 @@ export async function montar(container, opcoes = {}) {
   chave.castShadow = true;
   chave.shadow.mapSize.set(1024, 1024);
   cena.add(chave);
-  const cidadeLuz = new THREE.PointLight(0xffa860, 4, 8, 1.5);
-  cidadeLuz.position.set(0, -0.5, 1.5);
+  const cidadeLuz = new THREE.PointLight(0xffa860, 1.6, 6, 1.5);
+  cidadeLuz.position.set(0.6, -0.8, 2.2);
   cena.add(cidadeLuz);
 
   // materiais
   const tecido = texTecido();
   const terno = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.78, metalness: 0.05, bumpMap: tecido, bumpScale: 0.002 });
   const camisa = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.6 });
-  const pele = new THREE.MeshStandardMaterial({ color: 0x6a4535, roughness: 0.65 });
+  const pele = new THREE.MeshStandardMaterial({ color: 0x4a3024, roughness: 0.7 });
   const cabelo = new THREE.MeshStandardMaterial({ color: 0x0b0806, roughness: 0.45, metalness: 0.2 });
   const ouro = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 1, roughness: 0.22 });
   const oculos = new THREE.MeshStandardMaterial({ color: 0x020203, metalness: 0.9, roughness: 0.05 });
@@ -143,106 +143,116 @@ export async function montar(container, opcoes = {}) {
     return m;
   };
 
-  // pernas e sapatos
+  // ===== corpo com proporções reais (1,85 m) =====
+  const capsula = (a, b, r, mat, pai = homem) => {
+    const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b);
+    const d = vb.clone().sub(va);
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.001, d.length()), 8, 18), mat);
+    m.position.copy(va).add(d.clone().multiplyScalar(0.5));
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
+    m.castShadow = true;
+    m.receiveShadow = true;
+    pai.add(m);
+    return m;
+  };
+  // pernas (calça) e sapatos sociais
   for (const s of [-1, 1]) {
-    membro([0.12 * s, 0.08, 0], [0.12 * s, 0.52, 0], 0.075, 0.085, terno);
-    membro([0.12 * s, 0.52, 0], [0.11 * s, 0.98, 0], 0.09, 0.11, terno);
-    const sp = add(new THREE.BoxGeometry(0.11, 0.07, 0.28), sapato, 0.12 * s, 0.035, 0.05);
-    sp.geometry.translate(0, 0, 0);
+    capsula([0.095 * s, 0.94, 0], [0.1 * s, 0.52, 0.01], 0.068, terno);
+    capsula([0.1 * s, 0.52, 0.01], [0.1 * s, 0.12, -0.005], 0.054, terno);
+    const sp = add(new THREE.CapsuleGeometry(0.045, 0.17, 6, 12), sapato, 0.1 * s, 0.045, 0.05);
+    sp.rotation.x = Math.PI / 2;
+    sp.scale.set(1.05, 1, 0.7);
   }
-  // tronco: paletó
+  // tronco: paletó acinturado, ombros de alfaiataria
   const tronco = new THREE.Group();
   homem.add(tronco);
   const perfil = [
-    [0.2, 0.92], [0.255, 0.98], [0.27, 1.1], [0.29, 1.25], [0.33, 1.4], [0.36, 1.5], [0.34, 1.56], [0.22, 1.6], [0.08, 1.62],
+    [0.001, 0.8], [0.17, 0.8], [0.18, 0.9], [0.172, 1.0], [0.162, 1.08], [0.172, 1.2], [0.19, 1.32], [0.2, 1.41], [0.19, 1.47], [0.13, 1.52], [0.06, 1.55], [0.001, 1.56],
   ].map(([r, y]) => new THREE.Vector2(r, y));
-  const paleto = add(new THREE.LatheGeometry(perfil, 40), terno, 0, 0, 0, tronco);
+  const paleto = add(new THREE.LatheGeometry(perfil, 48), terno, 0, 0, 0, tronco);
   paleto.scale.z = 0.62;
-  // V da camisa e lapelas
-  const vCamisa = add(new THREE.ConeGeometry(0.1, 0.36, 3), camisa, 0, 1.43, 0.17, tronco);
+  capsula([-0.17, 1.465, 0], [0.17, 1.465, 0], 0.058, terno, tronco).scale.z = 0.95; // linha dos ombros
+  // camisa preta em V e lapelas
+  const vCamisa = add(new THREE.ConeGeometry(0.07, 0.26, 3), camisa, 0, 1.43, 0.112, tronco);
   vCamisa.rotation.x = Math.PI;
   vCamisa.scale.z = 0.3;
   for (const s of [-1, 1]) {
-    const lap = add(new THREE.BoxGeometry(0.08, 0.32, 0.015), terno, 0.075 * s, 1.42, 0.2, tronco);
-    lap.rotation.z = 0.32 * s;
-    lap.rotation.y = 0.25 * s;
-    add(new THREE.SphereGeometry(0.012, 8, 6), ouro, 0, 1.2 - (s > 0 ? 0.1 : 0), 0.205, tronco); // botões
+    const lap = add(new THREE.BoxGeometry(0.05, 0.26, 0.01), terno, 0.05 * s, 1.4, 0.118, tronco);
+    lap.rotation.z = 0.3 * s;
+    lap.rotation.y = 0.35 * s;
   }
-  // ombros com ombreira de alfaiataria
-  for (const s of [-1, 1]) {
-    const o = add(new THREE.SphereGeometry(0.13, 20, 14), terno, 0.34 * s, 1.5, 0, tronco);
-    o.scale.set(1.15, 0.7, 0.85);
-  }
-  add(new THREE.CylinderGeometry(0.065, 0.075, 0.12, 14), pele, 0, 1.66, 0.01, tronco);
-  // colarinho
-  const gola = add(new THREE.TorusGeometry(0.075, 0.018, 8, 20), camisa, 0, 1.62, 0.01, tronco);
+  add(new THREE.SphereGeometry(0.01, 8, 6), ouro, 0, 1.17, 0.108, tronco); // botão
+  add(new THREE.SphereGeometry(0.01, 8, 6), ouro, 0, 1.08, 0.104, tronco);
+  // lenço no bolso
+  add(new THREE.BoxGeometry(0.05, 0.02, 0.01), new THREE.MeshStandardMaterial({ color: 0x6a4a18, metalness: 0.5, roughness: 0.4 }), 0.105, 1.36, 0.112, tronco).rotation.y = 0.35;
+  // pescoço e gola
+  add(new THREE.CylinderGeometry(0.048, 0.055, 0.09, 16), pele, 0, 1.6, 0.0, tronco);
+  const gola = add(new THREE.TorusGeometry(0.056, 0.012, 8, 20), camisa, 0, 1.555, 0.0, tronco);
   gola.rotation.x = Math.PI / 2;
 
-  // cabeça
+  // cabeça (8 cabeças de altura)
   const cabeca = new THREE.Group();
-  cabeca.position.set(0, 1.83, 0.01);
+  cabeca.position.set(0, 1.72, 0.0);
   tronco.add(cabeca);
-  const cranio = add(new THREE.SphereGeometry(0.12, 28, 20), pele, 0, 0, 0, cabeca);
-  cranio.scale.set(0.92, 1.12, 1.0);
-  const mandibula = add(new THREE.BoxGeometry(0.17, 0.09, 0.15), pele, 0, -0.085, 0.02, cabeca);
-  mandibula.geometry.translate(0, 0, 0);
-
-  add(new THREE.BoxGeometry(0.03, 0.06, 0.04), pele, 0, -0.01, 0.12, cabeca); // nariz
-  // cabelo penteado para trás
-  const cab = add(new THREE.SphereGeometry(0.128, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.55), cabelo, 0, 0.012, -0.008, cabeca);
-  cab.scale.set(0.95, 1.12, 1.05);
-  cab.rotation.x = -0.25;
-  // chapéu (fedora): deixa o rosto na sombra
+  const cranio = add(new THREE.SphereGeometry(0.1, 32, 24), pele, 0, 0.01, -0.005, cabeca);
+  cranio.scale.set(0.84, 1.08, 0.98);
+  const mand = add(new THREE.SphereGeometry(0.075, 24, 16), pele, 0, -0.055, 0.02, cabeca);
+  mand.scale.set(0.95, 0.85, 0.95);
+  add(new THREE.ConeGeometry(0.016, 0.045, 8), pele, 0, -0.012, 0.096, cabeca).rotation.x = -1.25; // nariz
+  for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.02, 10, 8), pele, 0.084 * s, -0.005, -0.005, cabeca).scale.set(0.45, 1.25, 0.85);
+  // cabelo curto nas laterais
+  const cab = add(new THREE.SphereGeometry(0.103, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.5), cabelo, 0, 0.012, -0.012, cabeca);
+  cab.scale.set(0.86, 1.05, 1.0);
+  // óculos escuros
+  for (const s of [-1, 1]) {
+    const lente = add(new THREE.CapsuleGeometry(0.014, 0.03, 4, 10), oculos, 0.034 * s, 0.018, 0.086, cabeca);
+    lente.rotation.z = Math.PI / 2;
+    lente.scale.z = 0.4;
+    lente.rotation.y = 0.2 * s;
+  }
+  add(new THREE.BoxGeometry(0.15, 0.005, 0.005), ouro, 0, 0.03, 0.088, cabeca);
+  // chapéu fedora: deixa o rosto na sombra
   const chapeu = new THREE.Group();
-  chapeu.position.set(0, 0.09, -0.005);
-  chapeu.rotation.x = 0.12;
+  chapeu.position.set(0, 0.075, -0.005);
+  chapeu.rotation.x = 0.1;
   cabeca.add(chapeu);
   const feltro = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.85 });
-  const aba = add(new THREE.CylinderGeometry(0.21, 0.21, 0.012, 40), feltro, 0, 0, 0, chapeu);
+  const aba = add(new THREE.CylinderGeometry(0.165, 0.165, 0.01, 40), feltro, 0, 0, 0, chapeu);
   aba.scale.z = 1.12;
-  const copa = add(new THREE.CylinderGeometry(0.11, 0.13, 0.13, 32), feltro, 0, 0.07, 0, chapeu);
-  copa.scale.z = 1.15;
-  const amassado = add(new THREE.BoxGeometry(0.03, 0.03, 0.2), feltro, 0, 0.135, 0, chapeu);
-  add(new THREE.CylinderGeometry(0.131, 0.131, 0.03, 32), new THREE.MeshStandardMaterial({ color: 0x3a2a12, roughness: 0.5, metalness: 0.4 }), 0, 0.022, 0, chapeu).scale.z = 1.15;
-  // orelhas
-  for (const s of [-1, 1]) add(new THREE.SphereGeometry(0.025, 10, 8), pele, 0.112 * s, 0, 0, cabeca).scale.set(0.5, 1.2, 0.8);
-  // óculos escuros refletindo a cidade
-  for (const s of [-1, 1]) {
-    const lente = add(new THREE.BoxGeometry(0.075, 0.04, 0.01), oculos, 0.045 * s, 0.025, 0.118, cabeca);
-    lente.rotation.y = 0.18 * s;
-  }
-  add(new THREE.BoxGeometry(0.22, 0.008, 0.008), ouro, 0, 0.045, 0.117, cabeca);
+  const copa = add(new THREE.CylinderGeometry(0.085, 0.1, 0.11, 32), feltro, 0, 0.058, 0, chapeu);
+  copa.scale.z = 1.18;
+  add(new THREE.BoxGeometry(0.022, 0.025, 0.16), feltro, 0, 0.112, 0, chapeu);
+  add(new THREE.CylinderGeometry(0.101, 0.101, 0.024, 32), new THREE.MeshStandardMaterial({ color: 0x3a2a12, roughness: 0.5, metalness: 0.4 }), 0, 0.017, 0, chapeu).scale.z = 1.18;
 
-
-  // braço direito (da tela: esquerdo do corpo dele) segurando o celular no ouvido
-  const ombroT = [-0.36, 1.48, 0];
-  const cotT = [-0.42, 1.18, 0.12];
-  const maoT = [-0.16, 1.76, 0.06];
+  // braço com o celular no ouvido
   const bracoT = new THREE.Group();
   homem.add(bracoT);
-  membro(ombroT, cotT, 0.085, 0.078, terno, bracoT);
-  membro(cotT, [-0.2, 1.68, 0.08], 0.072, 0.062, terno, bracoT);
-  add(new THREE.CylinderGeometry(0.066, 0.064, 0.03, 14), camisa, -0.21, 1.66, 0.08, bracoT); // punho
-  add(new THREE.SphereGeometry(0.05, 14, 10), pele, ...maoT, bracoT).scale.set(0.9, 1.2, 0.7);
-  add(new THREE.SphereGeometry(0.012, 8, 6), ouro, -0.215, 1.67, 0.13, bracoT); // abotoadura
+  const ombroT = [-0.2, 1.46, 0], cotT = [-0.27, 1.27, 0.19], maoT = [-0.13, 1.63, 0.05];
+  capsula(ombroT, cotT, 0.052, terno, bracoT);
+  capsula(cotT, [-0.15, 1.59, 0.06], 0.045, terno, bracoT);
+  add(new THREE.CylinderGeometry(0.044, 0.044, 0.025, 14), camisa, -0.155, 1.6, 0.06, bracoT).lookAt(new THREE.Vector3(-0.13, 1.7, 0.05));
+  const mao = add(new THREE.SphereGeometry(0.042, 16, 12), pele, ...maoT, bracoT);
+  mao.scale.set(0.75, 1.15, 0.85);
+  add(new THREE.SphereGeometry(0.009, 8, 6), ouro, -0.165, 1.585, 0.095, bracoT); // abotoadura
   // celular
   const cel = new THREE.Group();
-  cel.position.set(-0.12, 1.8, 0.05);
-  cel.rotation.set(0.1, -0.5, 0.25);
+  cel.position.set(-0.105, 1.69, 0.045);
+  cel.rotation.set(0.15, -0.35, 0.2);
   bracoT.add(cel);
-  add(new THREE.BoxGeometry(0.012, 0.15, 0.072), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.2 }), 0, 0, 0, cel);
+  add(new THREE.BoxGeometry(0.01, 0.15, 0.072), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.2 }), 0, 0, 0, cel);
   const telaMat = new THREE.MeshBasicMaterial({ color: 0x9fd0ff });
-  const tela = add(new THREE.PlaneGeometry(0.064, 0.14), telaMat, -0.0065, 0, 0, cel);
+  const tela = add(new THREE.PlaneGeometry(0.064, 0.14), telaMat, -0.0055, 0, 0, cel);
   tela.rotation.y = -Math.PI / 2;
-  const luzTela = new THREE.PointLight(0x9fd0ff, 0.35, 0.4, 2);
-  luzTela.position.set(-0.05, 0, 0.05);
+  const luzTela = new THREE.PointLight(0x9fd0ff, 0.04, 0.3, 2);
+  luzTela.position.set(-0.04, 0, 0.04);
   cel.add(luzTela);
 
-  // braço esquerdo da tela: mão no bolso, relógio de ouro
-  membro([0.36, 1.48, 0], [0.4, 1.17, -0.02], 0.085, 0.078, terno);
-  membro([0.4, 1.17, -0.02], [0.27, 0.98, 0.1], 0.072, 0.064, terno);
-  const rel = add(new THREE.TorusGeometry(0.06, 0.012, 8, 20), ouro, 0.29, 1.0, 0.09);
-  rel.rotation.set(0.8, 0.4, 0.6);
+  // outro braço: mão no bolso, relógio de ouro
+  capsula([0.2, 1.46, 0], [0.25, 1.18, -0.03], 0.052, terno);
+  capsula([0.25, 1.18, -0.03], [0.18, 0.96, 0.06], 0.045, terno);
+  const rel = add(new THREE.TorusGeometry(0.044, 0.009, 8, 20), ouro, 0.2, 0.99, 0.05);
+  rel.rotation.set(1.2, 0.3, 0.4);
+  add(new THREE.CylinderGeometry(0.02, 0.02, 0.006, 16), ouro, 0.21, 1.0, 0.085).rotation.x = 1.3;
 
   // terraço: piso e parapeito de vidro com corrimão
   add(new THREE.BoxGeometry(8, 0.1, 6), concreto, 0, -0.05, -1, cena).receiveShadow = true;
@@ -360,7 +370,7 @@ export async function montar(container, opcoes = {}) {
     // respiração, fala ao telefone, olha a cidade e você
     const resp = Math.sin(t * 1.5);
     tronco.scale.set(1 + resp * 0.005, 1 + resp * 0.003, 1 + resp * 0.008);
-    cabeca.rotation.y = Math.sin(t * 0.4) * 0.35 + mouseX * 0.2;
+    cabeca.rotation.y = Math.sin(t * 0.4) * 0.12 + mouseX * 0.1;
     cabeca.rotation.x = 0.05 + Math.sin(t * 2.3) * 0.015 + mouseY * 0.05;
     cabeca.rotation.z = Math.sin(t * 0.7) * 0.03;
     telaMat.color.setHSL(0.58, 0.8, 0.65 + Math.sin(t * 3) * 0.05);
