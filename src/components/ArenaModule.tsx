@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Spartano3D } from "@/components/arena/Spartano3D";
+import { Abertura } from "@/components/arena/Abertura";
 import { Flame, Lock, Plus, Settings2, Shield, Swords, Target, Trophy, Zap } from "lucide-react";
 
 // ARENA SPARTANA — transforma as métricas do dia a dia em jogo: XP, nível, missões do dia, sequência,
@@ -56,13 +56,13 @@ export const METAS_PADRAO: Metas = {
 };
 
 const NIVEIS = [
-  { nome: "Recruta", xp: 0 },
-  { nome: "Soldado", xp: 600 },
-  { nome: "Hoplita", xp: 1800 },
-  { nome: "Veterano", xp: 3600 },
-  { nome: "Centurião", xp: 6000 },
-  { nome: "Spartano", xp: 9000 },
-  { nome: "Lenda de Esparta", xp: 14000 },
+  { nome: "Corretor", xp: 0 },
+  { nome: "Negociador", xp: 600 },
+  { nome: "Closer", xp: 1800 },
+  { nome: "Investidor", xp: 3600 },
+  { nome: "Tycoon", xp: 6000 },
+  { nome: "Magnata", xp: 9000 },
+  { nome: "Lenda", xp: 14000 },
 ];
 
 export const chave = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -253,13 +253,13 @@ function Inclina({ children, className = "", forca = 9 }: { children: ReactNode;
 }
 
 const CORES_NIVEL = [
-  ["#f3d2b3", "#b8733f", "#6b3a17"], // Recruta — bronze
-  ["#f1f5f9", "#94a3b8", "#475569"], // Soldado — prata
-  ["#fef3c7", "#f59e0b", "#92400e"], // Hoplita — ouro
-  ["#d1fae5", "#10b981", "#065f46"], // Veterano — esmeralda
-  ["#dbeafe", "#3b82f6", "#1e3a8a"], // Centurião — safira
-  ["#fee2e2", "#ef4444", "#7f1d1d"], // Spartano — rubi
-  ["#f5d0fe", "#a855f7", "#4c1d95"], // Lenda — ametista
+  ["#f3d2b3", "#b8733f", "#6b3a17"], // bronze
+  ["#f1f5f9", "#94a3b8", "#475569"], // prata
+  ["#fef3c7", "#f59e0b", "#92400e"], // ouro
+  ["#d1fae5", "#10b981", "#065f46"], // esmeralda
+  ["#dbeafe", "#3b82f6", "#1e3a8a"], // safira
+  ["#fee2e2", "#ef4444", "#7f1d1d"], // rubi
+  ["#f5d0fe", "#a855f7", "#4c1d95"], // ametista
 ];
 
 /** Medalha de nível em 3D, girando (frente: escudo; verso: número do nível). */
@@ -318,7 +318,6 @@ export function ArenaModule() {
   const [pops, setPops] = useState<{ id: number; x: number; y: number; txt: string }[]>([]);
   const [pulsando, setPulsando] = useState<string | null>(null);
   useEffect(() => {
-    if (festa) window.dispatchEvent(new Event("inmovya-spartano-golpe"));
   }, [festa]);
 
   const hoje = new Date();
@@ -472,7 +471,7 @@ export function ArenaModule() {
     { id: "c6", nome: "Mesa cheia", desc: "Meta de negociações do mês", ok: mes.negociacoes >= metas.mesNegociacoes, icone: "🤝" },
     { id: "c7", nome: "Missão cumprida", desc: "As 3 missões de hoje", ok: missoesFeitas === missoes.length, icone: "⚔️" },
     { id: "c8", nome: "Quebra-recorde", desc: "Superar seu recorde de ligações", ok: recordeLig > 0 && dHoje.ligacoes > recordeLig, icone: "🔥" },
-    { id: "c9", nome: "Spartano", desc: "Chegar ao nível Spartano no mês", ok: xpMes >= 9000, icone: "🦁" },
+    { id: "c9", nome: "Magnata", desc: "Chegar ao nível Magnata no mês", ok: xpMes >= 9000, icone: "💎" },
   ];
 
   // comemora quando uma missão do dia ou uma conquista nova acaba de ser cumprida (cada uma uma vez só)
@@ -516,7 +515,6 @@ export function ArenaModule() {
       setPops((p) => [...p, { id, x: ev.clientX, y: ev.clientY - 10, txt: `+${XP[m]} XP` }]);
       window.setTimeout(() => setPops((p) => p.filter((q) => q.id !== id)), 1400);
     }
-    window.dispatchEvent(new Event("inmovya-spartano-golpe"));
     setPulsando(m);
     window.setTimeout(() => setPulsando(null), 600);
     const {
@@ -588,7 +586,7 @@ export function ArenaModule() {
           <div className="flex items-center gap-4">
             <Medalha3D nivel={nivelIdx} />
             <div>
-              <div className="text-xs uppercase tracking-[.2em] text-orange-300/90 font-bold">Arena Spartana · temporada de {mesNome}</div>
+              <div className="text-xs uppercase tracking-[.2em] text-orange-300/90 font-bold">Arena · temporada de {mesNome}</div>
               <div key={nivel.nome} className="arena-pulo arena-texto3d text-3xl sm:text-4xl font-black leading-tight">
                 {nivel.nome}
               </div>
@@ -627,7 +625,7 @@ export function ArenaModule() {
           </div>
         </div>
           </div>
-          <Spartano3D largura={300} altura={330} className="hidden md:block shrink-0 -my-6 -mr-4 sm:-mr-6" />
+          <Abertura largura={280} altura={340} editavel className="hidden md:block shrink-0 -my-6 -mr-4 sm:-mr-6 rounded-r-2xl" />
         </div>
       </section>
 
@@ -827,7 +825,7 @@ export function ArenaModule() {
             </div>
             <div className="relative text-xs uppercase tracking-[.25em] text-orange-300 font-bold">{festa.tipo}</div>
             <div className="relative arena-texto3d text-3xl font-black mt-2">{festa.titulo}</div>
-            <div className="relative text-sm text-white/70 mt-3">Isso é Esparta! Continue assim.</div>
+            <div className="relative text-sm text-white/70 mt-3">É assim que se fecha negócio. Continue!</div>
             <Button className="relative mt-5 arena-botao3d bg-orange-500 hover:bg-orange-600 text-white px-8" onClick={() => setFesta(null)}>
               Bora!
             </Button>
@@ -840,7 +838,7 @@ export function ArenaModule() {
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle>Suas metas</DialogTitle>
-            <DialogDescription>As do dia viram missões; as do mês mostram se você está no ritmo. Use as da planilha Spartanos.</DialogDescription>
+            <DialogDescription>As do dia viram missões; as do mês mostram se você está no ritmo. Use as da sua planilha de metas.</DialogDescription>
           </DialogHeader>
           {editando && (
             <div className="grid grid-cols-2 gap-3">

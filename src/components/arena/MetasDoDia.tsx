@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
-import { Spartano3D } from "./Spartano3D";
+import { Abertura } from "./Abertura";
 import { METAS_PADRAO, Metas, chave, ehDiaUtil, interessado, lerMetasLocal } from "@/components/ArenaModule";
 
 // Pop-up que abre toda vez que entra no Inmovya (cada vez que a página é aberta/recarregada): os números que precisa fazer hoje.
@@ -137,12 +137,12 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
           <X className="w-5 h-5" />
         </button>
         <div className="relative flex items-center">
-          <div className="hidden md:block shrink-0 -my-4 -ml-4">
-            <Spartano3D largura={260} altura={430} />
+          <div className="hidden md:block shrink-0 p-4 pr-1">
+            <Abertura largura={250} altura={400} className="rounded-2xl" />
           </div>
           <div className="flex-1 min-w-0 p-5 sm:p-6 md:pl-1">
             <div className="text-xs uppercase tracking-[.25em] text-orange-300 font-bold">{dataTxt}</div>
-            <h2 className="md-num text-3xl sm:text-4xl font-black mt-1">{saudacao}, spartano!</h2>
+            <h2 className="md-num text-3xl sm:text-4xl font-black mt-1">{saudacao}!</h2>
             <p className="text-white/70 text-sm mt-1">Estes são os números de hoje para vencer a batalha.</p>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
