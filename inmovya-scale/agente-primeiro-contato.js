@@ -245,6 +245,7 @@ async function agenteRodadaAgora() {
   try {
     // pequena espera aleatória antes de começar (o alarme bate sempre no mesmo segundo do minuto)
     await new Promise(resolve => setTimeout(resolve, agenteSortear(AGENTE_ESPERA_MIN_MS, AGENTE_ESPERA_MAX_MS)));
+    if (!(await agenteAindaLigado(cred))) return; // desligou durante a espera
     for (const lead of dados.leads) {
       const r = await agenteAtender(cred, cfg, lead);
       if (r === 'enviado' || r === 'erro') {
@@ -258,6 +259,25 @@ async function agenteRodadaAgora() {
     }
   } finally {
     await chrome.storage.local.set({ agenteOcupadoAte: 0 });
+  }
+}
+
+// O 1º contato ainda está ligado? (na dúvida, sem internet: NÃO envia)
+async function agenteAindaLigado(cred) {
+  try {
+    return (await agenteRpc(cred, 'agente_ativo', { p_token: cred.token })) === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Desligou antes do envio: devolve o lead para a fila (sai quando você ligar de novo), sem gastar tentativa
+async function agenteLiberar(cred, leadId) {
+  try {
+    await agenteRpc(cred, 'agente_liberar', { p_token: cred.token, p_lead: leadId });
+  } catch (_) {
+    // banco ainda sem a função: marca como erro (volta sozinho em 5 min, quando ligado)
+    await agenteRpc(cred, 'agente_resultado', { p_token: cred.token, p_lead: leadId, p_status: 'erro', p_msg: null, p_erro: '1º contato desligado antes do envio', p_via: null }).catch(() => {});
   }
 }
 
@@ -279,10 +299,13 @@ async function agenteAtender(cred, cfg, lead) {
       const conversa = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
       if (conversa.some(m => m.dir === 'out')) return { pulou: 'já existe mensagem sua nesta conversa do WhatsApp' };
       const msg = await agenteGerarMensagem(lead, cfg);
+      // confere de novo, colado no envio: se você desligou o 1º contato nesse meio-tempo, não manda
+      if (!(await agenteAindaLigado(cred))) return { parou: true };
       await sendCampaignMessage({ phone: tel, text: msg.texto, background: true, gapMinMs: 0, gapMaxMs: 0 });
       return { msg };
     });
     if (feito.pulou) { await resultado('pulado', { erro: feito.pulou }); return 'pulado'; }
+    if (feito.parou) { await agenteLiberar(cred, lead.id); return 'parou'; }
     const via = feito.msg.aviso ? `${feito.msg.via} (${feito.msg.aviso})` : feito.msg.via;
     // grava o envio JÁ (é o que impede mandar de novo); salvar contato e etiqueta vêm depois
     await resultado('enviado', { msg: feito.msg.texto, via });
