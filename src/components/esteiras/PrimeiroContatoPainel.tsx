@@ -144,7 +144,7 @@ export function PrimeiroContatoPainel() {
         description: !ok
           ? `Recarregue o Inmovya Scale em chrome://extensions (precisa da ${VERSAO_SCALE_AGENTE}) e esta página.`
           : naFila
-            ? "A extensão começou a atender agora (1 por minuto). Acompanhe em Últimos atendimentos."
+            ? "A extensão começou a atender agora (1 por vez, a cada 2 a 5 minutos, sorteado)."
             : fora
               ? `${fora} lead(s) novo(s) estão fora da fila — veja o motivo na lista "Leads novos" logo abaixo.`
               : "Quando chegar um lead novo, ele é atendido em 1 a 2 minutos.",
@@ -174,7 +174,7 @@ export function PrimeiroContatoPainel() {
         if (cfg?.ativo) await entregarParaExtensao(true);
         toast({
           title: `${ids.length} lead(s) na fila`,
-          description: cfg?.ativo ? "A extensão atende 1 por minuto, a partir de agora." : "Ligue o agente para eles receberem.",
+          description: cfg?.ativo ? "A extensão atende 1 por vez, a cada 2 a 5 minutos (sorteado), a partir de agora." : "Ligue o agente para eles receberem.",
         });
       } else {
         await tirarDaFila(ids);

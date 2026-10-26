@@ -2,13 +2,20 @@
 // Funciona com o Inmovya fechado (basta o Chrome aberto, mesmo minimizado, e o WhatsApp Web conectado).
 //
 // A cada minuto (chrome.alarms): pergunta ao banco (funções agente_* com o token do agente) se há lead novo,
-// atende UM por vez (o intervalo entre envios é o próprio minuto do alarme):
+// atende UM por vez, com intervalo ALEATÓRIO entre um envio e outro (2 a 5 minutos) e uma pequena espera
+// aleatória antes de cada envio, para não ter ritmo de robô:
 //   reserva no banco (só um envio por lead) → mesmo número já recebeu? pula → lê a conversa no WhatsApp
 //   (mensagem sua? pula) → monta a SUA mensagem pronta com spintax (sem IA) → envia → grava o resultado.
 // Usa as funções do background.js: naVezWA, agenteNaConversa, sendCampaignMessage.
 
 const AGENTE_ALARME = 'inmovya-primeiro-contato';
-const AGENTE_INTERVALO_MIN_MS = 60 * 1000; // no mínimo 1 minuto entre um 1º contato e outro
+// Randomização do envio: depois de cada 1º contato, o próximo só sai entre 2 e 5 minutos depois (sorteado),
+// e cada envio ainda espera de 3 a 25 segundos ao acaso antes de começar.
+const AGENTE_INTERVALO_MIN_MS = 2 * 60 * 1000;
+const AGENTE_INTERVALO_MAX_MS = 5 * 60 * 1000;
+const AGENTE_ESPERA_MIN_MS = 3 * 1000;
+const AGENTE_ESPERA_MAX_MS = 25 * 1000;
+const agenteSortear = (min, max) => Math.round(min + Math.random() * (max - min));
 
 function agenteGarantirAlarme() {
   chrome.alarms.get(AGENTE_ALARME, alarme => {
@@ -200,7 +207,7 @@ async function agenteSalvarEEtiquetar(tel, lead) {
   }
 }
 
-// ---------- Rodada (1 lead por minuto) ----------
+// ---------- Rodada (1 lead por vez, intervalo aleatório) ----------
 let agenteEmCurso = false;
 async function agenteRodada() {
   if (agenteEmCurso) return; // alarme e "Conferir agora" juntos
@@ -216,10 +223,11 @@ async function agenteRodadaAgora() {
   const cred = await agenteCredenciais();
   if (!cred) return; // agente nunca configurado neste Chrome
   // uma rodada por vez, mesmo se o service worker reiniciar no meio (trava vence em 12 min)
-  const { agenteOcupadoAte = 0, agenteUltimoEnvio = 0 } = await chrome.storage.local.get(['agenteOcupadoAte', 'agenteUltimoEnvio']);
+  const { agenteOcupadoAte = 0, agenteUltimoEnvio = 0, agenteProximoEnvio = 0 } =
+    await chrome.storage.local.get(['agenteOcupadoAte', 'agenteUltimoEnvio', 'agenteProximoEnvio']);
   if (Date.now() < agenteOcupadoAte) return;
-  if (Date.now() - agenteUltimoEnvio < AGENTE_INTERVALO_MIN_MS - 5000) return;
 
+  // consulta o banco todo minuto (isso também é o "sinal de vida" que o Inmovya mostra), mesmo esperando a hora sorteada
   let dados;
   try {
     dados = await agenteRpc(cred, 'agente_pendentes', { p_token: cred.token });
@@ -227,17 +235,25 @@ async function agenteRodadaAgora() {
     console.warn('[Inmovya agente] sem acesso ao banco:', err.message);
     return;
   }
+  if (Date.now() - agenteUltimoEnvio < AGENTE_INTERVALO_MIN_MS - 5000) return; // nunca menos de 2 min
+  if (Date.now() < agenteProximoEnvio - 5000) return; // ainda não chegou a hora sorteada
   if (!dados?.ativo || !Array.isArray(dados.leads) || !dados.leads.length) return;
   const cfg = dados.config || {};
   if (!String(cfg.meu_nome || '').trim()) return agenteAviso(cred, 'Preencha o seu nome no agente de 1º contato.');
 
   await chrome.storage.local.set({ agenteOcupadoAte: Date.now() + 12 * 60 * 1000 });
   try {
+    // pequena espera aleatória antes de começar (o alarme bate sempre no mesmo segundo do minuto)
+    await new Promise(resolve => setTimeout(resolve, agenteSortear(AGENTE_ESPERA_MIN_MS, AGENTE_ESPERA_MAX_MS)));
     for (const lead of dados.leads) {
       const r = await agenteAtender(cred, cfg, lead);
       if (r === 'enviado' || r === 'erro') {
-        await chrome.storage.local.set({ agenteUltimoEnvio: Date.now() });
-        break; // um envio por minuto; o próximo vai no próximo alarme
+        const agora = Date.now();
+        await chrome.storage.local.set({
+          agenteUltimoEnvio: agora,
+          agenteProximoEnvio: agora + agenteSortear(AGENTE_INTERVALO_MIN_MS, AGENTE_INTERVALO_MAX_MS)
+        });
+        break; // um envio por vez; o próximo sai no horário sorteado (2 a 5 min)
       }
     }
   } finally {
