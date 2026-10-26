@@ -9,6 +9,10 @@
 // Usa as funções do background.js: naVezWA, agenteNaConversa, sendCampaignMessage.
 
 const AGENTE_ALARME = 'inmovya-primeiro-contato';
+// despertador de uma vez só, marcado no segundo exato do próximo envio sorteado
+// (o alarme de 1 em 1 minuto arredondava tudo e deixava os intervalos quase iguais)
+const AGENTE_ALARME_PROXIMO = 'inmovya-primeiro-contato-proximo';
+let agenteMomentoEnvio = 0; // quando a mensagem saiu de fato (antes de salvar contato/etiqueta)
 // Randomização do envio: depois de cada 1º contato, o próximo só sai entre 2 e 5 minutos depois (sorteado),
 // e cada envio ainda espera de 3 a 25 segundos ao acaso antes de começar.
 const AGENTE_INTERVALO_MIN_MS = 2 * 60 * 1000;
@@ -26,6 +30,7 @@ agenteGarantirAlarme();
 chrome.runtime.onStartup.addListener(agenteGarantirAlarme);
 chrome.runtime.onInstalled.addListener(agenteGarantirAlarme);
 chrome.alarms.onAlarm.addListener(alarme => {
+  if (alarme.name === AGENTE_ALARME_PROXIMO) agenteRodada().catch(err => console.error('[Inmovya agente]', err));
   if (alarme.name === AGENTE_ALARME) {
     // primeiro confere a fila da captura (Bitrix/Meta só viram lead com WhatsApp), depois o 1º contato
     agenteFilaCaptura()
@@ -235,8 +240,8 @@ async function agenteRodadaAgora() {
     console.warn('[Inmovya agente] sem acesso ao banco:', err.message);
     return;
   }
-  if (Date.now() - agenteUltimoEnvio < AGENTE_INTERVALO_MIN_MS - 5000) return; // nunca menos de 2 min
-  if (Date.now() < agenteProximoEnvio - 5000) return; // ainda não chegou a hora sorteada
+  if (Date.now() - agenteUltimoEnvio < AGENTE_INTERVALO_MIN_MS - 2000) return; // nunca menos de 2 min
+  if (Date.now() < agenteProximoEnvio - 2000) return; // ainda não chegou a hora sorteada
   if (!dados?.ativo || !Array.isArray(dados.leads) || !dados.leads.length) return;
   const cfg = dados.config || {};
   if (!String(cfg.meu_nome || '').trim()) return agenteAviso(cred, 'Preencha o seu nome no agente de 1º contato.');
@@ -249,11 +254,12 @@ async function agenteRodadaAgora() {
     for (const lead of dados.leads) {
       const r = await agenteAtender(cred, cfg, lead);
       if (r === 'enviado' || r === 'erro') {
-        const agora = Date.now();
-        await chrome.storage.local.set({
-          agenteUltimoEnvio: agora,
-          agenteProximoEnvio: agora + agenteSortear(AGENTE_INTERVALO_MIN_MS, AGENTE_INTERVALO_MAX_MS)
-        });
+        // conta o intervalo a partir do momento em que a mensagem saiu, não do fim do salvar contato/etiqueta
+        const base = r === 'enviado' && agenteMomentoEnvio ? agenteMomentoEnvio : Date.now();
+        const proximo = base + agenteSortear(AGENTE_INTERVALO_MIN_MS, AGENTE_INTERVALO_MAX_MS);
+        await chrome.storage.local.set({ agenteUltimoEnvio: base, agenteProximoEnvio: proximo });
+        chrome.alarms.create(AGENTE_ALARME_PROXIMO, { when: Math.max(proximo, Date.now() + 31000) });
+        console.log('[Inmovya agente] próximo 1º contato a partir de', new Date(proximo).toLocaleTimeString('pt-BR'));
         break; // um envio por vez; o próximo sai no horário sorteado (2 a 5 min)
       }
     }
@@ -282,6 +288,7 @@ async function agenteLiberar(cred, leadId) {
 }
 
 async function agenteAtender(cred, cfg, lead) {
+  agenteMomentoEnvio = 0;
   const reserva = await agenteRpc(cred, 'agente_reservar', { p_token: cred.token, p_lead: lead.id });
   if (!reserva?.ok) return 'ignorado'; // outro computador/aba já pegou
 
@@ -302,6 +309,7 @@ async function agenteAtender(cred, cfg, lead) {
       // confere de novo, colado no envio: se você desligou o 1º contato nesse meio-tempo, não manda
       if (!(await agenteAindaLigado(cred))) return { parou: true };
       await sendCampaignMessage({ phone: tel, text: msg.texto, background: true, gapMinMs: 0, gapMaxMs: 0 });
+      agenteMomentoEnvio = Date.now();
       return { msg };
     });
     if (feito.pulou) { await resultado('pulado', { erro: feito.pulou }); return 'pulado'; }
