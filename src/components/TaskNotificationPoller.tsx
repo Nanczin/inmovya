@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useLeads } from '@/context/LeadsContext';
+import { mostrarLembretesNoPopup, type LembreteVencido } from '@/components/LembretesPopup';
 
 /**
  * Global component that polls for due tasks and displays notifications
@@ -58,6 +59,7 @@ export function TaskNotificationPoller() {
                         }
                     }
 
+                    const paraPopup: LembreteVencido[] = [];
                     for (const task of dueTasks) {
                         if (isTemperatureReminder(task.title)) continue;
                         if (notifiedTasks.includes(task.id)) {
@@ -79,11 +81,24 @@ export function TaskNotificationPoller() {
                             leadId: task.lead_id
                         });
 
+                        // Pop-up na tela: só para o que venceu agora há pouco (até 2 h), não para atrasados antigos
+                        if (Date.now() - new Date(task.due_date).getTime() <= 2 * 60 * 60 * 1000) {
+                            paraPopup.push({
+                                id: task.id,
+                                titulo: task.title,
+                                descricao: task.description,
+                                leadId: task.lead_id,
+                                leadNome: task.lead_id ? leadName : null,
+                                vence: task.due_date,
+                            });
+                        }
+
                         // Add to local storage to avoid notifying again
                         notifiedTasks.push(task.id);
                     }
 
                     localStorage.setItem('notified_tasks', JSON.stringify(notifiedTasks));
+                    mostrarLembretesNoPopup(paraPopup);
                     console.log('✅ [GLOBAL POLLING] Updated notified tasks list');
                 }
             } catch (err) {

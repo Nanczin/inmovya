@@ -24,6 +24,7 @@ import { WhatsappModule } from "@/components/WhatsappModule";
 import { ArenaModule } from "@/components/ArenaModule";
 import { MetasDoDia } from "@/components/arena/MetasDoDia";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
+import { LembretesPopup } from "@/components/LembretesPopup";
 
 const Index = () => {
   const [activeModule, setActiveModule] = useState("arena");
@@ -158,6 +159,10 @@ const Index = () => {
         </div>
       </div>
     <TaskViewDialog taskId={globalViewTaskId} onClose={() => setGlobalViewTaskId(null)} />
+    <LembretesPopup
+      onVerTarefa={(id) => setGlobalViewTaskId(id)}
+      onVerLead={(id) => { setActiveModule("leads"); setNavigationParams({ id }); }}
+    />
     <MetasDoDia onAbrirArena={() => setActiveModule("arena")} />
     {activeModule !== "esteiras" && <EsteiraEmAndamento onAbrir={() => setActiveModule("esteiras")} />}
     </SidebarProvider>
