@@ -37,7 +37,6 @@ window.IS.SettingsUI = {
   <div style="display:flex; flex-wrap:wrap; background:var(--inmovya-surface); border-bottom:1px solid var(--inmovya-border);">
     <button class="is-set-tab active" data-tab="is-tab-replies">Respostas</button>
     <button class="is-set-tab" data-tab="is-tab-categories">Categorias</button>
-    <button class="is-set-tab" data-tab="is-tab-crm">CRM</button>
   </div>
 
   <div id="is-settings-body" style="padding:15px; flex:1;">
@@ -70,8 +69,8 @@ window.IS.SettingsUI = {
       </details>
     </div>
 
-    <!-- TAB: CRM -->
-    <div id="is-tab-crm" class="is-tab-content" style="display:none; text-align:center;">
+    <!-- TAB: CRM — removida da tela (o Inmovya é o CRM); fica escondida só para o código antigo não quebrar -->
+    <div id="is-tab-crm" class="is-tab-content" hidden style="display:none !important; text-align:center;">
       <div style="font-size:12px; color:var(--inmovya-text-secondary); margin-bottom:10px; text-align:left; line-height:1.4;">Abra uma etiqueta no WhatsApp Business, informe o nome abaixo e capture. Repita o processo para cada etiqueta.</div>
       <input type="text" id="is-current-label-name" placeholder="Nome da etiqueta aberta" style="width:100%; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px; box-sizing:border-box; margin-bottom:8px;">
       <button id="is-btn-sync-labels" style="background:var(--inmovya-primary); color:white; border:none; padding:10px; width:100%; border-radius:4px; cursor:pointer; font-weight:bold; margin-bottom:15px;">Capturar etiqueta aberta</button>
@@ -1063,7 +1062,7 @@ window.IS.SettingsUI = {
     if (!label) {
       this.showToast(matchingLabels.length > 1
         ? 'Há mais de uma etiqueta correspondente. Selecione o nome completo.'
-        : 'Etiqueta não encontrada. Sincronize-a primeiro no CRM.');
+        : 'Etiqueta não encontrada na extensão.');
       return false;
     }
 
