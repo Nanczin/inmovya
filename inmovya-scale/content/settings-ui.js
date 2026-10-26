@@ -55,12 +55,12 @@ window.IS.SettingsUI = {
         <input type="text" id="is-new-cat-name" placeholder="Nova categoria..." style="flex:1; padding:8px; border:1px solid var(--inmovya-border); border-radius:4px;">
         <button id="is-btn-add-cat" style="background:var(--inmovya-primary); color:white; border:none; padding:0 15px; border-radius:4px; cursor:pointer; font-weight:bold;">Adicionar</button>
       </div>
-      <button type="button" id="is-btn-kanban-fullscreen" style="width:100%; padding:9px; margin-bottom:12px; border:1px solid #0877b5; border-radius:6px; background:#eef8ff; color:#075f91; cursor:pointer; font-weight:bold;">⛶ Abrir Kanban em tela cheia</button>
+      <button type="button" id="is-btn-kanban-fullscreen" hidden style="display:none !important; width:100%; padding:9px; margin-bottom:12px; border:1px solid #0877b5; border-radius:6px; background:#eef8ff; color:#075f91; cursor:pointer; font-weight:bold;">⛶ Abrir Kanban em tela cheia</button>
       <div id="is-set-categories-list" style="display:flex; flex-direction:column; gap:10px;"></div>
       <details style="margin-top:16px; border:1px solid var(--inmovya-border); border-radius:7px; background:var(--inmovya-surface); overflow:hidden;">
         <summary style="padding:10px 12px; cursor:pointer; color:var(--inmovya-primary); font-size:12px; font-weight:bold;">Backup e restauração</summary>
         <div style="padding:0 12px 12px; display:flex; flex-direction:column; gap:8px;">
-          <div style="font-size:11px; color:var(--inmovya-text-secondary); line-height:1.4;">Salve respostas, categorias, ordem do Kanban, leads, etiquetas e configurações. A extensão também mantém cinco cópias automáticas internas.</div>
+          <div style="font-size:11px; color:var(--inmovya-text-secondary); line-height:1.4;">Salve respostas, categorias e configurações. A extensão também mantém cinco cópias automáticas internas.</div>
           <button type="button" id="is-btn-export" style="background:var(--inmovya-primary); color:white; border:none; padding:9px; border-radius:5px; cursor:pointer; font-weight:bold;">Baixar backup completo</button>
           <label for="is-file-import" style="background:transparent; border:1px solid var(--inmovya-primary); color:var(--inmovya-primary); padding:9px; border-radius:5px; cursor:pointer; font-weight:bold; text-align:center;">Restaurar arquivo de backup</label>
           <input type="file" id="is-file-import" accept="application/json,.json" style="display:none;">
@@ -880,7 +880,8 @@ window.IS.SettingsUI = {
     ];
     const validStageIds = new Set(stages.map(stage => stage.id));
 
-    const columns = stages.map(stage => {
+    // Kanban de leads removido: mostra só as respostas da categoria, na ordem (arraste ☰ para reordenar)
+    const columns = stages.filter(stage => categoryReplies.some(reply => reply.id === stage.id)).map(stage => {
       const stageLeads = categoryLeads.filter(lead => {
         const assignedStage = stageAssignments[`${selectedCategory.id}:${lead.key}`] || 'unassigned';
         return (validStageIds.has(assignedStage) ? assignedStage : 'unassigned') === stage.id;
@@ -907,17 +908,16 @@ window.IS.SettingsUI = {
         : '<div style="font-size:10px; color:#7a8d99; padding:7px; text-align:center;">Nenhum lead nesta etapa</div>';
 
       const isReplyStage = categoryReplies.some(reply => reply.id === stage.id);
-      return `<section class="is-kanban-column" data-stage-id="${window.IS.escapeHTML(stage.id)}" ${isReplyStage ? `data-reply-id="${window.IS.escapeHTML(stage.id)}"` : ''} style="flex:0 0 ${this.kanbanFullscreen ? '270px' : '225px'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; min-height:${this.kanbanFullscreen ? 'calc(100vh - 250px)' : '250px'}; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
+      return `<section class="is-kanban-column" data-stage-id="${window.IS.escapeHTML(stage.id)}" ${isReplyStage ? `data-reply-id="${window.IS.escapeHTML(stage.id)}"` : ''} style="flex:0 0 ${this.kanbanFullscreen ? '270px' : '225px'}; border:1px solid #c9d9e5; border-radius:8px; background:#f5f8fb; overflow:hidden; box-shadow:0 3px 10px rgba(13,73,110,0.08);">
         <div ${isReplyStage ? `draggable="true" class="is-kanban-reply-stage-handle" data-reply-id="${window.IS.escapeHTML(stage.id)}" title="Arraste para reorganizar esta resposta"` : ''} style="padding:10px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; ${isReplyStage ? 'cursor:grab;' : ''}">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${isReplyStage ? '☰ ' : ''}${window.IS.escapeHTML(stage.title)}</strong>
-            <span style="flex:0 0 auto; padding:2px 7px; border-radius:10px; background:rgba(255,255,255,0.2); font-size:10px;">${stageLeads.length}</span>
+
           </div>
           <div style="margin-top:4px; font-size:9px; line-height:1.3; opacity:0.84;">${window.IS.escapeHTML(preview || 'Etapa da resposta rápida')}</div>
-          ${stageLeads.length ? `<button type="button" class="is-kanban-select-stage" style="width:100%; margin-top:7px; padding:5px 8px; border:1px solid rgba(255,255,255,0.55); border-radius:5px; background:rgba(255,255,255,0.12); color:white; cursor:pointer; font-size:9px;">☑ Selecionar etapa</button>` : ''}
-          ${isReplyStage && stageLeads.length ? `<button type="button" class="is-kanban-send-stage" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="width:100%; margin-top:7px; padding:6px 8px; border:1px solid rgba(255,255,255,0.65); border-radius:5px; background:rgba(255,255,255,0.16); color:white; cursor:pointer; font-size:10px; font-weight:bold;">▶ ${stage.pasteOnly ? 'Colar' : 'Enviar'} etapa para ${stageLeads.length} lead(s)</button>` : ''}
+          ${false ? `<button type="button" class="is-kanban-select-stage" style="width:100%; margin-top:7px; padding:5px 8px; border:1px solid rgba(255,255,255,0.55); border-radius:5px; background:rgba(255,255,255,0.12); color:white; cursor:pointer; font-size:9px;">☑ Selecionar etapa</button>` : ''}
+          ${false ? `<button type="button" class="is-kanban-send-stage" data-stage-id="${window.IS.escapeHTML(stage.id)}" style="width:100%; margin-top:7px; padding:6px 8px; border:1px solid rgba(255,255,255,0.65); border-radius:5px; background:rgba(255,255,255,0.16); color:white; cursor:pointer; font-size:10px; font-weight:bold;">▶ ${stage.pasteOnly ? 'Colar' : 'Enviar'} etapa para ${stageLeads.length} lead(s)</button>` : ''}
         </div>
-        <div style="display:flex; flex-direction:column; gap:7px; min-height:80px; padding:9px;">${leadCards}</div>
       </section>`;
     }).join('');
 
@@ -932,44 +932,11 @@ window.IS.SettingsUI = {
 
     list.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-        <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria. Arraste o cabeçalho ☰ das respostas para definir a ordem das etapas e dos envios.</div>
+        <div style="font-size:11px; color:var(--inmovya-text-secondary);">Selecione uma categoria. Arraste o ☰ das respostas para definir a ordem.</div>
         <button type="button" class="is-kanban-add-reply" style="padding:8px 12px; border:none; border-radius:6px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:11px; font-weight:bold;">+ Resposta em ${window.IS.escapeHTML(selectedCategory.name)}</button>
       </div>
       <div style="display:flex; gap:7px; overflow-x:auto; padding:7px 0 9px;">${categorySelectors}</div>
-      <div style="margin-bottom:10px;">
-        <input type="search" id="is-kanban-lead-search" placeholder="Pesquisar lead no Kanban..." style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #87b8d8; border-radius:6px; background:white; color:#254c64; font-size:11px;">
-      </div>
-      <div style="margin-bottom:10px; padding:9px; border:1px solid #87b8d8; border-radius:7px; background:#f4faff;">
-        <div style="font-size:11px; font-weight:bold; color:#075f91; margin-bottom:7px;">Mover uma etiqueta do WhatsApp</div>
-        <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap;">
-          <input type="search" id="is-kanban-label-search" list="is-kanban-label-options" placeholder="Pesquisar etiqueta..." style="min-width:170px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
-          <datalist id="is-kanban-label-options">${labelOptions}</datalist>
-          <select id="is-kanban-label-category" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
-            ${boardCategories.map(category => `<option value="${window.IS.escapeHTML(category.id)}" ${category.id === selectedCategory.id ? 'selected' : ''}>Categoria: ${window.IS.escapeHTML(category.name)}</option>`).join('')}
-          </select>
-          <select id="is-kanban-label-stage" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
-            ${stages.map(stage => `<option value="${window.IS.escapeHTML(stage.id)}">Etapa: ${window.IS.escapeHTML(stage.title)}</option>`).join('')}
-          </select>
-          <button type="button" class="is-kanban-move-label" ${labelNames.length ? '' : 'disabled'} style="padding:8px 12px; border:none; border-radius:5px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:10px; font-weight:bold;">Mover etiqueta</button>
-        </div>
-        <div style="margin-top:5px; font-size:9px; color:#60788a;">Todos os leads da etiqueta serão movidos juntos para a categoria e etapa escolhidas.</div>
-      </div>
-      <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:10px; padding:9px; border:1px solid #c9d9e5; border-radius:7px; background:#eef6fb;">
-        <button type="button" class="is-kanban-select-all" style="padding:7px 9px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#075f91; cursor:pointer; font-size:10px; font-weight:bold;">Selecionar todos</button>
-        <button type="button" class="is-kanban-clear-selection" style="padding:7px 9px; border:1px solid #c3d2dc; border-radius:5px; background:white; color:#526d7e; cursor:pointer; font-size:10px;">Limpar seleção</button>
-        <strong id="is-kanban-selected-count" style="font-size:10px; color:#254c64;">${this.selectedKanbanLeadKeys.size} selecionado(s)</strong>
-        <select id="is-kanban-bulk-stage" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;">
-          ${stages.map(stage => `<option value="${window.IS.escapeHTML(stage.id)}">Mover para: ${window.IS.escapeHTML(stage.title)}</option>`).join('')}
-        </select>
-        <button type="button" class="is-kanban-move-selected" ${this.selectedKanbanLeadKeys.size ? '' : 'disabled'} style="padding:8px 12px; border:none; border-radius:5px; background:linear-gradient(135deg,#0877b5,#075f91); color:white; cursor:pointer; font-size:10px; font-weight:bold; disabled:opacity:.5;">Mover selecionados</button>
-        <select id="is-kanban-bulk-category" style="min-width:150px; flex:1; padding:7px; border:1px solid #87b8d8; border-radius:5px; background:white; color:#254c64; font-size:10px;" ${destinationCategories.length ? '' : 'disabled'}>
-          ${destinationCategories.length
-            ? destinationCategories.map(category => `<option value="${window.IS.escapeHTML(category.id)}">Categoria: ${window.IS.escapeHTML(category.name)}</option>`).join('')
-            : '<option value="">Nenhuma outra categoria</option>'}
-        </select>
-        <button type="button" class="is-kanban-move-category-selected" ${this.selectedKanbanLeadKeys.size && destinationCategories.length ? '' : 'disabled'} style="padding:8px 12px; border:none; border-radius:5px; background:#4d7f9f; color:white; cursor:pointer; font-size:10px; font-weight:bold;">Mover para categoria</button>
-      </div>
-      <div style="display:flex; gap:10px; overflow-x:auto; align-items:stretch; padding:0 0 10px; min-height:${this.kanbanFullscreen ? 'calc(100vh - 225px)' : 'auto'};">${columns}</div>
+      <div style="display:flex; gap:10px; overflow-x:auto; align-items:stretch; padding:0 0 10px; ">${columns || '<div style="font-size:11px; color:#7a8d99; padding:8px;">Nenhuma resposta nesta categoria.</div>'}</div>
       <div style="font-size:12px; font-weight:bold; margin-top:10px;">Gerenciar categorias</div>
       <div style="display:flex; flex-direction:column; gap:7px;">${categoryManagement}</div>
     `;
