@@ -5,7 +5,7 @@
 // atende UM por vez, com intervalo ALEATÓRIO entre um envio e outro (2 a 5 minutos) e uma pequena espera
 // aleatória antes de cada envio, para não ter ritmo de robô:
 //   reserva no banco (só um envio por lead) → mesmo número já recebeu? pula → lê a conversa no WhatsApp
-//   (mensagem sua? pula) → monta a SUA mensagem pronta com spintax (sem IA) → envia → grava o resultado.
+//   (mensagem sua? pula) → SALVA o contato e marca a etiqueta → monta a SUA mensagem (spintax) → envia → grava o resultado.
 // Usa as funções do background.js: naVezWA, agenteNaConversa, sendCampaignMessage.
 
 const AGENTE_ALARME = 'inmovya-primeiro-contato';
@@ -206,9 +206,9 @@ async function agenteSalvarEEtiquetar(tel, lead) {
     const naoExiste = (r?.etiqueta?.alteracoes || []).find(a => /não existe/.test(a));
     if (etiqueta && naoExiste) problemas.push(`${naoExiste} — crie a etiqueta "${etiqueta}" no WhatsApp Business para o agente marcar`);
     else if (etiqueta && r?.etiqueta && r.etiqueta.ok === false) problemas.push(`não consegui marcar a etiqueta ${etiqueta} (${r.etiqueta.error || 'erro'})`);
-    return problemas.length ? `1º contato enviado, mas: ${problemas.join('; ')}.` : null;
+    return problemas.length ? `1º contato: ${problemas.join('; ')}.` : null;
   } catch (err) {
-    return `1º contato enviado, mas não consegui salvar o contato/etiqueta de ${lead.nome || tel}: ${err.message}`;
+    return `1º contato: não consegui salvar o contato/etiqueta de ${lead.nome || tel}: ${err.message}`;
   }
 }
 
@@ -300,24 +300,29 @@ async function agenteAtender(cred, cfg, lead) {
   if (reserva.outro) { await resultado('pulado', { erro: `este número já recebeu o 1º contato (lead ${reserva.outro})` }); return 'pulado'; }
 
   try {
+    // 1) conversa já tem mensagem sua? não faz nada
+    const leitura = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'agent_read_chat_tab'));
+    const conversa = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
+    if (conversa.some(m => m.dir === 'out')) { await resultado('pulado', { erro: 'já existe mensagem sua nesta conversa do WhatsApp' }); return 'pulado'; }
+
+    // 2) PRIMEIRO salva o contato e marca a etiqueta da origem
+    if (!(await agenteAindaLigado(cred))) { await agenteLiberar(cred, lead.id); return 'parou'; }
+    let aviso = await agenteSalvarEEtiquetar(tel, lead);
+
+    // 3) DEPOIS manda a mensagem (confere de novo, colado no envio, se o 1º contato continua ligado)
     const feito = await naVezWA(async () => {
-      // conversa já tem mensagem sua? não envia
-      const leitura = await agenteNaConversa({ phone: tel, background: true }, 'agent_read_chat_tab');
-      const conversa = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
-      if (conversa.some(m => m.dir === 'out')) return { pulou: 'já existe mensagem sua nesta conversa do WhatsApp' };
       const msg = await agenteGerarMensagem(lead, cfg);
-      // confere de novo, colado no envio: se você desligou o 1º contato nesse meio-tempo, não manda
       if (!(await agenteAindaLigado(cred))) return { parou: true };
       await sendCampaignMessage({ phone: tel, text: msg.texto, background: true, gapMinMs: 0, gapMaxMs: 0 });
       agenteMomentoEnvio = Date.now();
       return { msg };
     });
-    if (feito.pulou) { await resultado('pulado', { erro: feito.pulou }); return 'pulado'; }
     if (feito.parou) { await agenteLiberar(cred, lead.id); return 'parou'; }
     const via = feito.msg.aviso ? `${feito.msg.via} (${feito.msg.aviso})` : feito.msg.via;
-    // grava o envio JÁ (é o que impede mandar de novo); salvar contato e etiqueta vêm depois
+    // grava o envio JÁ (é o que impede mandar de novo)
     await resultado('enviado', { msg: feito.msg.texto, via });
-    const aviso = await agenteSalvarEEtiquetar(tel, lead);
+    // se o contato/etiqueta não deu certo antes (conversa ainda vazia), tenta mais uma vez agora com a mensagem enviada
+    if (aviso) aviso = await agenteSalvarEEtiquetar(tel, lead);
     await agenteAviso(cred, aviso);
     return 'enviado';
   } catch (err) {
