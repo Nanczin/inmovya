@@ -337,6 +337,26 @@ export async function limparFila(leadIds: string[]) {
   }
 }
 
+/**
+ * Exclui da BASE DE LEADS do Inmovya quem você apagou da fila do 1º contato.
+ * Nunca apaga quem já recebeu o 1º contato. Lead do Bitrix apagado não volta pela captura
+ * (o banco guarda que foi apagado).
+ */
+export async function excluirDaFilaEDaBase(leadIds: string[]) {
+  let excluidos = 0;
+  for (let i = 0; i < leadIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from("leads")
+      .delete()
+      .in("id", leadIds.slice(i, i + 200))
+      .or("primeiro_contato_status.is.null,primeiro_contato_status.neq.enviado")
+      .select("id");
+    if (error) throw error;
+    excluidos += data?.length || 0;
+  }
+  return excluidos;
+}
+
 export const retentarLead = (leadId: string) => colocarNaFila([leadId]);
 
 /** Faz o agente atender também quem chegou antes de ligar (até 3 dias atrás). */

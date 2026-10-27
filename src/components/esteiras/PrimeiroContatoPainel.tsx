@@ -21,6 +21,7 @@ import {
   lerFilaAgente,
   tirarDaFila,
   limparFila,
+  excluirDaFilaEDaBase,
   exemploDeMensagem,
   lerHistoricoAgente,
   contarVariacoes,
@@ -198,17 +199,22 @@ export function PrimeiroContatoPainel() {
     const ids = fila.filter((l) => l.situacao !== "atendendo" && (!soSelecionados || selecionados.has(l.id))).map((l) => l.id);
     if (!ids.length) return;
     const pergunta = soSelecionados
-      ? `Limpar ${ids.length} lead(s) selecionado(s) da fila? Eles saem da lista e não serão chamados.`
-      : `Limpar a fila do 1º contato? ${ids.length} lead(s) que ainda não receberam saem da lista e não serão chamados. Quem já recebeu não muda.`;
+      ? `Excluir ${ids.length} lead(s) selecionado(s)?\n\nEles saem da fila do 1º contato E são apagados da base de leads do Inmovya. Não dá para desfazer.`
+      : `Excluir a fila inteira do 1º contato?\n\n${ids.length} lead(s) que ainda não receberam são apagados da base de leads do Inmovya. Quem já recebeu não é apagado. Não dá para desfazer.`;
     if (!window.confirm(pergunta)) return;
     setMexendo("limpar");
     try {
-      await limparFila(ids);
+      const excluidos = await excluirDaFilaEDaBase(ids);
+      // quem não pôde ser apagado (ex.: recebeu agora há pouco) ao menos sai da fila
+      if (excluidos < ids.length) await limparFila(ids).catch(() => {});
       setSelecionados(new Set());
-      toast({ title: "Fila limpa", description: `${ids.length} lead(s) tirado(s). Os próximos leads que chegarem entram normalmente.` });
+      toast({
+        title: "Leads excluídos",
+        description: `${excluidos} lead(s) apagado(s) da fila e da base de leads.${excluidos < ids.length ? ` ${ids.length - excluidos} já tinha(m) recebido e só saiu(saíram) da fila.` : ""}`,
+      });
       await recarregar();
     } catch (e: any) {
-      toast({ title: "Não consegui limpar a fila", description: e?.message, variant: "destructive" });
+      toast({ title: "Não consegui excluir", description: e?.message, variant: "destructive" });
     } finally {
       setMexendo(null);
     }
@@ -304,7 +310,7 @@ export function PrimeiroContatoPainel() {
           {fila.some((l) => l.situacao !== "atendendo") && (
             <Button size="sm" variant="outline" className="h-8 ml-auto text-destructive hover:text-destructive" disabled={!!mexendo} onClick={() => limparTudo(false)}>
               {mexendo === "limpar" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
-              Limpar fila
+              Excluir fila
             </Button>
           )}
         </div>
@@ -346,7 +352,7 @@ export function PrimeiroContatoPainel() {
               </Button>
               <Button size="sm" variant="outline" className="h-8 text-destructive hover:text-destructive" disabled={!selecionados.size || !!mexendo} onClick={() => limparTudo(true)}>
                 {mexendo === "limpar" ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
-                Limpar selecionados ({selecionados.size})
+                Excluir selecionados ({selecionados.size})
               </Button>
             </div>
           </div>
