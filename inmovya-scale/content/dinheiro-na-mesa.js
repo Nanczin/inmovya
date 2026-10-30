@@ -22,6 +22,8 @@ window.IS.DinheiroNaMesa = (() => {
   const MAX_TENTATIVAS = 3;
   const CHAVE = 'dnmSessoes';
   const CHAVE_HOJE = 'dnmHoje';
+  // quem já foi classificado como Interessado, Disparo ou Deny List nunca mais volta (lista só neste Chrome)
+  const CHAVE_FINALIZADOS = 'dnmFinalizados';
   const hojeStr = () => new Date().toLocaleDateString('pt-BR');
 
   const st = {
@@ -61,9 +63,17 @@ window.IS.DinheiroNaMesa = (() => {
 
   async function carregarSessoes() {
     try {
-      const r = await chrome.storage.local.get(CHAVE);
+      const r = await chrome.storage.local.get([CHAVE, CHAVE_FINALIZADOS]);
       st.sessoes = r[CHAVE] || {};
-    } catch (_) { st.sessoes = {}; }
+      st.finalizados = r[CHAVE_FINALIZADOS] || {};
+    } catch (_) { st.sessoes = {}; st.finalizados = {}; }
+  }
+  const chavesDoContato = c => [telInternacional(c.telefone), c.chatId].filter(Boolean);
+  const jaFinalizado = c => chavesDoContato(c).some(k => st.finalizados && st.finalizados[k]);
+  async function marcarFinalizado(item, classificacao) {
+    st.finalizados = st.finalizados || {};
+    for (const k of chavesDoContato(item)) st.finalizados[k] = { c: classificacao, em: Date.now() };
+    await chrome.storage.local.set({ [CHAVE_FINALIZADOS]: st.finalizados }).catch(() => {});
   }
   const salvarSessoes = () => chrome.storage.local.set({ [CHAVE]: st.sessoes }).catch(() => {});
 
@@ -127,16 +137,18 @@ window.IS.DinheiroNaMesa = (() => {
     const vistos = new Set();
     const itens = [];
     let ordem = 0;
+    let fora = 0;
     for (const c of contatos) {
       const chave = chaveDoContato(c);
       if (!chave || vistos.has(chave)) continue;
+      if (jaFinalizado(c) && !(porChave.get(chave)?.estado === 'feito')) { fora++; vistos.add(chave); continue; }
       vistos.add(chave);
       const velho = porChave.get(chave);
       itens.push(velho
         ? { ...velho, nome: c.nome || velho.nome, telefone: c.telefone || velho.telefone, chatId: c.chatId || velho.chatId, ordem: ordem++ }
         : { chave, nome: c.nome || telBonito(c.telefone) || 'Sem nome', telefone: c.telefone || '', chatId: c.chatId || '', estado: 'novo', tentativas: 0, classificacao: '', ordem: ordem++ });
     }
-    st.sessoes[nome] = { etiqueta: nome, criadaEm: antiga?.criadaEm || Date.now(), atualizadaEm: Date.now(), itens };
+    st.sessoes[nome] = { etiqueta: nome, criadaEm: antiga?.criadaEm || Date.now(), atualizadaEm: Date.now(), itens, fora };
     return st.sessoes[nome];
   }
 
@@ -163,12 +175,20 @@ window.IS.DinheiroNaMesa = (() => {
       }
       if (!contatos.length) throw new Error(`A etiqueta ${etiqueta.nome} não tem contatos.`);
       const s = montarSessao(etiqueta.nome, contatos);
+      if (!s.itens.length) {
+        delete st.sessoes[etiqueta.nome];
+        await salvarSessoes();
+        st.atual = null;
+        st.tela = 'inicio';
+        st.aviso = `Ninguém para ligar em ${etiqueta.nome}: os ${s.fora} contato(s) já foram classificados antes (Interessado, Disparo ou Deny List).`;
+        return;
+      }
       await salvarSessoes();
       st.atual = etiqueta.nome;
       novoContato();
       st.tela = proximo(s) ? 'sessao' : 'fim';
       const semFone = s.itens.filter(i => !telInternacional(i.telefone)).length;
-      st.aviso = `${s.itens.length} contato(s) extraído(s) de ${etiqueta.nome}.${semFone ? ` ${semFone} sem número visível (use "Abrir conversa").` : ''}`;
+      st.aviso = `${s.itens.length} contato(s) extraído(s) de ${etiqueta.nome}.${s.fora ? ` ${s.fora} já classificado(s) antes (Interessado, Disparo ou Deny List) ficaram de fora.` : ''}${semFone ? ` ${semFone} sem número visível (use "Abrir conversa").` : ''}`;
     } catch (err) {
       st.erro = err.message || String(err);
     } finally {
@@ -335,6 +355,7 @@ window.IS.DinheiroNaMesa = (() => {
     if (classificacao === CAIXA) item.ordem = Math.max(...s.itens.map(i => i.ordem)) + 1; // vai para o fim da fila
     s.atualizadaEm = Date.now();
     await salvarSessoes();
+    if (classificacao !== CAIXA) await marcarFinalizado(item, classificacao);
     await somarPlacar(classificacao === 'Cliente Interessado');
     st.aviso = `✅ ${item.nome}: ${classificacao === CAIXA ? 'caixa postal (fica na etiqueta)' : classificacao}${feitoNaEtiqueta}`;
     novoContato();
