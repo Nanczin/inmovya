@@ -484,3 +484,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // 1º contato automático (roda sozinho, com o Inmovya fechado)
 importScripts("agente-primeiro-contato.js");
 importScripts("robo-anuncios.js");
+importScripts("dinheiro-na-mesa-bg.js");

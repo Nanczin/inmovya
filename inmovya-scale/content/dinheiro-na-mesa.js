@@ -1,0 +1,538 @@
+// dinheiro-na-mesa.js — modo "DINHEIRO NA MESA" do Inmovya Scale (dentro do WhatsApp Web).
+// Oferta ativa em cima de uma ETIQUETA do WhatsApp: escolhe a etiqueta, a extensão extrai os contatos
+// (nome + telefone) sem abrir conversa por conversa e mostra um por vez, igual à Oferta Ativa do Inmovya:
+//   📞 Ligar (abre o Vincular ao Celular) · 📋 Copiar número · 💬 Abrir conversa
+//   classificação (Cliente Interessado / Caixa Postal / Número não existe / Deny List) + notas
+//   SALVAR E PRÓXIMO → grava a ligação no Inmovya (ligações do dia, lead, linha do tempo) e mostra o próximo.
+// Quem não atendeu volta no fim da fila (até 3 tentativas por etiqueta). O progresso fica salvo neste Chrome.
+// Não manda mensagem nenhuma e não mexe nas etiquetas do WhatsApp.
+window.IS = window.IS || {};
+
+window.IS.DinheiroNaMesa = (() => {
+  const CLASSIFICACOES = [
+    { id: 'Cliente Interessado', rotulo: '🔥 Cliente Interessado', cor: '#0a8f4e' },
+    { id: 'Caixa Postal/Cliente Não Atendeu', rotulo: '📵 Caixa Postal / Não atendeu', cor: '#b7791f' },
+    { id: 'Número não existe', rotulo: '❌ Número não existe', cor: '#6b7280' },
+    { id: 'Deny List', rotulo: '⛔ Deny List', cor: '#c62838' },
+  ];
+  const CAIXA = 'Caixa Postal/Cliente Não Atendeu';
+  const MAX_TENTATIVAS = 3;
+  const CHAVE = 'dnmSessoes';
+
+  const st = {
+    aberto: false,
+    tela: 'inicio', // inicio | sessao | fim
+    etiquetas: null, // [{id,nome,total}] ou null (sem acesso à memória do WhatsApp)
+    sessoes: {},
+    atual: null, // nome da etiqueta em andamento
+    classificacao: '',
+    etapa: '',
+    nota: '',
+    placar: null,
+    ocupado: false,
+    aviso: '',
+    erro: '',
+  };
+
+  // ---------- utilidades ----------
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const digitos = s => String(s || '').replace(/\D/g, '');
+  const telInternacional = t => {
+    let d = digitos(t);
+    if (!d) return '';
+    if (d.startsWith('00')) d = d.slice(2);
+    if (!d.startsWith('55') && (d.length === 10 || d.length === 11)) d = '55' + d;
+    return d;
+  };
+  const telBonito = t => {
+    const d = telInternacional(t);
+    if (d.startsWith('55') && (d.length === 12 || d.length === 13)) {
+      const n = d.slice(4);
+      return `(${d.slice(2, 4)}) ${n.length === 9 ? `${n.slice(0, 5)}-${n.slice(5)}` : `${n.slice(0, 4)}-${n.slice(4)}`}`;
+    }
+    return d ? `+${d}` : '';
+  };
+  const chaveDoContato = c => telInternacional(c.telefone) || c.chatId || String(c.nome || '').toLowerCase();
+
+  async function carregarSessoes() {
+    try {
+      const r = await chrome.storage.local.get(CHAVE);
+      st.sessoes = r[CHAVE] || {};
+    } catch (_) { st.sessoes = {}; }
+  }
+  const salvarSessoes = () => chrome.storage.local.set({ [CHAVE]: st.sessoes }).catch(() => {});
+
+  // ---------- memória do WhatsApp (dnm-store.js, no MAIN world) ----------
+  let seq = 0;
+  function loja(op, args = {}, timeout = 6000) {
+    return new Promise(resolve => {
+      const id = `dnm${Date.now()}_${++seq}`;
+      const fim = setTimeout(() => { window.removeEventListener('message', ouvir); resolve({ ok: false, erro: 'sem resposta' }); }, timeout);
+      function ouvir(ev) {
+        if (ev.source !== window || !ev.data || ev.data.__isDnm !== 'resposta' || ev.data.id !== id) return;
+        clearTimeout(fim);
+        window.removeEventListener('message', ouvir);
+        resolve(ev.data);
+      }
+      window.addEventListener('message', ouvir);
+      window.postMessage({ __isDnm: 'pedido', id, op, args }, '*');
+    });
+  }
+
+  // ---------- Inmovya (via service worker, com o token do agente) ----------
+  function rpc(nome, args) {
+    return new Promise(resolve => {
+      try {
+        chrome.runtime.sendMessage({ action: 'dnm_rpc', nome, args }, r => {
+          if (chrome.runtime.lastError) return resolve({ ok: false, erro: 'Extensão atualizada: recarregue esta aba do WhatsApp (F5).' });
+          resolve(r || { ok: false, erro: 'sem resposta da extensão' });
+        });
+      } catch (_) {
+        resolve({ ok: false, erro: 'Extensão atualizada: recarregue esta aba do WhatsApp (F5).' });
+      }
+    });
+  }
+
+  async function atualizarPlacar() {
+    const r = await rpc('agente_dnm_placar', {});
+    st.placar = r.ok ? r.dados : null;
+    if (!r.ok && !st.erro) st.aviso = r.erro;
+    render();
+  }
+
+  // ---------- fila ----------
+  const sessao = () => (st.atual ? st.sessoes[st.atual] : null);
+
+  function proximo(s) {
+    if (!s) return null;
+    const novos = s.itens.filter(i => i.estado === 'novo');
+    if (novos.length) return novos[0];
+    const caixa = s.itens.filter(i => i.estado === 'caixa').sort((a, b) => a.tentativas - b.tentativas || a.ordem - b.ordem);
+    return caixa[0] || null;
+  }
+
+  function contagem(s) {
+    const c = { total: s.itens.length, novos: 0, caixa: 0, feitos: 0, interessados: 0 };
+    for (const i of s.itens) {
+      if (i.estado === 'novo') c.novos++;
+      else if (i.estado === 'caixa') c.caixa++;
+      else c.feitos++;
+      if (i.classificacao === 'Cliente Interessado') c.interessados++;
+    }
+    return c;
+  }
+
+  function montarSessao(nome, contatos) {
+    const antiga = st.sessoes[nome];
+    const porChave = new Map((antiga?.itens || []).map(i => [i.chave, i]));
+    const vistos = new Set();
+    const itens = [];
+    let ordem = 0;
+    for (const c of contatos) {
+      const chave = chaveDoContato(c);
+      if (!chave || vistos.has(chave)) continue;
+      vistos.add(chave);
+      const velho = porChave.get(chave);
+      itens.push(velho
+        ? { ...velho, nome: c.nome || velho.nome, telefone: c.telefone || velho.telefone, chatId: c.chatId || velho.chatId, ordem: ordem++ }
+        : { chave, nome: c.nome || telBonito(c.telefone) || 'Sem nome', telefone: c.telefone || '', chatId: c.chatId || '', estado: 'novo', tentativas: 0, classificacao: '', ordem: ordem++ });
+    }
+    st.sessoes[nome] = { etiqueta: nome, criadaEm: antiga?.criadaEm || Date.now(), atualizadaEm: Date.now(), itens };
+    return st.sessoes[nome];
+  }
+
+  // ---------- ações ----------
+  async function listarEtiquetas() {
+    const r = await loja('etiquetas');
+    st.etiquetas = r.ok && Array.isArray(r.dados) ? r.dados.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')) : null;
+    render();
+  }
+
+  async function extrair(etiqueta) {
+    st.ocupado = true; st.erro = ''; st.aviso = ''; render();
+    try {
+      let contatos = null;
+      if (etiqueta.id) {
+        const r = await loja('contatos', { labelId: etiqueta.id }, 15000);
+        if (r.ok && Array.isArray(r.dados)) contatos = r.dados;
+      }
+      if (!contatos) {
+        // reserva: lê a lista da etiqueta ABERTA na tela do WhatsApp (rolando a lista)
+        if (!window.IS.Scraper?.captureOpenLabel) throw new Error('Não consegui ler as etiquetas deste WhatsApp.');
+        const cap = await window.IS.Scraper.captureOpenLabel(etiqueta.nome);
+        contatos = (cap.contacts || []).map(c => ({ nome: c.name, chatId: c.chatId || '', telefone: /@c\.us$/.test(c.chatId || '') ? digitos(c.chatId) : (/^\+?\d{8,}$/.test(c.chatId || '') ? digitos(c.chatId) : '') }));
+      }
+      if (!contatos.length) throw new Error(`A etiqueta ${etiqueta.nome} não tem contatos.`);
+      const s = montarSessao(etiqueta.nome, contatos);
+      await salvarSessoes();
+      st.atual = etiqueta.nome;
+      novoContato();
+      st.tela = proximo(s) ? 'sessao' : 'fim';
+      const semFone = s.itens.filter(i => !telInternacional(i.telefone)).length;
+      st.aviso = `${s.itens.length} contato(s) extraído(s) de ${etiqueta.nome}.${semFone ? ` ${semFone} sem número visível (use "Abrir conversa").` : ''}`;
+    } catch (err) {
+      st.erro = err.message || String(err);
+    } finally {
+      st.ocupado = false;
+      render();
+    }
+  }
+
+  function novoContato() {
+    st.classificacao = '';
+    st.etapa = '';
+    st.nota = '';
+  }
+
+  function ligar(item) {
+    const d = telInternacional(item.telefone);
+    if (!d) { st.erro = 'Este contato não tem número visível. Abra a conversa para ver o número.'; return render(); }
+    const a = document.createElement('a');
+    a.href = `tel:+${d}`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    item.ligouEm = Date.now();
+    salvarSessoes();
+  }
+
+  async function copiar(item) {
+    const t = telBonito(item.telefone);
+    if (!t) return;
+    try {
+      await navigator.clipboard.writeText(t);
+      st.aviso = `Número copiado: ${t}`;
+    } catch (_) {
+      st.aviso = `Número: ${t}`;
+    }
+    render();
+  }
+
+  async function abrirConversa(item) {
+    let ok = false;
+    if (item.chatId) {
+      const r = await loja('abrir', { chatId: item.chatId });
+      ok = !!(r.ok && r.dados);
+    }
+    if (!ok && window.IS.Scraper?.openContactBySearch) {
+      try { ok = await window.IS.Scraper.openContactBySearch({ name: item.nome, chatId: item.chatId || (item.telefone ? `${telInternacional(item.telefone)}@c.us` : '') }); } catch (_) { ok = false; }
+    }
+    if (!ok) { st.erro = `Não consegui abrir a conversa de ${item.nome}. Procure pelo nome na lista do WhatsApp.`; render(); }
+  }
+
+  async function salvarEProximo() {
+    const s = sessao();
+    const item = proximo(s);
+    if (!item || st.ocupado) return;
+    const classificacao = st.classificacao || CAIXA; // sem escolher = não atendeu (igual à Oferta Ativa)
+    st.ocupado = true; st.erro = ''; st.aviso = ''; render();
+    const r = await rpc('agente_dnm_registrar', {
+      p_nome: item.nome,
+      p_telefone: telInternacional(item.telefone),
+      p_etiqueta: s.etiqueta,
+      p_classificacao: classificacao,
+      p_nota: st.nota.trim() || null,
+      p_etapa: classificacao === 'Cliente Interessado' ? (st.etapa || null) : null,
+    });
+    st.ocupado = false;
+    if (!r.ok) { st.erro = `Não salvei no Inmovya: ${r.erro}`; return render(); }
+    item.classificacao = classificacao;
+    item.tentativas = (item.tentativas || 0) + (classificacao === CAIXA ? 1 : 0);
+    item.estado = classificacao === CAIXA && item.tentativas < MAX_TENTATIVAS ? 'caixa' : 'feito';
+    if (classificacao === CAIXA) item.ordem = Math.max(...s.itens.map(i => i.ordem)) + 1; // vai para o fim da fila
+    s.atualizadaEm = Date.now();
+    await salvarSessoes();
+    const acao = r.dados?.acao;
+    st.aviso = acao === 'lead_criado' ? `✅ ${item.nome} cadastrado no Inmovya como lead.`
+      : acao === 'lead_atualizado' ? `✅ Salvo na linha do tempo de ${r.dados.lead_nome || item.nome}.`
+      : `✅ Ligação registrada (${classificacao}).`;
+    novoContato();
+    if (!proximo(s)) st.tela = 'fim';
+    atualizarPlacar();
+  }
+
+  function pular() {
+    const s = sessao();
+    const item = proximo(s);
+    if (!item) return;
+    item.ordem = Math.max(...s.itens.map(i => i.ordem)) + 1;
+    if (item.estado === 'novo') {
+      // manda para o fim dos novos
+      const idx = s.itens.indexOf(item);
+      s.itens.splice(idx, 1);
+      s.itens.push(item);
+    }
+    novoContato();
+    salvarSessoes();
+    render();
+  }
+
+  function excluirSessao(nome) {
+    if (!confirm(`Apagar o progresso de "${nome}" neste Chrome? (as ligações já salvas no Inmovya continuam lá)`)) return;
+    delete st.sessoes[nome];
+    salvarSessoes();
+    render();
+  }
+
+  // ---------- tela ----------
+  function estilos() {
+    if (document.getElementById('is-dnm-style')) return;
+    const css = document.createElement('style');
+    css.id = 'is-dnm-style';
+    css.textContent = `
+      #is-dnm-botao{position:fixed;left:14px;bottom:14px;z-index:10002;display:flex;align-items:center;gap:6px;padding:9px 14px;border:none;border-radius:999px;
+        background:linear-gradient(135deg,#0a8f4e,#076b3a);color:#fff;font:700 13px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;cursor:pointer;
+        box-shadow:0 6px 18px rgba(7,107,58,.35)}
+      #is-dnm-botao:hover{filter:brightness(1.08)}
+      #is-dnm{position:fixed;top:0;right:0;width:400px;max-width:100vw;height:100vh;z-index:10003;display:flex;flex-direction:column;
+        background:var(--inmovya-background,#fff);color:var(--inmovya-text,#111b21);border-left:1px solid var(--inmovya-border,#d1d7db);
+        box-shadow:-8px 0 24px rgba(0,0,0,.18);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+      #is-dnm *{box-sizing:border-box}
+      #is-dnm .dnm-top{padding:14px 16px;background:linear-gradient(135deg,#0a8f4e,#076b3a);color:#fff;display:flex;align-items:center;gap:10px}
+      #is-dnm .dnm-top h2{margin:0;font-size:16px;flex:1;letter-spacing:.3px}
+      #is-dnm .dnm-x{background:rgba(255,255,255,.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px}
+      #is-dnm .dnm-corpo{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+      #is-dnm .dnm-placar{display:flex;gap:8px}
+      #is-dnm .dnm-placar div{flex:1;padding:8px;border-radius:8px;background:var(--inmovya-surface,#f0f2f5);text-align:center}
+      #is-dnm .dnm-placar b{display:block;font-size:18px}
+      #is-dnm .dnm-placar span{font-size:11px;color:var(--inmovya-text-secondary,#667781)}
+      #is-dnm .dnm-btn{border:none;border-radius:8px;padding:10px 12px;font-weight:700;cursor:pointer;font-size:13px}
+      #is-dnm .dnm-btn:disabled{opacity:.5;cursor:default}
+      #is-dnm .dnm-pri{background:#0a8f4e;color:#fff}
+      #is-dnm .dnm-sec{background:var(--inmovya-surface,#f0f2f5);color:var(--inmovya-text,#111b21);border:1px solid var(--inmovya-border,#d1d7db)}
+      #is-dnm .dnm-lista{display:flex;flex-direction:column;gap:6px}
+      #is-dnm .dnm-et{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--inmovya-border,#d1d7db);border-radius:8px;cursor:pointer;background:transparent;color:inherit;text-align:left;width:100%}
+      #is-dnm .dnm-et:hover{background:var(--inmovya-hover,#f5f6f6)}
+      #is-dnm .dnm-bola{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+      #is-dnm .dnm-card{border:1px solid var(--inmovya-border,#d1d7db);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+      #is-dnm .dnm-nome{font-size:19px;font-weight:800;word-break:break-word}
+      #is-dnm .dnm-tel{font-size:16px;font-weight:600;letter-spacing:.3px}
+      #is-dnm .dnm-acoes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+      #is-dnm .dnm-ligar{background:#0a8f4e;color:#fff;font-size:14px}
+      #is-dnm .dnm-chips{display:flex;flex-direction:column;gap:6px}
+      #is-dnm .dnm-chip{text-align:left;border:2px solid var(--inmovya-border,#d1d7db);background:transparent;color:inherit;border-radius:8px;padding:9px 10px;cursor:pointer;font-weight:600}
+      #is-dnm .dnm-chip.on{color:#fff}
+      #is-dnm textarea,#is-dnm select,#is-dnm input{width:100%;border:1px solid var(--inmovya-border,#d1d7db);border-radius:8px;padding:8px;font:inherit;background:var(--inmovya-background,#fff);color:inherit}
+      #is-dnm .dnm-rodape{padding:12px 16px;border-top:1px solid var(--inmovya-border,#d1d7db);display:flex;gap:8px}
+      #is-dnm .dnm-rodape .dnm-pri{flex:1;padding:13px;font-size:14px}
+      #is-dnm .dnm-ok{padding:8px 10px;border-radius:8px;background:#e8f6ee;color:#0a6b3a;font-size:12px}
+      #is-dnm .dnm-erro{padding:8px 10px;border-radius:8px;background:#fdecee;color:#a8212f;font-size:12px}
+      #is-dnm .dnm-mini{font-size:11px;color:var(--inmovya-text-secondary,#667781)}
+      #is-dnm .dnm-barra{height:6px;border-radius:3px;background:var(--inmovya-surface,#f0f2f5);overflow:hidden}
+      #is-dnm .dnm-barra i{display:block;height:100%;background:#0a8f4e}
+    `;
+    document.head.appendChild(css);
+  }
+
+  function botao() {
+    if (document.getElementById('is-dnm-botao')) return;
+    const b = document.createElement('button');
+    b.id = 'is-dnm-botao';
+    b.type = 'button';
+    b.title = 'Dinheiro na Mesa: oferta ativa nas etiquetas do WhatsApp';
+    b.innerHTML = '💰 Dinheiro na Mesa';
+    b.addEventListener('click', () => (st.aberto ? fechar() : abrir()));
+    document.body.appendChild(b);
+  }
+
+  async function abrir() {
+    st.aberto = true;
+    await carregarSessoes();
+    if (st.tela !== 'sessao' || !sessao()) st.tela = 'inicio';
+    render();
+    listarEtiquetas();
+    atualizarPlacar();
+  }
+
+  function fechar() {
+    st.aberto = false;
+    document.getElementById('is-dnm')?.remove();
+  }
+
+  function htmlPlacar() {
+    const p = st.placar;
+    return `<div class="dnm-placar">
+      <div><b>${p ? esc(p.ligacoes_hoje) : '–'}</b><span>ligações hoje</span></div>
+      <div><b>${p ? esc(p.interacoes_hoje) : '–'}</b><span>interações hoje</span></div>
+    </div>`;
+  }
+
+  function htmlAvisos() {
+    return `${st.erro ? `<div class="dnm-erro">${esc(st.erro)}</div>` : ''}${st.aviso ? `<div class="dnm-ok">${esc(st.aviso)}</div>` : ''}`;
+  }
+
+  function htmlInicio() {
+    const andamento = Object.values(st.sessoes).filter(s => s.itens?.length && proximo(s)).sort((a, b) => b.atualizadaEm - a.atualizadaEm);
+    const lista = st.etiquetas;
+    return `
+      ${htmlPlacar()}
+      ${htmlAvisos()}
+      ${andamento.length ? `<div><div style="font-weight:700;margin-bottom:6px">Continuar de onde parou</div><div class="dnm-lista">
+        ${andamento.map(s => {
+          const c = contagem(s);
+          const pct = Math.round((c.feitos / Math.max(1, c.total)) * 100);
+          return `<div style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="dnm-et" data-continuar="${esc(s.etiqueta)}">
+              <span style="flex:1"><b>${esc(s.etiqueta)}</b><br><span class="dnm-mini">${c.feitos} de ${c.total} feitos · ${c.novos} novos · ${c.caixa} p/ religar</span>
+              <span class="dnm-barra" style="display:block;margin-top:5px"><i style="width:${pct}%"></i></span></span>
+            </button>
+            <button type="button" class="dnm-btn dnm-sec" data-apagar="${esc(s.etiqueta)}" title="Apagar este progresso">🗑</button>
+          </div>`;
+        }).join('')}</div></div>` : ''}
+      <div>
+        <div style="font-weight:700;margin-bottom:6px">Escolha a etiqueta para ligar</div>
+        ${lista === null
+          ? `<div class="dnm-mini" style="margin-bottom:8px">Abra a etiqueta no WhatsApp (menu ⋮ → Etiquetas → clique na etiqueta) e escreva o nome dela aqui:</div>
+             <div style="display:flex;gap:6px"><input id="dnm-nome-et" placeholder="Nome da etiqueta aberta (ex.: 20%)">
+             <button type="button" class="dnm-btn dnm-pri" data-extrair-aberta ${st.ocupado ? 'disabled' : ''}>Extrair</button></div>`
+          : lista.length
+            ? `<div class="dnm-lista">${lista.map(l => `<button type="button" class="dnm-et" data-extrair="${esc(l.id)}" ${st.ocupado ? 'disabled' : ''}>
+                <span class="dnm-bola" style="background:${esc(l.cor || '#0a8f4e')}"></span>
+                <span style="flex:1;font-weight:600">${esc(l.nome)}</span>
+                <span class="dnm-mini">${esc(l.total)} contato(s)</span></button>`).join('')}</div>
+               <div class="dnm-mini" style="margin-top:6px">A extensão lê os contatos direto da memória do WhatsApp, sem abrir conversa por conversa.</div>`
+            : `<div class="dnm-mini">Nenhuma etiqueta encontrada neste WhatsApp.</div>`}
+        ${st.ocupado ? '<div class="dnm-mini" style="margin-top:8px">⏳ Extraindo contatos…</div>' : ''}
+      </div>`;
+  }
+
+  function htmlSessao() {
+    const s = sessao();
+    const item = proximo(s);
+    if (!item) return htmlFim();
+    const c = contagem(s);
+    const pct = Math.round((c.feitos / Math.max(1, c.total)) * 100);
+    const tel = telBonito(item.telefone);
+    const rodada = item.estado === 'caixa';
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <button type="button" class="dnm-btn dnm-sec" data-voltar style="padding:6px 10px">← Etiquetas</button>
+        <div style="flex:1"><b>${esc(s.etiqueta)}</b><div class="dnm-mini">${c.feitos} de ${c.total} feitos · ${c.novos} novos · ${c.caixa} p/ religar</div></div>
+      </div>
+      <div class="dnm-barra"><i style="width:${pct}%"></i></div>
+      ${htmlPlacar()}
+      ${htmlAvisos()}
+      <div class="dnm-card">
+        ${rodada ? `<div class="dnm-mini" style="color:#b7791f;font-weight:700">↻ Religando: ${item.tentativas}ª vez sem atender</div>` : ''}
+        <div class="dnm-nome">${esc(item.nome)}</div>
+        <div class="dnm-tel">${tel ? esc(tel) : '<span class="dnm-mini">sem número visível — abra a conversa</span>'}</div>
+        <div class="dnm-acoes">
+          <button type="button" class="dnm-btn dnm-ligar" data-ligar ${tel ? '' : 'disabled'}>📞 Ligar</button>
+          <button type="button" class="dnm-btn dnm-sec" data-copiar ${tel ? '' : 'disabled'}>📋 Copiar</button>
+          <button type="button" class="dnm-btn dnm-sec" data-abrir>💬 Conversa</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;margin-bottom:6px">Classificação</div>
+        <div class="dnm-chips">${CLASSIFICACOES.map(k => {
+          const on = st.classificacao === k.id;
+          return `<button type="button" class="dnm-chip ${on ? 'on' : ''}" data-classificar="${esc(k.id)}" style="${on ? `background:${k.cor};border-color:${k.cor}` : `border-color:${k.cor}33`}">${esc(k.rotulo)}</button>`;
+        }).join('')}</div>
+        <div class="dnm-mini" style="margin-top:6px">Sem escolher nada, conta como "Caixa Postal / Não atendeu" e o contato volta no fim da fila.</div>
+      </div>
+      ${st.classificacao === 'Cliente Interessado' ? `<div>
+        <div style="font-weight:700;margin-bottom:6px">Etapa no Inmovya (opcional)</div>
+        <select id="dnm-etapa">
+          <option value="">Não mudar</option>
+          ${['20%', '50%', '70%', 'Fechado'].map(e => `<option value="${e}" ${st.etapa === e ? 'selected' : ''}>${e}</option>`).join('')}
+        </select>
+        <div class="dnm-mini" style="margin-top:4px">Se ainda não for lead, entra no Inmovya como lead (20% se não escolher).</div>
+      </div>` : ''}
+      <div>
+        <div style="font-weight:700;margin-bottom:6px">Notas</div>
+        <textarea id="dnm-nota" rows="3" maxlength="500" placeholder="O que o cliente falou, melhor horário, interesse…">${esc(st.nota)}</textarea>
+      </div>`;
+  }
+
+  function htmlFim() {
+    const s = sessao();
+    const c = s ? contagem(s) : null;
+    return `
+      ${htmlPlacar()}
+      ${htmlAvisos()}
+      <div class="dnm-card" style="text-align:center">
+        <div style="font-size:34px">🎉</div>
+        <div class="dnm-nome">Etiqueta concluída!</div>
+        ${c ? `<div>${esc(s.etiqueta)}: ${c.total} contato(s) · ${c.interessados} interessado(s)</div>` : ''}
+        <button type="button" class="dnm-btn dnm-pri" data-voltar>Escolher outra etiqueta</button>
+      </div>`;
+  }
+
+  function render() {
+    if (!st.aberto) return;
+    estilos();
+    let raiz = document.getElementById('is-dnm');
+    if (!raiz) {
+      raiz = document.createElement('div');
+      raiz.id = 'is-dnm';
+      document.body.appendChild(raiz);
+      raiz.addEventListener('click', aoClicar);
+      raiz.addEventListener('input', ev => {
+        if (ev.target.id === 'dnm-nota') st.nota = ev.target.value;
+      });
+      raiz.addEventListener('change', ev => {
+        if (ev.target.id === 'dnm-etapa') st.etapa = ev.target.value;
+      });
+      raiz.addEventListener('keydown', ev => ev.stopPropagation()); // não deixa o WhatsApp roubar o teclado
+    }
+    const rolagem = raiz.querySelector('.dnm-corpo')?.scrollTop || 0;
+    const mesmaTela = raiz.dataset.tela === `${st.tela}:${st.atual}:${proximo(sessao())?.chave || ''}`;
+    const naSessao = st.tela === 'sessao' && sessao() && proximo(sessao());
+    const corpo = st.tela === 'sessao' ? (naSessao ? htmlSessao() : htmlFim()) : st.tela === 'fim' ? htmlFim() : htmlInicio();
+    raiz.innerHTML = `
+      <div class="dnm-top"><h2>💰 DINHEIRO NA MESA</h2><button type="button" class="dnm-x" data-fechar title="Fechar">✕</button></div>
+      <div class="dnm-corpo">${corpo}</div>
+      ${naSessao ? `<div class="dnm-rodape">
+        <button type="button" class="dnm-btn dnm-sec" data-pular ${st.ocupado ? 'disabled' : ''} title="Deixa para depois, sem registrar">Pular</button>
+        <button type="button" class="dnm-btn dnm-pri" data-salvar ${st.ocupado ? 'disabled' : ''}>${st.ocupado ? 'Salvando…' : 'SALVAR E PRÓXIMO ➜'}</button>
+      </div>` : ''}`;
+    raiz.dataset.tela = `${st.tela}:${st.atual}:${proximo(sessao())?.chave || ''}`;
+    // mesma tela (ex.: escolheu a classificação): mantém a rolagem; contato novo: volta ao topo
+    if (mesmaTela) raiz.querySelector('.dnm-corpo').scrollTop = rolagem;
+  }
+
+  async function aoClicar(ev) {
+    const alvo = ev.target.closest('button');
+    if (!alvo) return;
+    const d = alvo.dataset;
+    const s = sessao();
+    const item = s ? proximo(s) : null;
+    if ('fechar' in d) return fechar();
+    if ('voltar' in d) { st.tela = 'inicio'; st.erro = ''; st.aviso = ''; render(); return listarEtiquetas(); }
+    if (d.extrair) {
+      const et = (st.etiquetas || []).find(l => l.id === d.extrair);
+      if (et) return extrair(et);
+    }
+    if ('extrairAberta' in d) {
+      const nome = (document.getElementById('dnm-nome-et')?.value || '').trim();
+      if (!nome) { st.erro = 'Escreva o nome da etiqueta que está aberta no WhatsApp.'; return render(); }
+      return extrair({ nome });
+    }
+    if (d.continuar) {
+      st.atual = d.continuar; st.erro = ''; st.aviso = ''; novoContato();
+      st.tela = proximo(sessao()) ? 'sessao' : 'fim';
+      return render();
+    }
+    if (d.apagar) return excluirSessao(d.apagar);
+    if (!item) return;
+    if ('ligar' in d) return ligar(item);
+    if ('copiar' in d) return copiar(item);
+    if ('abrir' in d) return abrirConversa(item);
+    if (d.classificar) { st.classificacao = st.classificacao === d.classificar ? '' : d.classificar; if (st.classificacao !== 'Cliente Interessado') st.etapa = ''; return render(); }
+    if ('pular' in d) return pular();
+    if ('salvar' in d) return salvarEProximo();
+  }
+
+  function iniciar() {
+    estilos();
+    botao();
+    // o WhatsApp às vezes refaz o <body>: garante o botão
+    setInterval(botao, 5000);
+  }
+
+  return { iniciar, _st: st, _proximo: proximo, _montarSessao: montarSessao, _telBonito: telBonito, _telInternacional: telInternacional };
+})();
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.IS.DinheiroNaMesa.iniciar());
+else window.IS.DinheiroNaMesa.iniciar();
