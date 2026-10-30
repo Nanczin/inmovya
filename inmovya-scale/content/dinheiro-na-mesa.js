@@ -205,7 +205,66 @@ window.IS.DinheiroNaMesa = (() => {
     render();
   }
 
-  async function abrirConversa(item) {
+  // ---------- empreendimento de interesse (lido da conversa / do anúncio) ----------
+  const NOME = "[A-ZÀ-Ú0-9][\\wÀ-ú.'&-]*(?:\\s+(?:(?:da|do|de|dos|das|e|del)\\s+)?[A-ZÀ-Ú0-9][\\wÀ-ú.'&-]*){0,4}";
+  const PADROES = [
+    new RegExp(`interess(?:e|ad[oa]s?|ei|ou)\\s+(?:no|na|nos|nas|em|pelo|pela|pelos|pelas)\\s+(?:empreendimento\\s+|im[oó]vel\\s+|apartamento\\s+|apto\\s+|lan[cç]amento\\s+|residencial\\s+)?(${NOME})`),
+    new RegExp(`(?:empreendimento|lan[cç]amento|residencial|condom[ií]nio)\\s*:?\\s+(${NOME})`),
+    new RegExp(`(?:sobre|anúncio|anuncio)\\s+(?:o|a|do|da)\\s+\\*?(${NOME})`),
+  ];
+  const IGNORAR = /^(Eu|Ele|Ela|Sim|Não|Nao|Olá|Ola|Oi|Bom|Boa|Mais|Informações|Informacoes|Imóvel|Imovel|Apartamento|Valor|Whatsapp|Instagram|Facebook)$/i;
+  const limparNome = n => String(n || '').replace(/[*_~]/g, '').replace(/[.,;:!?]+$/, '').replace(/\s+(e|de|da|do|que|para|com)$/i, '').trim();
+
+  function acharInteresse(msgs) {
+    if (!Array.isArray(msgs) || !msgs.length) return null;
+    // 1) anúncio (clique para WhatsApp): o título costuma ter o nome do empreendimento
+    for (const m of msgs) {
+      const t = m.anuncio && (m.anuncio.titulo || m.anuncio.descricao);
+      if (t) {
+        for (const re of PADROES) { const x = t.match(re); if (x && !IGNORAR.test(x[1])) return { nome: limparNome(x[1]), fonte: 'anúncio' }; }
+        return { nome: limparNome(t.split(/\s[|–—-]\s|\n/)[0]).slice(0, 60), fonte: 'anúncio' };
+      }
+    }
+    // 2) mensagens do cliente e as suas (da mais antiga para a mais nova)
+    for (const m of msgs) {
+      for (const re of PADROES) {
+        const x = (m.texto || '').match(re);
+        if (x && x[1] && !IGNORAR.test(x[1].split(/\s+/)[0])) return { nome: limparNome(x[1]), fonte: m.deMim ? 'sua mensagem' : 'mensagem do cliente' };
+      }
+    }
+    // 3) nome em negrito numa mensagem sua (ex.: "sobre o *Jardim da Hípica*")
+    for (const m of msgs) {
+      if (!m.deMim) continue;
+      const x = (m.texto || '').match(/\b(?:no|na|do|da|pelo|pela|o|a)\s+\*([^*\n]{3,40})\*/);
+      if (x) return { nome: limparNome(x[1]), fonte: 'sua mensagem' };
+    }
+    return null;
+  }
+
+  // ao mostrar um contato: abre a conversa no fundo e procura o empreendimento de interesse
+  let preparando = '';
+  async function prepararContato(item) {
+    if (!item || preparando === item.chave) return;
+    preparando = item.chave;
+    const aberta = await abrirConversa(item, true);
+    if (item.interesse === undefined && item.chatId) {
+      let achado = null;
+      for (let t = 0; t < 4 && !achado; t++) {
+        await new Promise(r => setTimeout(r, t ? 900 : 600)); // espera o WhatsApp carregar as mensagens
+        const r = await loja('mensagens', { chatId: item.chatId });
+        achado = acharInteresse(r.ok ? r.dados : null);
+        if (r.ok && Array.isArray(r.dados) && r.dados.length && !achado && t >= 1) break;
+      }
+      item.interesse = achado || null;
+      salvarSessoes();
+      if (preparando === item.chave) render();
+    } else if (!aberta && item.interesse === undefined) {
+      item.interesse = null;
+      render();
+    }
+  }
+
+  async function abrirConversa(item, silencioso = false) {
     let ok = false;
     if (item.chatId) {
       const r = await loja('abrir', { chatId: item.chatId });
@@ -214,7 +273,8 @@ window.IS.DinheiroNaMesa = (() => {
     if (!ok && window.IS.Scraper?.openContactBySearch) {
       try { ok = await window.IS.Scraper.openContactBySearch({ name: item.nome, chatId: item.chatId || (item.telefone ? `${telInternacional(item.telefone)}@c.us` : '') }); } catch (_) { ok = false; }
     }
-    if (!ok) { st.erro = `Não consegui abrir a conversa de ${item.nome}. Procure pelo nome na lista do WhatsApp.`; render(); }
+    if (!ok && !silencioso) { st.erro = `Não consegui abrir a conversa de ${item.nome}. Procure pelo nome na lista do WhatsApp.`; render(); }
+    return ok;
   }
 
   async function salvarEProximo() {
@@ -330,6 +390,8 @@ window.IS.DinheiroNaMesa = (() => {
       #is-dnm .dnm-card{border:1px solid var(--inmovya-border,#d1d7db);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
       #is-dnm .dnm-nome{font-size:19px;font-weight:800;word-break:break-word}
       #is-dnm .dnm-tel{font-size:16px;font-weight:600;letter-spacing:.3px}
+      #is-dnm .dnm-interesse{padding:7px 9px;border-radius:8px;background:#fff7e6;color:#7a4b00;font-size:13px}
+      #is-dnm .dnm-top{cursor:move;user-select:none}
       #is-dnm .dnm-acoes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
       #is-dnm .dnm-ligar{background:#0a8f4e;color:#fff;font-size:14px}
       #is-dnm .dnm-chips{display:flex;flex-direction:column;gap:6px}
@@ -440,6 +502,11 @@ window.IS.DinheiroNaMesa = (() => {
         ${rodada ? `<div class="dnm-mini" style="color:#b7791f;font-weight:700">↻ Religando: ${item.tentativas}ª vez sem atender</div>` : ''}
         <div class="dnm-nome">${esc(item.nome)}</div>
         <div class="dnm-tel">${tel ? esc(tel) : '<span class="dnm-mini">sem número visível — abra a conversa</span>'}</div>
+        <div class="dnm-interesse">🏢 Interesse: ${item.interesse === undefined
+          ? '<span class="dnm-mini">procurando na conversa…</span>'
+          : item.interesse
+            ? `<b>${esc(item.interesse.nome)}</b> <span class="dnm-mini">(${esc(item.interesse.fonte)})</span>`
+            : '<span class="dnm-mini">não identificado na conversa</span>'}</div>
         <div class="dnm-acoes">
           <button type="button" class="dnm-btn dnm-ligar" data-ligar ${tel ? '' : 'disabled'}>📞 Ligar</button>
           <button type="button" class="dnm-btn dnm-sec" data-copiar ${tel ? '' : 'disabled'}>📋 Copiar</button>
@@ -482,9 +549,6 @@ window.IS.DinheiroNaMesa = (() => {
     estilos();
     let raiz = document.getElementById('is-dnm');
     if (!raiz) {
-      const fundo = document.createElement('div');
-      fundo.id = 'is-dnm-fundo';
-      document.body.appendChild(fundo);
       raiz = document.createElement('div');
       raiz.id = 'is-dnm';
       document.body.appendChild(raiz);
@@ -506,8 +570,31 @@ window.IS.DinheiroNaMesa = (() => {
         <button type="button" class="dnm-btn dnm-pri" data-salvar ${st.ocupado ? 'disabled' : ''}>${st.ocupado ? 'Salvando…' : 'SALVAR E PRÓXIMO ➜'}</button>
       </div>` : ''}`;
     raiz.dataset.tela = `${st.tela}:${st.atual}:${proximo(sessao())?.chave || ''}`;
+    if (naSessao) prepararContato(proximo(sessao()));
+    ativarArrastar(raiz);
     // mesma tela (ex.: escolheu a classificação): mantém a rolagem; contato novo: volta ao topo
     if (mesmaTela) raiz.querySelector('.dnm-corpo').scrollTop = rolagem;
+  }
+
+  // arrastar a janela pela barra verde (para ver melhor a conversa atrás)
+  function ativarArrastar(raiz) {
+    const topo = raiz.querySelector('.dnm-top');
+    if (!topo || topo.dataset.arrasta) return;
+    topo.dataset.arrasta = '1';
+    topo.addEventListener('mousedown', ev => {
+      if (ev.target.closest('button')) return;
+      const r = raiz.getBoundingClientRect();
+      const dx = ev.clientX - r.left, dy = ev.clientY - r.top;
+      const mover = e => {
+        raiz.style.left = `${Math.max(0, Math.min(window.innerWidth - 120, e.clientX - dx))}px`;
+        raiz.style.top = `${Math.max(0, Math.min(window.innerHeight - 60, e.clientY - dy))}px`;
+        raiz.style.transform = 'none';
+      };
+      const soltar = () => { document.removeEventListener('mousemove', mover); document.removeEventListener('mouseup', soltar); };
+      document.addEventListener('mousemove', mover);
+      document.addEventListener('mouseup', soltar);
+      ev.preventDefault();
+    });
   }
 
   async function aoClicar(ev) {
@@ -538,7 +625,7 @@ window.IS.DinheiroNaMesa = (() => {
     if (!item) return;
     if ('ligar' in d) return ligar(item);
     if ('copiar' in d) return copiar(item);
-    if ('abrir' in d) { fechar(); return abrirConversa(item); } // fecha para você ver a conversa; o botão verde reabre de onde parou
+    if ('abrir' in d) return abrirConversa(item);
     if (d.classificar) { st.classificacao = st.classificacao === d.classificar ? '' : d.classificar; if (st.classificacao !== 'Cliente Interessado') st.etapa = ''; return render(); }
     if ('pular' in d) return pular();
     if ('salvar' in d) return salvarEProximo();

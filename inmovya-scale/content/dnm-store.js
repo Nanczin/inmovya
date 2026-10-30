@@ -121,6 +121,28 @@
     return false;
   }
 
+  // Mensagens já carregadas da conversa (para achar o empreendimento de interesse). Só leitura.
+  function mensagens(chatId) {
+    const chat = lista(colecoes().Chat).find(c => {
+      const id = pegar(c, 'id');
+      return id && String(id._serialized || pegar(id, '_serialized') || id) === chatId;
+    });
+    if (!chat) return null;
+    const msgs = lista(pegar(chat, 'msgs')).slice(-120);
+    return msgs.map(m => {
+      const id = pegar(m, 'id');
+      const ctwa = pegar(m, 'ctwaContext') || pegar(m, 'externalAdReply') || null;
+      return {
+        texto: String(pegar(m, 'body') || pegar(m, 'caption') || '').slice(0, 1500),
+        deMim: !!(id && (id.fromMe ?? pegar(id, 'fromMe'))),
+        anuncio: ctwa ? {
+          titulo: String(ctwa.title || pegar(ctwa, 'title') || ''),
+          descricao: String(ctwa.description || pegar(ctwa, 'description') || ctwa.body || ''),
+        } : null,
+      };
+    }).filter(m => (m.texto && !/^data:|^\/9j\//.test(m.texto)) || m.anuncio);
+  }
+
   window.addEventListener('message', async ev => {
     if (ev.source !== window || !ev.data || ev.data.__isDnm !== 'pedido') return;
     const { id, op, args = {} } = ev.data;
@@ -129,6 +151,7 @@
       if (op === 'etiquetas') resposta = { ok: true, dados: etiquetas() };
       else if (op === 'contatos') resposta = { ok: true, dados: contatosDaEtiqueta(args.labelId) };
       else if (op === 'abrir') resposta = { ok: true, dados: await abrirConversa(args.chatId) };
+      else if (op === 'mensagens') resposta = { ok: true, dados: mensagens(args.chatId) };
       else resposta = { ok: false, erro: 'operação desconhecida' };
     } catch (err) {
       resposta = { ok: false, erro: String(err && err.message || err) };
