@@ -2,7 +2,7 @@
 // Oferta ativa em cima de uma ETIQUETA do WhatsApp: escolhe a etiqueta, a extensão extrai os contatos
 // (nome + telefone) sem abrir conversa por conversa e mostra um por vez, igual à Oferta Ativa do Inmovya:
 //   📞 Ligar (abre o Vincular ao Celular) · 📋 Copiar número · 💬 Abrir conversa
-//   classificação: Interessado (→ 20%) / Disparo (→ Lead ou Nutrição) / Caixa Postal (fica) / Deny List (sai da etiqueta) + notas
+//   classificação: Interessado (→ 20%) / Disparo (→ Lead e Nutrição) / Caixa Postal (fica) / Deny List (sai da etiqueta) + notas
 //   SALVAR E PRÓXIMO → mostra o próximo. Quem não atendeu volta no fim da fila (até 3 tentativas).
 // TEMPORÁRIO: nada vai para o banco do Inmovya. O progresso fica só neste Chrome e some quando você conclui a etiqueta.
 // Não manda mensagem nenhuma. Só mexe na etiqueta do contato que você classificar (menos Caixa Postal).
@@ -10,10 +10,10 @@ window.IS = window.IS || {};
 
 window.IS.DinheiroNaMesa = (() => {
   const CLASSIFICACOES = [
-    // destino: etiqueta para onde o contato vai (sai da etiqueta atual); sai: só tira da etiqueta atual
-    { id: 'Cliente Interessado', rotulo: '🔥 Interessado → vai para a etiqueta 20%', cor: '#0a8f4e', destino: ['20%'] },
-    { id: 'Disparo Lead', rotulo: '📣 Disparo → vai para a etiqueta Lead', cor: '#2563eb', destino: ['Lead', 'Leads'] },
-    { id: 'Disparo Nutrição', rotulo: '🌱 Disparo → vai para a etiqueta Nutrição', cor: '#7c3aed', destino: ['Nutrição', 'Nutricao'] },
+    // destinos: etiquetas para onde o contato vai (sai da etiqueta atual); cada uma com os nomes aceitos
+    // sai: só tira da etiqueta atual
+    { id: 'Cliente Interessado', rotulo: '🔥 Interessado → vai para a etiqueta 20%', cor: '#0a8f4e', destinos: [['20%']] },
+    { id: 'Disparo', rotulo: '📣 Disparo → vai para as etiquetas Lead e Nutrição', cor: '#2563eb', destinos: [['Lead', 'Leads'], ['Nutrição', 'Nutricao']] },
     { id: 'Caixa Postal/Cliente Não Atendeu', rotulo: '📵 Caixa Postal → fica na etiqueta', cor: '#b7791f' },
     { id: 'Deny List', rotulo: '⛔ Deny List → sai da etiqueta', cor: '#c62838', sai: true },
   ];
@@ -308,14 +308,13 @@ window.IS.DinheiroNaMesa = (() => {
     st.erro = '';
     let feitoNaEtiqueta = '';
     const regra = CLASSIFICACOES.find(k => k.id === classificacao) || {};
-    if (regra.destino || regra.sai) {
-      // nome exato da etiqueta de destino como está no seu WhatsApp (ex.: "Lead" ou "Leads")
+    if (regra.destinos || regra.sai) {
+      // nome exato de cada etiqueta de destino como está no seu WhatsApp (ex.: "Lead" ou "Leads")
       const nomesWa = (st.etiquetas || []).map(l => l.nome);
-      const destino = regra.destino
-        ? (nomesWa.find(n => regra.destino.some(d => normEt(d) === normEt(n))) || regra.destino[0])
-        : null;
-      const jaNoDestino = destino && normEt(destino) === normEt(s.etiqueta);
-      const add = destino ? [destino] : [];
+      const destinos = (regra.destinos || []).map(aceitos => nomesWa.find(n => aceitos.some(d => normEt(d) === normEt(n))) || aceitos[0]);
+      const jaNoDestino = destinos.some(d => normEt(d) === normEt(s.etiqueta));
+      const destino = destinos.join(' e ');
+      const add = destinos;
       const remove = jaNoDestino ? [] : [s.etiqueta];
       st.ocupado = true; st.aviso = '⏳ Mudando a etiqueta no WhatsApp…'; render();
       const r = await mudarEtiqueta(item, add, remove);
@@ -325,7 +324,7 @@ window.IS.DinheiroNaMesa = (() => {
         st.erro = `Não mudei a etiqueta de ${item.nome}: ${r.erro}. Tente de novo, ou mude à mão no WhatsApp e clique em Pular.`;
         return render();
       }
-      feitoNaEtiqueta = destino
+      feitoNaEtiqueta = destinos.length
         ? (jaNoDestino ? ` (continua na ${destino})` : ` → saiu de ${s.etiqueta} e foi para ${destino}`)
         : ` → saiu da etiqueta ${s.etiqueta}`;
     }
