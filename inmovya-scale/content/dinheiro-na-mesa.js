@@ -3,8 +3,8 @@
 // (nome + telefone) sem abrir conversa por conversa e mostra um por vez, igual à Oferta Ativa do Inmovya:
 //   📞 Ligar (abre o Vincular ao Celular) · 📋 Copiar número · 💬 Abrir conversa
 //   classificação (Cliente Interessado / Caixa Postal / Número não existe / Deny List) + notas
-//   SALVAR E PRÓXIMO → grava a ligação no Inmovya (ligações do dia, lead, linha do tempo) e mostra o próximo.
-// Quem não atendeu volta no fim da fila (até 3 tentativas por etiqueta). O progresso fica salvo neste Chrome.
+//   SALVAR E PRÓXIMO → mostra o próximo. Quem não atendeu volta no fim da fila (até 3 tentativas).
+// TEMPORÁRIO: nada vai para o banco do Inmovya. O progresso fica só neste Chrome e some quando você conclui a etiqueta.
 // Não manda mensagem nenhuma e não mexe nas etiquetas do WhatsApp.
 window.IS = window.IS || {};
 
@@ -18,6 +18,8 @@ window.IS.DinheiroNaMesa = (() => {
   const CAIXA = 'Caixa Postal/Cliente Não Atendeu';
   const MAX_TENTATIVAS = 3;
   const CHAVE = 'dnmSessoes';
+  const CHAVE_HOJE = 'dnmHoje';
+  const hojeStr = () => new Date().toLocaleDateString('pt-BR');
 
   const st = {
     aberto: false,
@@ -79,25 +81,19 @@ window.IS.DinheiroNaMesa = (() => {
     });
   }
 
-  // ---------- Inmovya (via service worker, com o token do agente) ----------
-  function rpc(nome, args) {
-    return new Promise(resolve => {
-      try {
-        chrome.runtime.sendMessage({ action: 'dnm_rpc', nome, args }, r => {
-          if (chrome.runtime.lastError) return resolve({ ok: false, erro: 'Extensão atualizada: recarregue esta aba do WhatsApp (F5).' });
-          resolve(r || { ok: false, erro: 'sem resposta da extensão' });
-        });
-      } catch (_) {
-        resolve({ ok: false, erro: 'Extensão atualizada: recarregue esta aba do WhatsApp (F5).' });
-      }
-    });
-  }
-
+  // ---------- placar do dia (só neste Chrome) ----------
   async function atualizarPlacar() {
-    const r = await rpc('agente_dnm_placar', {});
-    st.placar = r.ok ? r.dados : null;
-    if (!r.ok && !st.erro) st.aviso = r.erro;
+    try {
+      const r = (await chrome.storage.local.get(CHAVE_HOJE))[CHAVE_HOJE];
+      st.placar = r && r.data === hojeStr() ? r : { data: hojeStr(), ligacoes_hoje: 0, interacoes_hoje: 0 };
+    } catch (_) { st.placar = { data: hojeStr(), ligacoes_hoje: 0, interacoes_hoje: 0 }; }
     render();
+  }
+  async function somarPlacar(interessado) {
+    await atualizarPlacar();
+    st.placar.ligacoes_hoje++;
+    if (interessado) st.placar.interacoes_hoje++;
+    chrome.storage.local.set({ [CHAVE_HOJE]: st.placar }).catch(() => {});
   }
 
   // ---------- fila ----------
@@ -226,30 +222,54 @@ window.IS.DinheiroNaMesa = (() => {
     const item = proximo(s);
     if (!item || st.ocupado) return;
     const classificacao = st.classificacao || CAIXA; // sem escolher = não atendeu (igual à Oferta Ativa)
-    st.ocupado = true; st.erro = ''; st.aviso = ''; render();
-    const r = await rpc('agente_dnm_registrar', {
-      p_nome: item.nome,
-      p_telefone: telInternacional(item.telefone),
-      p_etiqueta: s.etiqueta,
-      p_classificacao: classificacao,
-      p_nota: st.nota.trim() || null,
-      p_etapa: classificacao === 'Cliente Interessado' ? (st.etapa || null) : null,
-    });
-    st.ocupado = false;
-    if (!r.ok) { st.erro = `Não salvei no Inmovya: ${r.erro}`; return render(); }
+    st.erro = '';
     item.classificacao = classificacao;
+    item.nota = st.nota.trim();
     item.tentativas = (item.tentativas || 0) + (classificacao === CAIXA ? 1 : 0);
     item.estado = classificacao === CAIXA && item.tentativas < MAX_TENTATIVAS ? 'caixa' : 'feito';
     if (classificacao === CAIXA) item.ordem = Math.max(...s.itens.map(i => i.ordem)) + 1; // vai para o fim da fila
     s.atualizadaEm = Date.now();
     await salvarSessoes();
-    const acao = r.dados?.acao;
-    st.aviso = acao === 'lead_criado' ? `✅ ${item.nome} cadastrado no Inmovya como lead.`
-      : acao === 'lead_atualizado' ? `✅ Salvo na linha do tempo de ${r.dados.lead_nome || item.nome}.`
-      : `✅ Ligação registrada (${classificacao}).`;
+    await somarPlacar(classificacao === 'Cliente Interessado');
+    st.aviso = `✅ ${item.nome}: ${classificacao}`;
     novoContato();
     if (!proximo(s)) st.tela = 'fim';
-    atualizarPlacar();
+    render();
+  }
+
+  function resumoTexto(s) {
+    const linhas = [`DINHEIRO NA MESA — etiqueta ${s.etiqueta} (${hojeStr()})`];
+    for (const k of CLASSIFICACOES) {
+      const lista = s.itens.filter(i => i.classificacao === k.id);
+      if (!lista.length) continue;
+      linhas.push('', `${k.rotulo} (${lista.length})`);
+      for (const i of lista) linhas.push(`- ${i.nome} ${telBonito(i.telefone)}${i.nota ? ` — ${i.nota}` : ''}`);
+    }
+    return linhas.join('\n');
+  }
+
+  async function copiarResumo() {
+    const s = sessao();
+    if (!s) return;
+    try {
+      await navigator.clipboard.writeText(resumoTexto(s));
+      st.aviso = 'Resumo copiado. Cole onde quiser (WhatsApp, bloco de notas…).';
+    } catch (_) {
+      st.erro = 'Não consegui copiar o resumo.';
+    }
+    render();
+  }
+
+  function concluirEVoltar() {
+    // temporário: etiqueta concluída some deste Chrome
+    if (st.atual && st.sessoes[st.atual] && !proximo(st.sessoes[st.atual])) {
+      delete st.sessoes[st.atual];
+      salvarSessoes();
+    }
+    st.atual = null;
+    st.tela = 'inicio'; st.erro = ''; st.aviso = '';
+    render();
+    listarEtiquetas();
   }
 
   function pular() {
@@ -269,7 +289,7 @@ window.IS.DinheiroNaMesa = (() => {
   }
 
   function excluirSessao(nome) {
-    if (!confirm(`Apagar o progresso de "${nome}" neste Chrome? (as ligações já salvas no Inmovya continuam lá)`)) return;
+    if (!confirm(`Apagar o progresso de "${nome}"?`)) return;
     delete st.sessoes[nome];
     salvarSessoes();
     render();
@@ -285,9 +305,11 @@ window.IS.DinheiroNaMesa = (() => {
         background:linear-gradient(135deg,#0a8f4e,#076b3a);color:#fff;font:700 13px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;cursor:pointer;
         box-shadow:0 6px 18px rgba(7,107,58,.35)}
       #is-dnm-botao:hover{filter:brightness(1.08)}
-      #is-dnm{position:fixed;top:0;right:0;width:400px;max-width:100vw;height:100vh;z-index:10003;display:flex;flex-direction:column;
-        background:var(--inmovya-background,#fff);color:var(--inmovya-text,#111b21);border-left:1px solid var(--inmovya-border,#d1d7db);
-        box-shadow:-8px 0 24px rgba(0,0,0,.18);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+      #is-dnm-fundo{position:fixed;inset:0;z-index:10003;background:rgba(11,20,26,.45)}
+      #is-dnm{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:460px;max-width:calc(100vw - 24px);max-height:92vh;z-index:10004;
+        display:flex;flex-direction:column;overflow:hidden;border-radius:14px;
+        background:var(--inmovya-background,#fff);color:var(--inmovya-text,#111b21);border:1px solid var(--inmovya-border,#d1d7db);
+        box-shadow:0 18px 50px rgba(0,0,0,.35);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
       #is-dnm *{box-sizing:border-box}
       #is-dnm .dnm-top{padding:14px 16px;background:linear-gradient(135deg,#0a8f4e,#076b3a);color:#fff;display:flex;align-items:center;gap:10px}
       #is-dnm .dnm-top h2{margin:0;font-size:16px;flex:1;letter-spacing:.3px}
@@ -348,13 +370,14 @@ window.IS.DinheiroNaMesa = (() => {
   function fechar() {
     st.aberto = false;
     document.getElementById('is-dnm')?.remove();
+    document.getElementById('is-dnm-fundo')?.remove();
   }
 
   function htmlPlacar() {
     const p = st.placar;
     return `<div class="dnm-placar">
       <div><b>${p ? esc(p.ligacoes_hoje) : '–'}</b><span>ligações hoje</span></div>
-      <div><b>${p ? esc(p.interacoes_hoje) : '–'}</b><span>interações hoje</span></div>
+      <div><b>${p ? esc(p.interacoes_hoje) : '–'}</b><span>interessados hoje</span></div>
     </div>`;
   }
 
@@ -391,7 +414,7 @@ window.IS.DinheiroNaMesa = (() => {
                 <span class="dnm-bola" style="background:${esc(l.cor || '#0a8f4e')}"></span>
                 <span style="flex:1;font-weight:600">${esc(l.nome)}</span>
                 <span class="dnm-mini">${esc(l.total)} contato(s)</span></button>`).join('')}</div>
-               <div class="dnm-mini" style="margin-top:6px">A extensão lê os contatos direto da memória do WhatsApp, sem abrir conversa por conversa.</div>`
+               <div class="dnm-mini" style="margin-top:6px">A extensão lê os contatos direto da memória do WhatsApp, sem abrir conversa por conversa. É temporário: nada é gravado no Inmovya.</div>`
             : `<div class="dnm-mini">Nenhuma etiqueta encontrada neste WhatsApp.</div>`}
         ${st.ocupado ? '<div class="dnm-mini" style="margin-top:8px">⏳ Extraindo contatos…</div>' : ''}
       </div>`;
@@ -431,14 +454,6 @@ window.IS.DinheiroNaMesa = (() => {
         }).join('')}</div>
         <div class="dnm-mini" style="margin-top:6px">Sem escolher nada, conta como "Caixa Postal / Não atendeu" e o contato volta no fim da fila.</div>
       </div>
-      ${st.classificacao === 'Cliente Interessado' ? `<div>
-        <div style="font-weight:700;margin-bottom:6px">Etapa no Inmovya (opcional)</div>
-        <select id="dnm-etapa">
-          <option value="">Não mudar</option>
-          ${['20%', '50%', '70%', 'Fechado'].map(e => `<option value="${e}" ${st.etapa === e ? 'selected' : ''}>${e}</option>`).join('')}
-        </select>
-        <div class="dnm-mini" style="margin-top:4px">Se ainda não for lead, entra no Inmovya como lead (20% se não escolher).</div>
-      </div>` : ''}
       <div>
         <div style="font-weight:700;margin-bottom:6px">Notas</div>
         <textarea id="dnm-nota" rows="3" maxlength="500" placeholder="O que o cliente falou, melhor horário, interesse…">${esc(st.nota)}</textarea>
@@ -454,8 +469,11 @@ window.IS.DinheiroNaMesa = (() => {
       <div class="dnm-card" style="text-align:center">
         <div style="font-size:34px">🎉</div>
         <div class="dnm-nome">Etiqueta concluída!</div>
-        ${c ? `<div>${esc(s.etiqueta)}: ${c.total} contato(s) · ${c.interessados} interessado(s)</div>` : ''}
-        <button type="button" class="dnm-btn dnm-pri" data-voltar>Escolher outra etiqueta</button>
+        ${c ? `<div>${esc(s.etiqueta)}: ${c.total} contato(s) · ${c.interessados} interessado(s)</div>
+        <pre style="text-align:left;white-space:pre-wrap;max-height:220px;overflow:auto;background:var(--inmovya-surface,#f0f2f5);border-radius:8px;padding:10px;font:12px/1.4 inherit;margin:0">${esc(resumoTexto(s))}</pre>
+        <button type="button" class="dnm-btn dnm-sec" data-resumo>📋 Copiar resumo</button>
+        <div class="dnm-mini">Isto é temporário: ao escolher outra etiqueta, este resumo é apagado.</div>` : ''}
+        <button type="button" class="dnm-btn dnm-pri" data-concluir>Escolher outra etiqueta</button>
       </div>`;
   }
 
@@ -464,6 +482,9 @@ window.IS.DinheiroNaMesa = (() => {
     estilos();
     let raiz = document.getElementById('is-dnm');
     if (!raiz) {
+      const fundo = document.createElement('div');
+      fundo.id = 'is-dnm-fundo';
+      document.body.appendChild(fundo);
       raiz = document.createElement('div');
       raiz.id = 'is-dnm';
       document.body.appendChild(raiz);
@@ -471,10 +492,7 @@ window.IS.DinheiroNaMesa = (() => {
       raiz.addEventListener('input', ev => {
         if (ev.target.id === 'dnm-nota') st.nota = ev.target.value;
       });
-      raiz.addEventListener('change', ev => {
-        if (ev.target.id === 'dnm-etapa') st.etapa = ev.target.value;
-      });
-      raiz.addEventListener('keydown', ev => ev.stopPropagation()); // não deixa o WhatsApp roubar o teclado
+            raiz.addEventListener('keydown', ev => ev.stopPropagation()); // não deixa o WhatsApp roubar o teclado
     }
     const rolagem = raiz.querySelector('.dnm-corpo')?.scrollTop || 0;
     const mesmaTela = raiz.dataset.tela === `${st.tela}:${st.atual}:${proximo(sessao())?.chave || ''}`;
@@ -515,10 +533,12 @@ window.IS.DinheiroNaMesa = (() => {
       return render();
     }
     if (d.apagar) return excluirSessao(d.apagar);
+    if ('resumo' in d) return copiarResumo();
+    if ('concluir' in d) return concluirEVoltar();
     if (!item) return;
     if ('ligar' in d) return ligar(item);
     if ('copiar' in d) return copiar(item);
-    if ('abrir' in d) return abrirConversa(item);
+    if ('abrir' in d) { fechar(); return abrirConversa(item); } // fecha para você ver a conversa; o botão verde reabre de onde parou
     if (d.classificar) { st.classificacao = st.classificacao === d.classificar ? '' : d.classificar; if (st.classificacao !== 'Cliente Interessado') st.etapa = ''; return render(); }
     if ('pular' in d) return pular();
     if ('salvar' in d) return salvarEProximo();

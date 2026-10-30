@@ -176,11 +176,14 @@ export const entregarParaExtensao = (rodarAgora = false) =>
 /** Ao abrir o Inmovya: garante que a extensão deste Chrome tem o token (ex.: depois de reinstalar). */
 export async function sincronizarAgenteComExtensao() {
   try {
-    await carregarConfigAgente();
-    // entrega o token SEMPRE (mesmo com o 1º contato desligado): o robô de anúncios e o
-    // Dinheiro na Mesa (oferta ativa nas etiquetas do WhatsApp) usam o mesmo token.
-    // Com o 1º contato desligado o banco não devolve lead nenhum para enviar.
-    if (!tokenAtual) return;
+    const { cfg } = await carregarConfigAgente();
+    // o robô de anúncios usa o mesmo token: entrega também quando só ele está ligado
+    let roboLigado = false;
+    if (!cfg.ativo) {
+      const { data } = await supabase.from("robo_ext_config" as any).select("ativo").maybeSingle();
+      roboLigado = !!(data as any)?.ativo;
+    }
+    if ((!cfg.ativo && !roboLigado) || !tokenAtual) return;
     if (!(await checarExtensao()) || !extensaoAtualizada(VERSAO_SCALE_AGENTE)) return;
     await entregarParaExtensao(false);
   } catch {
