@@ -2,19 +2,20 @@
 // Oferta ativa em cima de uma ETIQUETA do WhatsApp: escolhe a etiqueta, a extensão extrai os contatos
 // (nome + telefone) sem abrir conversa por conversa e mostra um por vez, igual à Oferta Ativa do Inmovya:
 //   📞 Ligar (abre o Vincular ao Celular) · 📋 Copiar número · 💬 Abrir conversa
-//   classificação (Cliente Interessado / Caixa Postal / Número não existe / Deny List) + notas
+//   classificação: Interessado (vai para a etiqueta 20%) / Caixa Postal (fica na etiqueta) / Deny List (sai da etiqueta) + notas
 //   SALVAR E PRÓXIMO → mostra o próximo. Quem não atendeu volta no fim da fila (até 3 tentativas).
 // TEMPORÁRIO: nada vai para o banco do Inmovya. O progresso fica só neste Chrome e some quando você conclui a etiqueta.
-// Não manda mensagem nenhuma e não mexe nas etiquetas do WhatsApp.
+// Não manda mensagem nenhuma. Só mexe na etiqueta do contato que você classificar (Interessado / Deny List).
 window.IS = window.IS || {};
 
 window.IS.DinheiroNaMesa = (() => {
   const CLASSIFICACOES = [
-    { id: 'Cliente Interessado', rotulo: '🔥 Cliente Interessado', cor: '#0a8f4e' },
-    { id: 'Caixa Postal/Cliente Não Atendeu', rotulo: '📵 Caixa Postal / Não atendeu', cor: '#b7791f' },
-    { id: 'Número não existe', rotulo: '❌ Número não existe', cor: '#6b7280' },
-    { id: 'Deny List', rotulo: '⛔ Deny List', cor: '#c62838' },
+    { id: 'Cliente Interessado', rotulo: '🔥 Interessado → vai para a etiqueta 20%', cor: '#0a8f4e' },
+    { id: 'Caixa Postal/Cliente Não Atendeu', rotulo: '📵 Caixa Postal → fica na etiqueta', cor: '#b7791f' },
+    { id: 'Deny List', rotulo: '⛔ Deny List → sai da etiqueta', cor: '#c62838' },
   ];
+  const ETIQUETA_INTERESSADO = '20%';
+  const normEt = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '').toLowerCase();
   const CAIXA = 'Caixa Postal/Cliente Não Atendeu';
   const MAX_TENTATIVAS = 3;
   const CHAVE = 'dnmSessoes';
@@ -277,12 +278,49 @@ window.IS.DinheiroNaMesa = (() => {
     return ok;
   }
 
+  // muda a etiqueta da conversa no WhatsApp (usa o mesmo "Etiquetar conversa" do 1º contato, content.js)
+  async function mudarEtiqueta(item, add, remove) {
+    if (typeof agenteEtiquetar !== 'function') return { ok: false, erro: 'função de etiquetas indisponível — recarregue o WhatsApp (F5)' };
+    const aberta = await abrirConversa(item, true);
+    if (!aberta) return { ok: false, erro: `não consegui abrir a conversa de ${item.nome}` };
+    await new Promise(r => setTimeout(r, 900));
+    if (window.IS.Scraper?.isCurrentContact && !window.IS.Scraper.isCurrentContact({ name: item.nome, chatId: item.chatId })) {
+      await new Promise(r => setTimeout(r, 1200));
+    }
+    try {
+      const r = await agenteEtiquetar(add, remove);
+      const naoExiste = (r?.alteracoes || []).find(a => /não existe/.test(a));
+      if (!r?.ok) return { ok: false, erro: r?.error || 'não consegui mudar a etiqueta' };
+      if (naoExiste) return { ok: false, erro: naoExiste };
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, erro: err.message || String(err) };
+    }
+  }
+
   async function salvarEProximo() {
     const s = sessao();
     const item = proximo(s);
     if (!item || st.ocupado) return;
-    const classificacao = st.classificacao || CAIXA; // sem escolher = não atendeu (igual à Oferta Ativa)
+    const classificacao = st.classificacao || CAIXA; // sem escolher = caixa postal (igual à Oferta Ativa)
     st.erro = '';
+    let feitoNaEtiqueta = '';
+    if (classificacao !== CAIXA) {
+      const naPropria20 = normEt(s.etiqueta) === normEt(ETIQUETA_INTERESSADO);
+      const add = classificacao === 'Cliente Interessado' ? [ETIQUETA_INTERESSADO] : [];
+      const remove = classificacao === 'Deny List' || !naPropria20 ? [s.etiqueta] : [];
+      st.ocupado = true; st.aviso = '⏳ Mudando a etiqueta no WhatsApp…'; render();
+      const r = await mudarEtiqueta(item, add, remove);
+      st.ocupado = false;
+      if (!r.ok) {
+        st.aviso = '';
+        st.erro = `Não mudei a etiqueta de ${item.nome}: ${r.erro}. Tente de novo, ou mude à mão no WhatsApp e clique em Pular.`;
+        return render();
+      }
+      feitoNaEtiqueta = classificacao === 'Cliente Interessado'
+        ? (naPropria20 ? ` (continua na ${ETIQUETA_INTERESSADO})` : ` → saiu de ${s.etiqueta} e foi para ${ETIQUETA_INTERESSADO}`)
+        : ` → saiu da etiqueta ${s.etiqueta}`;
+    }
     item.classificacao = classificacao;
     item.nota = st.nota.trim();
     item.tentativas = (item.tentativas || 0) + (classificacao === CAIXA ? 1 : 0);
@@ -291,7 +329,7 @@ window.IS.DinheiroNaMesa = (() => {
     s.atualizadaEm = Date.now();
     await salvarSessoes();
     await somarPlacar(classificacao === 'Cliente Interessado');
-    st.aviso = `✅ ${item.nome}: ${classificacao}`;
+    st.aviso = `✅ ${item.nome}: ${classificacao === CAIXA ? 'caixa postal (fica na etiqueta)' : classificacao}${feitoNaEtiqueta}`;
     novoContato();
     if (!proximo(s)) st.tela = 'fim';
     render();
@@ -519,7 +557,7 @@ window.IS.DinheiroNaMesa = (() => {
           const on = st.classificacao === k.id;
           return `<button type="button" class="dnm-chip ${on ? 'on' : ''}" data-classificar="${esc(k.id)}" style="${on ? `background:${k.cor};border-color:${k.cor}` : `border-color:${k.cor}33`}">${esc(k.rotulo)}</button>`;
         }).join('')}</div>
-        <div class="dnm-mini" style="margin-top:6px">Sem escolher nada, conta como "Caixa Postal / Não atendeu" e o contato volta no fim da fila.</div>
+        <div class="dnm-mini" style="margin-top:6px">Sem escolher nada, conta como Caixa Postal: fica na etiqueta e volta no fim da fila (até 3 vezes).</div>
       </div>
       <div>
         <div style="font-weight:700;margin-bottom:6px">Notas</div>
