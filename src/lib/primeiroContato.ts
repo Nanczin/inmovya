@@ -345,14 +345,18 @@ export async function limparFila(leadIds: string[]) {
 export async function excluirDaFilaEDaBase(leadIds: string[]) {
   let excluidos = 0;
   for (let i = 0; i < leadIds.length; i += 200) {
-    const { data, error } = await supabase
+    // 1) só quem ainda NÃO recebeu o 1º contato pode ser apagado
+    const { data: podem, error: e1 } = await supabase
       .from("leads")
-      .delete()
-      .in("id", leadIds.slice(i, i + 200))
-      .or("primeiro_contato_status.is.null,primeiro_contato_status.neq.enviado")
-      .select("id");
+      .select("id, primeiro_contato_status")
+      .in("id", leadIds.slice(i, i + 200));
+    if (e1) throw e1;
+    const ids = (podem || []).filter((l: any) => l.primeiro_contato_status !== "enviado").map((l: any) => l.id);
+    if (!ids.length) continue;
+    // 2) apaga (sem filtro "or" no delete: o banco recusava esse pedido)
+    const { error } = await supabase.from("leads").delete().in("id", ids);
     if (error) throw error;
-    excluidos += data?.length || 0;
+    excluidos += ids.length;
   }
   return excluidos;
 }
