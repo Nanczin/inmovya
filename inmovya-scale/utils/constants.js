@@ -6,7 +6,7 @@ window.IS.DEBUG = true;
 window.IS.DEFAULT_SETTINGS = {
   shortcutsEnabled: true,
   shortcutTrigger: "Space", // Space, Enter, Tab
-  autoOpenPanel: true,
+  autoOpenPanel: false, // o painel só abre quando você clica no botão (dá para mudar em Configurações)
   theme: "auto",
   favoritesFirst: true,
   panelWidth: 340,

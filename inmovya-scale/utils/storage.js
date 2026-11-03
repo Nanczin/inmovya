@@ -32,7 +32,15 @@ window.IS.Storage = {
 
   async getSettings() {
     const data = await chrome.storage.local.get('settings');
-    return { ...window.IS.DEFAULT_SETTINGS, ...(data.settings || {}) };
+    const salvas = data.settings || {};
+    // 1.9.7: o painel deixou de abrir sozinho. Desliga uma vez para quem já tinha "abrir automaticamente";
+    // depois disso vale o que você marcar em Configurações.
+    if (!salvas.autoOpenRevisto) {
+      salvas.autoOpenPanel = false;
+      salvas.autoOpenRevisto = true;
+      await chrome.storage.local.set({ settings: salvas });
+    }
+    return { ...window.IS.DEFAULT_SETTINGS, ...salvas };
   },
 
   async saveSettings(settings) {
