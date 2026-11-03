@@ -91,14 +91,14 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
       if (!vivo) return;
       setLinhas([
         { icone: "📞", nome: "Ligações", feito: lig, alvo: metas.diaLigacoes, obs: "Oferta Ativa — rodadas 11:30 e 16:00" },
-        { icone: "💬", nome: "Interações", feito: soma.interacoesHoje, alvo: metas.diaInteracoes },
         { icone: "🎯", nome: "Leads", feito: int, alvo: metas.diaInteressados },
-        { icone: "🤝", nome: "Negociações", feito: soma.negociacoesHoje, alvo: metas.diaNegociacoes },
+        { icone: "💬", nome: "Interações", feito: soma.interacoesHoje, alvo: metas.diaInteracoes },
       ]);
       setMesLinhas([
+        { icone: "🤝", nome: "Negociações", feito: soma.negociacoes, alvo: metas.mesNegociacoes, obs: porDia(soma.negociacoes, metas.mesNegociacoes) },
+        { icone: "🏠", nome: "Visitas", feito: soma.visitas, alvo: metas.mesVisitas, obs: porDia(soma.visitas, metas.mesVisitas) },
         { icone: "📄", nome: "Documentos", feito: soma.documentacoes, alvo: metas.mesDocumentacoes, obs: porDia(soma.documentacoes, metas.mesDocumentacoes) },
         { icone: "🏆", nome: "Vendas", feito: soma.vendas, alvo: metas.mesVendas, obs: porDia(soma.vendas, metas.mesVendas) },
-        { icone: "🚶", nome: "Visitas", feito: soma.visitas, alvo: metas.mesVisitas, obs: porDia(soma.visitas, metas.mesVisitas) },
       ]);
       window.setTimeout(() => vivo && setAberto(true), 600);
     };
@@ -145,7 +145,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
             <h2 className="text-3xl sm:text-4xl font-black mt-1">{saudacao}!</h2>
             <p className="text-white/70 text-sm mt-1">Estes são os números de hoje para vencer a batalha.</p>
 
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="mt-4 grid grid-cols-3 gap-2">
               {linhas.map((l, i) => {
                 const falta = Math.max(0, l.alvo - l.feito);
                 const pct = Math.min(100, (l.feito / Math.max(1, l.alvo)) * 100);
@@ -165,7 +165,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
             </div>
 
             <div className="mt-4 text-xs uppercase tracking-widest text-white/50 font-bold">Metas do mês</div>
-            <div className="mt-2 grid grid-cols-3 gap-2">
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
               {mesLinhas.map((l, i) => (
                 <div key={l.nome} className="md-linha rounded-xl bg-white/5 border border-white/10 p-2.5" style={{ animationDelay: `${700 + i * 100}ms` }}>
                   <div className="flex items-center justify-between gap-1">

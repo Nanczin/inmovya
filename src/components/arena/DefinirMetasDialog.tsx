@@ -7,15 +7,16 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { diasUteisDoMes, lerMetasLocal, metaPorDia, normalizarMetas, type Metas } from "@/components/ArenaModule";
 
 // "Definir metas" — o mesmo nas telas Arena e Ligações (as metas são uma só).
-// Do dia: ligações, interações, leads e negociações. Do mês: documentos, vendas e visitas.
-export const CAMPOS_METAS: [keyof Metas, string, string][] = [
-  ["diaLigacoes", "📞 Ligações", "por dia"],
-  ["diaInteracoes", "💬 Interações", "por dia"],
-  ["diaInteressados", "🎯 Leads", "por dia"],
-  ["diaNegociacoes", "🤝 Negociações", "por dia"],
-  ["mesDocumentacoes", "📄 Documentos", "no mês"],
-  ["mesVendas", "🏆 Vendas", "no mês"],
-  ["mesVisitas", "🏠 Visitas", "no mês"],
+// Tudo é definido por MÊS. Ligações, leads e interações aparecem por dia (mês ÷ dias úteis);
+// negociações, visitas, documentos e vendas aparecem no mês.
+export const CAMPOS_METAS: [keyof Metas, string, "dia" | "mes"][] = [
+  ["mesLigacoes", "📞 Ligações", "dia"],
+  ["mesInteressados", "🎯 Leads", "dia"],
+  ["mesInteracoes", "💬 Interações", "dia"],
+  ["mesNegociacoes", "🤝 Negociações", "mes"],
+  ["mesVisitas", "🏠 Visitas", "mes"],
+  ["mesDocumentacoes", "📄 Documentos", "mes"],
+  ["mesVendas", "🏆 Vendas", "mes"],
 ];
 
 /** Lê as metas (banco, se houver; senão as deste navegador). */
@@ -34,7 +35,8 @@ export async function carregarMetas(): Promise<Metas> {
 }
 
 /** Guarda as metas neste navegador e no banco (vale em qualquer computador). */
-export async function salvarMetas(m: Metas) {
+export async function salvarMetas(entrada: Metas) {
+  const m = normalizarMetas(entrada);
   try {
     localStorage.setItem("inmovya_arena_metas", JSON.stringify(m));
     localStorage.setItem("meta_ligacoes_diarias", String(m.diaLigacoes));
@@ -64,7 +66,7 @@ export function DefinirMetasDialog({ open, onOpenChange, onSalvo }: { open: bool
     setSalvando(true);
     try {
       await salvarMetas(m);
-      onSalvo?.(m);
+      onSalvo?.(normalizarMetas(m));
       toast({ title: "Metas salvas" });
       onOpenChange(false);
     } catch (e: any) {
@@ -80,8 +82,8 @@ export function DefinirMetasDialog({ open, onOpenChange, onSalvo }: { open: bool
         <DialogHeader>
           <DialogTitle>Definir metas</DialogTitle>
           <DialogDescription>
-            As do mês aparecem quebradas por dia ({diasUteisDoMes()} dias úteis neste mês, segunda a sábado). Leads = ligações classificadas como Cliente
-            Interessado.
+            Digite as metas do <b>mês</b>. Ligações, leads e interações aparecem na tela como meta do dia ({diasUteisDoMes()} dias úteis neste mês,
+            segunda a sábado). Leads = ligações classificadas como Cliente Interessado.
           </DialogDescription>
         </DialogHeader>
         {m && (
@@ -89,11 +91,15 @@ export function DefinirMetasDialog({ open, onOpenChange, onSalvo }: { open: bool
             {CAMPOS_METAS.map(([k, rot, quando]) => (
               <label key={k} className="flex items-center gap-3 rounded-lg border px-3 py-2">
                 <span className="flex-1 text-sm font-semibold">
-                  {rot} <span className="font-normal text-muted-foreground">{quando}</span>
+                  {rot} <span className="font-normal text-muted-foreground">no mês</span>
                   <span className="block text-xs font-normal text-muted-foreground">
-                    {String(k).startsWith("mes")
-                      ? `≈ ${metaPorDia(m[k])}`
-                      : `≈ ${(m[k] * diasUteisDoMes()).toLocaleString("pt-BR")} no mês`}
+                    {quando === "dia" ? (
+                      <>
+                        aparece por dia: <b className="text-foreground">{m[k] ? Math.max(1, Math.ceil(m[k] / diasUteisDoMes())).toLocaleString("pt-BR") : 0} por dia</b>
+                      </>
+                    ) : (
+                      <>aparece no mês · ≈ {metaPorDia(m[k])}</>
+                    )}
                   </span>
                 </span>
                 <Input

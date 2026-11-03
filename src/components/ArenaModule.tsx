@@ -40,6 +40,9 @@ export interface Metas {
   diaInteressados: number;
   diaInteracoes: number;
   diaNegociacoes: number;
+  mesLigacoes: number;
+  mesInteressados: number;
+  mesInteracoes: number;
   mesVisitas: number;
   mesNegociacoes: number;
   mesDocumentacoes: number;
@@ -50,6 +53,9 @@ export const METAS_PADRAO: Metas = {
   diaInteressados: 5,
   diaInteracoes: 15,
   diaNegociacoes: 2,
+  mesLigacoes: 4800,
+  mesInteressados: 120,
+  mesInteracoes: 360,
   mesVisitas: 12,
   mesNegociacoes: 8,
   mesDocumentacoes: 3,
@@ -88,11 +94,23 @@ export const interessado = (r?: string | null) => {
   return n.includes("interessado") && !n.includes("nao") && !n.includes("sem interesse");
 };
 
-/** Completa metas antigas: negociações viraram meta do DIA (se só tinha a do mês, divide pelos ~24 dias úteis). */
-export function normalizarMetas(m: Partial<Metas> | null | undefined): Metas {
-  const r = { ...METAS_PADRAO, ...(m || {}) } as Metas;
-  if (m && (m as any).diaNegociacoes == null && (m as any).mesNegociacoes != null)
-    r.diaNegociacoes = Math.max(1, Math.round(Number((m as any).mesNegociacoes) / 24));
+/** As metas são definidas por MÊS. Ligações, leads e interações aparecem por dia (mês ÷ dias úteis);
+ *  negociações, visitas, documentos e vendas aparecem no mês. Metas antigas (só do dia) viram do mês. */
+export function normalizarMetas(m: Partial<Metas> | null | undefined, base = new Date()): Metas {
+  const o: any = m || {};
+  const r = { ...METAS_PADRAO, ...o } as Metas;
+  const dias = diasUteisDoMes(base);
+  const pares: [keyof Metas, keyof Metas][] = [
+    ["mesLigacoes", "diaLigacoes"],
+    ["mesInteressados", "diaInteressados"],
+    ["mesInteracoes", "diaInteracoes"],
+  ];
+  for (const [mes, dia] of pares) {
+    if (o[mes] == null && o[dia] != null) r[mes] = Math.round(Number(o[dia]) * dias);
+    r[dia] = r[mes] ? Math.max(1, Math.ceil(Number(r[mes]) / dias)) : 0;
+  }
+  if (o.mesNegociacoes == null && o.diaNegociacoes != null) r.mesNegociacoes = Math.round(Number(o.diaNegociacoes) * dias);
+  r.diaNegociacoes = r.mesNegociacoes ? Math.max(1, Math.ceil(r.mesNegociacoes / dias)) : 0;
   return r;
 }
 
@@ -283,9 +301,8 @@ export function ArenaModule() {
   // ---- missões de hoje ----
   const missoes = [
     { id: "lig", m: "ligacoes" as Metrica, alvo: metas.diaLigacoes, titulo: "Bater a meta de ligações", dica: "Oferta Ativa — rodadas 11:30 e 16:00" },
-    { id: "itr", m: "interacoes" as Metrica, alvo: metas.diaInteracoes, titulo: "Gerar interações", dica: "Leads que responderam/conversaram" },
     { id: "int", m: "interessados" as Metrica, alvo: metas.diaInteressados, titulo: "Gerar leads", dica: "Ligações classificadas como Cliente Interessado" },
-    { id: "neg", m: "negociacoes" as Metrica, alvo: metas.diaNegociacoes, titulo: "Abrir negociações", dica: "Registre com o + em Negociações" },
+    { id: "itr", m: "interacoes" as Metrica, alvo: metas.diaInteracoes, titulo: "Gerar interações", dica: "Leads que responderam/conversaram" },
   ];
   const missoesFeitas = missoes.filter((x) => dHoje[x.m] >= x.alvo).length;
 
@@ -329,7 +346,7 @@ export function ArenaModule() {
     { id: "c3", nome: "Muralha", desc: "5 dias seguidos batendo a meta de ligações", ok: sequencia >= 5, icone: "🛡️" },
     { id: "c4", nome: "Faro de ouro", desc: "10 leads num dia", ok: todos.some((d) => d.interessados >= 10), icone: "🎯" },
     { id: "c5", nome: "Pé na rua", desc: "2 visitas no mesmo dia", ok: todos.some((d) => d.visitas >= 2), icone: "🚶" },
-    { id: "c6", nome: "Mesa cheia", desc: "Bater a meta de negociações do dia", ok: metas.diaNegociacoes > 0 && todos.some((d) => d.negociacoes >= metas.diaNegociacoes), icone: "🤝" },
+    { id: "c6", nome: "Mesa cheia", desc: "Bater a meta de negociações do mês", ok: metas.mesNegociacoes > 0 && mes.negociacoes >= metas.mesNegociacoes, icone: "🤝" },
     { id: "c7", nome: "Missão cumprida", desc: "As 3 missões de hoje", ok: missoesFeitas === missoes.length, icone: "⚔️" },
     { id: "c8", nome: "Quebra-recorde", desc: "Superar seu recorde de ligações", ok: recordeLig > 0 && dHoje.ligacoes > recordeLig, icone: "🔥" },
     { id: "c9", nome: "Magnata", desc: "Chegar ao nível Magnata no mês", ok: xpMes >= 9000, icone: "💎" },
@@ -403,9 +420,10 @@ export function ArenaModule() {
 
 
   const metasMes = [
+    { m: "negociacoes" as Metrica, alvo: metas.mesNegociacoes },
+    { m: "visitas" as Metrica, alvo: metas.mesVisitas },
     { m: "documentacoes" as Metrica, alvo: metas.mesDocumentacoes },
     { m: "vendas" as Metrica, alvo: metas.mesVendas },
-    { m: "visitas" as Metrica, alvo: metas.mesVisitas },
   ];
 
   const frase =
@@ -578,7 +596,7 @@ export function ArenaModule() {
           <Target className="w-4 h-4 text-primary" /> Metas de {mesNome}
           <span className="text-xs font-normal text-muted-foreground">· {diasRestantes} dias úteis restantes</span>
         </h3>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {metasMes.map(({ m, alvo }) => {
             const v = mes[m];
             const pct = Math.min(100, (v / Math.max(1, alvo)) * 100);
