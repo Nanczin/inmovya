@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { lerMetasLocal, normalizarMetas, type Metas } from "@/components/ArenaModule";
+import { diasUteisDoMes, lerMetasLocal, metaPorDia, normalizarMetas, type Metas } from "@/components/ArenaModule";
 
 // "Definir metas" — o mesmo nas telas Arena e Ligações (as metas são uma só).
 // Do dia: ligações, interações, leads e negociações. Do mês: documentos, vendas e visitas.
@@ -80,7 +80,8 @@ export function DefinirMetasDialog({ open, onOpenChange, onSalvo }: { open: bool
         <DialogHeader>
           <DialogTitle>Definir metas</DialogTitle>
           <DialogDescription>
-            As do dia viram missões; as do mês mostram se você está no ritmo. Leads = ligações classificadas como Cliente Interessado.
+            As do mês aparecem quebradas por dia ({diasUteisDoMes()} dias úteis neste mês, segunda a sábado). Leads = ligações classificadas como Cliente
+            Interessado.
           </DialogDescription>
         </DialogHeader>
         {m && (
@@ -89,6 +90,11 @@ export function DefinirMetasDialog({ open, onOpenChange, onSalvo }: { open: bool
               <label key={k} className="flex items-center gap-3 rounded-lg border px-3 py-2">
                 <span className="flex-1 text-sm font-semibold">
                   {rot} <span className="font-normal text-muted-foreground">{quando}</span>
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {String(k).startsWith("mes")
+                      ? `≈ ${metaPorDia(m[k])}`
+                      : `≈ ${(m[k] * diasUteisDoMes()).toLocaleString("pt-BR")} no mês`}
+                  </span>
                 </span>
                 <Input
                   type="number"

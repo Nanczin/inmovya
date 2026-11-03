@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { Abertura } from "./Abertura";
-import { Metas, chave, ehDiaUtil, interessado, lerMetasLocal, normalizarMetas } from "@/components/ArenaModule";
+import { Metas, chave, ehDiaUtil, interessado, lerMetasLocal, metaPorDia, normalizarMetas } from "@/components/ArenaModule";
 
 // Pop-up que abre toda vez que entra no Inmovya (cada vez que a página é aberta/recarregada): os números que precisa fazer hoje.
 
@@ -177,6 +177,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
                       <span className="text-white/50">/{l.alvo}</span>
                     </span>
                   </div>
+                  <div className="text-[10px] text-blue-200/90 mt-0.5 leading-tight font-semibold">meta: {metaPorDia(l.alvo)}</div>
                   <div className="text-[10px] text-white/60 mt-0.5 leading-tight">{l.obs}</div>
                 </div>
               ))}

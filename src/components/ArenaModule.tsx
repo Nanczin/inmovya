@@ -69,6 +69,20 @@ const NIVEIS = [
 export const chave = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const xpDoDia = (d: Dia) => (Object.keys(XP) as Metrica[]).reduce((s, k) => s + d[k] * XP[k], 0);
 export const ehDiaUtil = (d: Date) => d.getDay() !== 0; // segunda a sábado
+/** Dias úteis (segunda a sábado) do mês da data. */
+export function diasUteisDoMes(base = new Date()) {
+  let n = 0;
+  const fim = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+  for (let d = new Date(base.getFullYear(), base.getMonth(), 1); d <= fim; d.setDate(d.getDate() + 1)) if (ehDiaUtil(d)) n++;
+  return Math.max(1, n);
+}
+/** Meta do mês quebrada por dia: "0,3 por dia (1 a cada 4 dias)" ou "2,1 por dia". */
+export function metaPorDia(alvoMes: number, dias = diasUteisDoMes()) {
+  if (!alvoMes) return "sem meta";
+  const n = alvoMes / dias;
+  const num = n.toFixed(n < 1 ? 2 : n < 10 ? 1 : 0).replace(".", ",");
+  return n < 1 ? `${num} por dia (1 a cada ${Math.round(1 / n)} dias)` : `${num} por dia`;
+}
 export const interessado = (r?: string | null) => {
   const n = String(r || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   return n.includes("interessado") && !n.includes("nao") && !n.includes("sem interesse");
@@ -585,7 +599,10 @@ export function ArenaModule() {
                 <div className="h-2 mt-2 rounded-full bg-muted overflow-hidden">
                   <Barra pct={pct} className={v >= alvo ? "bg-success" : noRitmo ? "bg-primary" : "bg-warning"} />
                 </div>
-                <div className={`text-xs mt-1.5 ${v >= alvo ? "text-success font-semibold" : noRitmo ? "text-muted-foreground" : "text-warning font-semibold"}`}>
+                <div className="text-xs mt-1.5 text-muted-foreground">
+                  Meta diária: <b className="text-foreground">{metaPorDia(alvo)}</b> · hoje: {dHoje[m]}
+                </div>
+                <div className={`text-xs mt-0.5 ${v >= alvo ? "text-success font-semibold" : noRitmo ? "text-muted-foreground" : "text-warning font-semibold"}`}>
                   {v >= alvo
                     ? "Meta batida! 🏆"
                     : noRitmo
