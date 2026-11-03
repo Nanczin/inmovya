@@ -88,12 +88,12 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
       if (!vivo) return;
       setLinhas([
         { icone: "📞", nome: "Ligações", feito: lig, alvo: metas.diaLigacoes, obs: "Oferta Ativa — rodadas 11:30 e 16:00" },
-        { icone: "🎯", nome: "Interessados", feito: int, alvo: metas.diaInteressados },
+        { icone: "🎯", nome: "Leads", feito: int, alvo: metas.diaInteressados },
         { icone: "💬", nome: "Interações", feito: soma.interacoesHoje, alvo: metas.diaInteracoes },
       ]);
       setMesLinhas([
         { icone: "🏆", nome: "Vendas", feito: soma.vendas, alvo: metas.mesVendas, obs: porDia(soma.vendas, metas.mesVendas) },
-        { icone: "📄", nome: "Documentações", feito: soma.documentacoes, alvo: metas.mesDocumentacoes, obs: porDia(soma.documentacoes, metas.mesDocumentacoes) },
+        { icone: "📄", nome: "Documentos", feito: soma.documentacoes, alvo: metas.mesDocumentacoes, obs: porDia(soma.documentacoes, metas.mesDocumentacoes) },
         { icone: "🚶", nome: "Visitas", feito: soma.visitas, alvo: metas.mesVisitas, obs: porDia(soma.visitas, metas.mesVisitas) },
         { icone: "🤝", nome: "Negociações", feito: soma.negociacoes, alvo: metas.mesNegociacoes, obs: porDia(soma.negociacoes, metas.mesNegociacoes) },
       ]);

@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as E
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Abertura } from "@/components/arena/Abertura";
+import { DefinirMetasDialog } from "@/components/arena/DefinirMetasDialog";
 import { Flame, Lock, Plus, Settings2, Swords, Target, Trophy, Zap } from "lucide-react";
 
 // ARENA SPARTANA — transforma as métricas do dia a dia em jogo: XP, nível, missões do dia, sequência,
@@ -17,15 +16,15 @@ const vazio = (): Dia => ({ ligacoes: 0, interessados: 0, interacoes: 0, negocia
 
 const NOMES: Record<Metrica, string> = {
   ligacoes: "Ligações",
-  interessados: "Interessados",
+  interessados: "Leads",
   interacoes: "Interações",
   negociacoes: "Negociações",
   visitas: "Visitas",
-  documentacoes: "Documentações",
+  documentacoes: "Documentos",
   vendas: "Vendas",
 };
 // quanto vale cada coisa (o que está mais perto da venda vale mais)
-const SINGULAR: Partial<Record<Metrica, string>> = { negociacoes: "Negociação", visitas: "Visita", documentacoes: "Documentação", vendas: "Venda" };
+const SINGULAR: Partial<Record<Metrica, string>> = { negociacoes: "Negociação", visitas: "Visita", documentacoes: "Documento", vendas: "Venda" };
 const XP: Record<Metrica, number> = { ligacoes: 1, interessados: 10, interacoes: 3, negociacoes: 25, visitas: 60, documentacoes: 120, vendas: 600 };
 // registros manuais (+1 direto daqui) → coluna da powerbi_funnel_metrics
 const COLUNA: Partial<Record<Metrica, string>> = {
@@ -260,7 +259,7 @@ export function ArenaModule() {
   // ---- missões de hoje ----
   const missoes = [
     { id: "lig", m: "ligacoes" as Metrica, alvo: metas.diaLigacoes, titulo: "Bater a meta de ligações", dica: "Oferta Ativa — rodadas 11:30 e 16:00" },
-    { id: "int", m: "interessados" as Metrica, alvo: metas.diaInteressados, titulo: "Encontrar interessados", dica: "Ligações classificadas como Interessado" },
+    { id: "int", m: "interessados" as Metrica, alvo: metas.diaInteressados, titulo: "Gerar leads", dica: "Ligações classificadas como Cliente Interessado" },
     { id: "itr", m: "interacoes" as Metrica, alvo: metas.diaInteracoes, titulo: "Gerar interações", dica: "Leads que responderam/conversaram" },
   ];
   const missoesFeitas = missoes.filter((x) => dHoje[x.m] >= x.alvo).length;
@@ -303,7 +302,7 @@ export function ArenaModule() {
     { id: "c1", nome: "Primeiro sangue", desc: "Primeira venda do mês", ok: mes.vendas >= 1, icone: "🏆" },
     { id: "c2", nome: "Maratonista", desc: "300 ligações num dia", ok: todos.some((d) => d.ligacoes >= 300), icone: "🏃" },
     { id: "c3", nome: "Muralha", desc: "5 dias seguidos batendo a meta de ligações", ok: sequencia >= 5, icone: "🛡️" },
-    { id: "c4", nome: "Faro de ouro", desc: "10 interessados num dia", ok: todos.some((d) => d.interessados >= 10), icone: "🎯" },
+    { id: "c4", nome: "Faro de ouro", desc: "10 leads num dia", ok: todos.some((d) => d.interessados >= 10), icone: "🎯" },
     { id: "c5", nome: "Pé na rua", desc: "2 visitas no mesmo dia", ok: todos.some((d) => d.visitas >= 2), icone: "🚶" },
     { id: "c6", nome: "Mesa cheia", desc: "Meta de negociações do mês", ok: mes.negociacoes >= metas.mesNegociacoes, icone: "🤝" },
     { id: "c7", nome: "Missão cumprida", desc: "As 3 missões de hoje", ok: missoesFeitas === missoes.length, icone: "⚔️" },
@@ -377,22 +376,6 @@ export function ArenaModule() {
     carregar();
   };
 
-  const salvarMetas = async () => {
-    if (!editando) return;
-    setMetas(editando);
-    try {
-      localStorage.setItem("inmovya_arena_metas", JSON.stringify(editando));
-      localStorage.setItem("meta_ligacoes_diarias", String(editando.diaLigacoes));
-    } catch {
-      /* ignora */
-    }
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user) await supabase.from("arena_metas" as any).upsert({ user_id: user.id, metas: editando, updated_at: new Date().toISOString() } as any, { onConflict: "user_id" });
-    setEditando(null);
-    toast({ title: "Metas salvas" });
-  };
 
   const metasMes = [
     { m: "vendas" as Metrica, alvo: metas.mesVendas },
@@ -623,7 +606,7 @@ export function ArenaModule() {
           ))}
         </div>
         <p className="text-[11px] text-muted-foreground mt-3 flex items-center gap-1">
-          <Zap className="w-3 h-3" /> XP: ligação 1 · interessado 10 · interação 3 · negociação 25 · visita 60 · documentação 120 · venda 600. Ligações vêm da
+          <Zap className="w-3 h-3" /> XP: ligação 1 · lead 10 · interação 3 · negociação 25 · visita 60 · documento 120 · venda 600. Ligações vêm da
           Oferta Ativa; o resto do botão + ou de Relatórios → Registrar.
         </p>
       </section>
@@ -650,45 +633,7 @@ export function ArenaModule() {
       )}
 
       {/* metas */}
-      <Dialog open={!!editando} onOpenChange={(v) => !v && setEditando(null)}>
-        <DialogContent className="sm:max-w-[440px]">
-          <DialogHeader>
-            <DialogTitle>Suas metas</DialogTitle>
-            <DialogDescription>As do dia viram missões; as do mês mostram se você está no ritmo. Use as da sua planilha de metas.</DialogDescription>
-          </DialogHeader>
-          {editando && (
-            <div className="grid grid-cols-2 gap-3">
-              {(
-                [
-                  ["diaLigacoes", "Ligações por dia"],
-                  ["diaInteressados", "Interessados por dia"],
-                  ["diaInteracoes", "Interações por dia"],
-                  ["mesNegociacoes", "Negociações no mês"],
-                  ["mesVisitas", "Visitas no mês"],
-                  ["mesDocumentacoes", "Documentações no mês"],
-                  ["mesVendas", "Vendas no mês"],
-                ] as [keyof Metas, string][]
-              ).map(([k, rot]) => (
-                <label key={k} className="grid gap-1 text-sm font-semibold">
-                  {rot}
-                  <Input
-                    type="number"
-                    min={0}
-                    value={editando[k]}
-                    onChange={(e) => setEditando({ ...editando, [k]: Math.max(0, parseInt(e.target.value) || 0) })}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditando(null)}>
-              Cancelar
-            </Button>
-            <Button onClick={salvarMetas}>Salvar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DefinirMetasDialog open={!!editando} onOpenChange={(v) => !v && setEditando(null)} onSalvo={setMetas} />
     </div>
   );
 }

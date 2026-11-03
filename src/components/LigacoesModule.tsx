@@ -1,5 +1,6 @@
 import { useState, useEffect, useSyncExternalStore } from "react";
 import { Switch } from "@/components/ui/switch";
+import { DefinirMetasDialog, carregarMetas } from "@/components/arena/DefinirMetasDialog";
 import { anexosDoTemplate, anexosComLink, ehLocal, liberarAnexosTemplate } from "@/lib/templateAnexos";
 import {
   CLASSIFICACOES_DISPARO,
@@ -334,6 +335,7 @@ export function LigacoesModule() {
     if (savedWhatsappTemplate) setTemplateWhatsappId(savedWhatsappTemplate);
     if (savedEmailTemplate) setTemplateEmailId(savedEmailTemplate);
     if (savedMetaLigacoes) setMetaLigacoes(parseInt(savedMetaLigacoes, 10));
+    carregarMetas().then((m) => m.diaLigacoes && setMetaLigacoes(m.diaLigacoes));
 
     const carregarProgressoDiario = async () => {
       try {
@@ -471,14 +473,6 @@ export function LigacoesModule() {
     return template?.assunto ? encodeURIComponent(template.assunto) : '';
   };
 
-  const salvarMetas = () => {
-    localStorage.setItem('meta_ligacoes_diarias', metaLigacoes.toString());
-    setShowMetasDialog(false);
-    toast({
-      title: "Metas salvas",
-      description: "Suas metas diárias foram atualizadas."
-    });
-  };
 
   useEffect(() => {
     if (mailingSelecionado) {
@@ -1239,32 +1233,8 @@ export function LigacoesModule() {
         </div>
       </div>
 
-      {/* Metas Dialog */}
-      <Dialog open={showMetasDialog} onOpenChange={setShowMetasDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Definir Metas Diárias</DialogTitle>
-            <DialogDescription>
-              Configure suas metas para acompanhar seu desempenho.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Meta de Ligações (Diária)</Label>
-              <Input 
-                type="number" 
-                value={metaLigacoes} 
-                onChange={(e) => setMetaLigacoes(Number(e.target.value) || 0)} 
-                min={1} 
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setShowMetasDialog(false)}>Cancelar</Button>
-            <Button onClick={salvarMetas}>Salvar Metas</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Metas Dialog (o mesmo da Arena: ligações, leads, interações, negociações, visitas, documentos e vendas) */}
+      <DefinirMetasDialog open={showMetasDialog} onOpenChange={setShowMetasDialog} onSalvo={(m) => setMetaLigacoes(m.diaLigacoes)} />
 
       {/* Lista Selection */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 sm:gap-4">
