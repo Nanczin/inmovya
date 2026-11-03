@@ -4,18 +4,18 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { METAS_PADRAO, lerMetasLocal, type Metas } from "@/components/ArenaModule";
+import { lerMetasLocal, normalizarMetas, type Metas } from "@/components/ArenaModule";
 
 // "Definir metas" — o mesmo nas telas Arena e Ligações (as metas são uma só).
-// Métricas: ligações, leads, interações, negociações, visitas, documentos e vendas.
+// Do dia: ligações, interações, leads e negociações. Do mês: documentos, vendas e visitas.
 export const CAMPOS_METAS: [keyof Metas, string, string][] = [
   ["diaLigacoes", "📞 Ligações", "por dia"],
-  ["diaInteressados", "🎯 Leads", "por dia"],
   ["diaInteracoes", "💬 Interações", "por dia"],
-  ["mesNegociacoes", "🤝 Negociações", "no mês"],
-  ["mesVisitas", "🏠 Visitas", "no mês"],
+  ["diaInteressados", "🎯 Leads", "por dia"],
+  ["diaNegociacoes", "🤝 Negociações", "por dia"],
   ["mesDocumentacoes", "📄 Documentos", "no mês"],
   ["mesVendas", "🏆 Vendas", "no mês"],
+  ["mesVisitas", "🏠 Visitas", "no mês"],
 ];
 
 /** Lê as metas (banco, se houver; senão as deste navegador). */
@@ -27,7 +27,7 @@ export async function carregarMetas(): Promise<Metas> {
     } = await supabase.auth.getUser();
     if (!user) return local;
     const { data } = await supabase.from("arena_metas" as any).select("metas").eq("user_id", user.id).maybeSingle();
-    return (data as any)?.metas ? { ...METAS_PADRAO, ...(data as any).metas } : local;
+    return (data as any)?.metas ? normalizarMetas((data as any).metas) : local;
   } catch {
     return local;
   }

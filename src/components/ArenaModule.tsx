@@ -39,6 +39,7 @@ export interface Metas {
   diaLigacoes: number;
   diaInteressados: number;
   diaInteracoes: number;
+  diaNegociacoes: number;
   mesVisitas: number;
   mesNegociacoes: number;
   mesDocumentacoes: number;
@@ -48,6 +49,7 @@ export const METAS_PADRAO: Metas = {
   diaLigacoes: 200,
   diaInteressados: 5,
   diaInteracoes: 15,
+  diaNegociacoes: 2,
   mesVisitas: 12,
   mesNegociacoes: 8,
   mesDocumentacoes: 3,
@@ -72,11 +74,19 @@ export const interessado = (r?: string | null) => {
   return n.includes("interessado") && !n.includes("nao") && !n.includes("sem interesse");
 };
 
+/** Completa metas antigas: negociações viraram meta do DIA (se só tinha a do mês, divide pelos ~24 dias úteis). */
+export function normalizarMetas(m: Partial<Metas> | null | undefined): Metas {
+  const r = { ...METAS_PADRAO, ...(m || {}) } as Metas;
+  if (m && (m as any).diaNegociacoes == null && (m as any).mesNegociacoes != null)
+    r.diaNegociacoes = Math.max(1, Math.round(Number((m as any).mesNegociacoes) / 24));
+  return r;
+}
+
 export function lerMetasLocal(): Metas {
   try {
     const m = JSON.parse(localStorage.getItem("inmovya_arena_metas") || "null");
     const dia = Number(localStorage.getItem("meta_ligacoes_diarias")) || METAS_PADRAO.diaLigacoes;
-    return { ...METAS_PADRAO, diaLigacoes: dia, ...(m || {}) };
+    return normalizarMetas({ diaLigacoes: dia, ...(m || {}) });
   } catch {
     return METAS_PADRAO;
   }
@@ -201,7 +211,7 @@ export function ArenaModule() {
     });
     // metas guardadas no banco (vale em qualquer computador); se não houver, fica a deste navegador
     const { data: g } = await supabase.from("arena_metas" as any).select("metas").eq("user_id", user.id).maybeSingle();
-    if ((g as any)?.metas) setMetas({ ...METAS_PADRAO, ...(g as any).metas });
+    if ((g as any)?.metas) setMetas(normalizarMetas((g as any).metas));
     setDias(m);
     setLinhas(reg);
     setCarregando(false);
@@ -259,8 +269,9 @@ export function ArenaModule() {
   // ---- missões de hoje ----
   const missoes = [
     { id: "lig", m: "ligacoes" as Metrica, alvo: metas.diaLigacoes, titulo: "Bater a meta de ligações", dica: "Oferta Ativa — rodadas 11:30 e 16:00" },
-    { id: "int", m: "interessados" as Metrica, alvo: metas.diaInteressados, titulo: "Gerar leads", dica: "Ligações classificadas como Cliente Interessado" },
     { id: "itr", m: "interacoes" as Metrica, alvo: metas.diaInteracoes, titulo: "Gerar interações", dica: "Leads que responderam/conversaram" },
+    { id: "int", m: "interessados" as Metrica, alvo: metas.diaInteressados, titulo: "Gerar leads", dica: "Ligações classificadas como Cliente Interessado" },
+    { id: "neg", m: "negociacoes" as Metrica, alvo: metas.diaNegociacoes, titulo: "Abrir negociações", dica: "Registre com o + em Negociações" },
   ];
   const missoesFeitas = missoes.filter((x) => dHoje[x.m] >= x.alvo).length;
 
@@ -304,7 +315,7 @@ export function ArenaModule() {
     { id: "c3", nome: "Muralha", desc: "5 dias seguidos batendo a meta de ligações", ok: sequencia >= 5, icone: "🛡️" },
     { id: "c4", nome: "Faro de ouro", desc: "10 leads num dia", ok: todos.some((d) => d.interessados >= 10), icone: "🎯" },
     { id: "c5", nome: "Pé na rua", desc: "2 visitas no mesmo dia", ok: todos.some((d) => d.visitas >= 2), icone: "🚶" },
-    { id: "c6", nome: "Mesa cheia", desc: "Meta de negociações do mês", ok: mes.negociacoes >= metas.mesNegociacoes, icone: "🤝" },
+    { id: "c6", nome: "Mesa cheia", desc: "Bater a meta de negociações do dia", ok: metas.diaNegociacoes > 0 && todos.some((d) => d.negociacoes >= metas.diaNegociacoes), icone: "🤝" },
     { id: "c7", nome: "Missão cumprida", desc: "As 3 missões de hoje", ok: missoesFeitas === missoes.length, icone: "⚔️" },
     { id: "c8", nome: "Quebra-recorde", desc: "Superar seu recorde de ligações", ok: recordeLig > 0 && dHoje.ligacoes > recordeLig, icone: "🔥" },
     { id: "c9", nome: "Magnata", desc: "Chegar ao nível Magnata no mês", ok: xpMes >= 9000, icone: "💎" },
@@ -378,10 +389,9 @@ export function ArenaModule() {
 
 
   const metasMes = [
-    { m: "vendas" as Metrica, alvo: metas.mesVendas },
     { m: "documentacoes" as Metrica, alvo: metas.mesDocumentacoes },
+    { m: "vendas" as Metrica, alvo: metas.mesVendas },
     { m: "visitas" as Metrica, alvo: metas.mesVisitas },
-    { m: "negociacoes" as Metrica, alvo: metas.mesNegociacoes },
   ];
 
   const frase =
@@ -554,7 +564,7 @@ export function ArenaModule() {
           <Target className="w-4 h-4 text-primary" /> Metas de {mesNome}
           <span className="text-xs font-normal text-muted-foreground">· {diasRestantes} dias úteis restantes</span>
         </h3>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-3">
           {metasMes.map(({ m, alvo }) => {
             const v = mes[m];
             const pct = Math.min(100, (v / Math.max(1, alvo)) * 100);

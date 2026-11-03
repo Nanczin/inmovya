@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { Abertura } from "./Abertura";
-import { METAS_PADRAO, Metas, chave, ehDiaUtil, interessado, lerMetasLocal } from "@/components/ArenaModule";
+import { Metas, chave, ehDiaUtil, interessado, lerMetasLocal, normalizarMetas } from "@/components/ArenaModule";
 
 // Pop-up que abre toda vez que entra no Inmovya (cada vez que a página é aberta/recarregada): os números que precisa fazer hoje.
 
@@ -46,7 +46,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
       if (!user) return;
       let metas: Metas = lerMetasLocal();
       const g: any = await tentar(async () => (await supabase.from("arena_metas" as any).select("metas").eq("user_id", user.id).maybeSingle()).data, null);
-      if (g?.metas) metas = { ...METAS_PADRAO, ...g.metas };
+      if (g?.metas) metas = normalizarMetas(g.metas);
 
       // hoje: ligações e interessados
       const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
@@ -63,14 +63,17 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
         async () => ((await supabase.from("powerbi_funnel_metrics").select("*").eq("user_id", user.id)).data || []).filter((r: any) => String(r.period || "").startsWith(mesPref)),
         []
       );
-      const soma = { interacoes: 0, negociacoes: 0, visitas: 0, documentacoes: 0, vendas: 0, interacoesHoje: 0 };
+      const soma = { interacoes: 0, negociacoes: 0, visitas: 0, documentacoes: 0, vendas: 0, interacoesHoje: 0, negociacoesHoje: 0 };
       (rows || []).forEach((r: any) => {
         soma.interacoes += Number(r.interacao_ajuste) || 0;
         soma.negociacoes += Number(r.negociacao) || 0;
         soma.visitas += Number(r.visitas) || 0;
         soma.documentacoes += Number(r.documentacao) || 0;
         soma.vendas += Number(r.venda) || 0;
-        if (r.period === `dia:${kHoje}`) soma.interacoesHoje += Number(r.interacao_ajuste) || 0;
+        if (r.period === `dia:${kHoje}`) {
+          soma.interacoesHoje += Number(r.interacao_ajuste) || 0;
+          soma.negociacoesHoje += Number(r.negociacao) || 0;
+        }
       });
 
       // dias úteis que faltam no mês (contando hoje)
@@ -88,14 +91,14 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
       if (!vivo) return;
       setLinhas([
         { icone: "📞", nome: "Ligações", feito: lig, alvo: metas.diaLigacoes, obs: "Oferta Ativa — rodadas 11:30 e 16:00" },
-        { icone: "🎯", nome: "Leads", feito: int, alvo: metas.diaInteressados },
         { icone: "💬", nome: "Interações", feito: soma.interacoesHoje, alvo: metas.diaInteracoes },
+        { icone: "🎯", nome: "Leads", feito: int, alvo: metas.diaInteressados },
+        { icone: "🤝", nome: "Negociações", feito: soma.negociacoesHoje, alvo: metas.diaNegociacoes },
       ]);
       setMesLinhas([
-        { icone: "🏆", nome: "Vendas", feito: soma.vendas, alvo: metas.mesVendas, obs: porDia(soma.vendas, metas.mesVendas) },
         { icone: "📄", nome: "Documentos", feito: soma.documentacoes, alvo: metas.mesDocumentacoes, obs: porDia(soma.documentacoes, metas.mesDocumentacoes) },
+        { icone: "🏆", nome: "Vendas", feito: soma.vendas, alvo: metas.mesVendas, obs: porDia(soma.vendas, metas.mesVendas) },
         { icone: "🚶", nome: "Visitas", feito: soma.visitas, alvo: metas.mesVisitas, obs: porDia(soma.visitas, metas.mesVisitas) },
-        { icone: "🤝", nome: "Negociações", feito: soma.negociacoes, alvo: metas.mesNegociacoes, obs: porDia(soma.negociacoes, metas.mesNegociacoes) },
       ]);
       window.setTimeout(() => vivo && setAberto(true), 600);
     };
@@ -142,7 +145,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
             <h2 className="text-3xl sm:text-4xl font-black mt-1">{saudacao}!</h2>
             <p className="text-white/70 text-sm mt-1">Estes são os números de hoje para vencer a batalha.</p>
 
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
               {linhas.map((l, i) => {
                 const falta = Math.max(0, l.alvo - l.feito);
                 const pct = Math.min(100, (l.feito / Math.max(1, l.alvo)) * 100);
@@ -162,7 +165,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
             </div>
 
             <div className="mt-4 text-xs uppercase tracking-widest text-white/50 font-bold">Metas do mês</div>
-            <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="mt-2 grid grid-cols-3 gap-2">
               {mesLinhas.map((l, i) => (
                 <div key={l.nome} className="md-linha rounded-xl bg-white/5 border border-white/10 p-2.5" style={{ animationDelay: `${700 + i * 100}ms` }}>
                   <div className="flex items-center justify-between gap-1">
