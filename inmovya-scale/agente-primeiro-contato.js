@@ -413,54 +413,79 @@ chrome.alarms.onAlarm.addListener(a => { if (a.name === ETQ_PROJETO_ALARME) etqP
 let etqProjetoEmCurso = false;
 const etqEspera = (min, max) => new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
 
+// Registra no Inmovya como foi a última rodada (aparece na tela "Sincronizar etiquetas de projeto").
+async function etqDiag(cred, texto) {
+  try { await agenteRpc(cred, 'agente_etiquetas_diag', { p_token: cred.token, p_texto: String(texto).slice(0, 400) }); } catch (_) { /* SQL antigo */ }
+}
+
 async function etqProjetoRodada() {
   if (etqProjetoEmCurso) return;
   etqProjetoEmCurso = true;
+  let cred = null;
   try {
-    const cred = await agenteCredenciais();
+    cred = await agenteCredenciais();
     if (!cred) return;
     let fila;
     try {
       fila = await agenteRpc(cred, 'agente_etiquetas_projeto_pendentes', { p_token: cred.token, p_limite: 10 });
-    } catch (_) {
-      return; // SQL ainda não rodado
+    } catch (err) {
+      await etqDiag(cred, `erro ao buscar a fila: ${err.message}`);
+      return;
     }
     const itens = fila?.itens || [];
     if (!itens.length) return;
     // a aba normal do WhatsApp Web (não as janelinhas de envio)
     const abas = (await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' })).filter(t => !/inmovya_auto=1/.test(t.url || ''));
-    if (!abas.length) return; // WhatsApp Web fechado: espera
-    let resp = null;
-    for (const t of abas) {
-      try {
-        resp = await chrome.tabs.sendMessage(t.id, { action: 'projeto_etiquetar_lote', itens, reserva: fila.reserva || '' });
-        if (resp?.ok) break;
-      } catch (_) { /* aba antiga sem o código novo: tenta a próxima */ }
-    }
-    if (!resp?.ok) return;
+    if (!abas.length) { await etqDiag(cred, `${itens.length}+ leads esperando: o WhatsApp Web não está aberto neste Chrome`); return; }
     const salvar = (id, status, aviso) =>
-      agenteRpc(cred, 'agente_etiqueta_projeto_resultado', { p_token: cred.token, p_lead: id, p_status: status, p_aviso: aviso || null }).catch(() => {});
-    for (const x of resp.resultados || []) {
-      if (x.status !== 'precisa_janela') {
-        await salvar(x.id, x.status, x.aviso);
-        continue;
+      agenteRpc(cred, 'agente_etiqueta_projeto_resultado', { p_token: cred.token, p_lead: id, p_status: status, p_aviso: aviso || null });
+    // um lead por vez: pergunta à aba do WhatsApp, grava o resultado na hora e espera um pouco
+    const perguntar = async item => {
+      let ultimoErro = '';
+      for (const t of abas) {
+        try {
+          const r = await chrome.tabs.sendMessage(t.id, { action: 'projeto_etiquetar_um', item, reserva: fila.reserva || '' });
+          if (r?.ok) return r.resultado;
+          ultimoErro = r?.error || 'sem resposta';
+        } catch (err) {
+          ultimoErro = /Receiving end does not exist|Could not establish connection/i.test(err.message)
+            ? 'a aba do WhatsApp Web está com a versão antiga do Inmovya Scale: aperte F5 nela'
+            : err.message;
+        }
       }
-      // WhatsApp sem o atalho interno: abre a conversa (que já existe) numa janelinha e marca pela tela (só adiciona)
-      let status = 'erro';
-      let aviso = x.aviso || null;
+      throw new Error(ultimoErro || 'a aba do WhatsApp não respondeu');
+    };
+    const contagem = { aplicada: 0, ja_estava: 0, sem_conversa: 0, erro: 0 };
+    for (const item of itens) {
+      let x;
       try {
-        const rr = await naVezWA(() => agenteNaConversa({ phone: agenteTelefone(x.telefone), background: true, nome: '', etiquetas: x.faltam || [] }, 'agent_save_and_label_tab'));
-        const naoExiste = (rr?.etiqueta?.alteracoes || []).some(a => /não existe/.test(a));
-        if (rr?.etiqueta && rr.etiqueta.ok !== false && !naoExiste) status = 'aplicada';
-        else aviso = [aviso, rr?.etiqueta?.error || (naoExiste ? 'etiqueta não encontrada na tela' : 'não consegui marcar pela tela')].filter(Boolean).join('; ');
+        x = await perguntar(item);
       } catch (err) {
-        aviso = [aviso, err.message].filter(Boolean).join('; ');
+        await etqDiag(cred, `parou: ${err.message}`);
+        return; // tenta de novo no próximo minuto, sem gastar tentativa do lead
       }
-      await salvar(x.id, status, aviso);
-      await etqEspera(4000, 9000);
+      if (x.status === 'precisa_janela') {
+        // WhatsApp sem o atalho interno: abre a conversa (que já existe) numa janelinha e marca pela tela (só adiciona)
+        let status = 'erro';
+        let aviso = x.aviso || null;
+        try {
+          const rr = await naVezWA(() => agenteNaConversa({ phone: agenteTelefone(x.telefone), background: true, nome: '', etiquetas: x.faltam || [] }, 'agent_save_and_label_tab'));
+          const naoExiste = (rr?.etiqueta?.alteracoes || []).some(a => /não existe/.test(a));
+          if (rr?.etiqueta && rr.etiqueta.ok !== false && !naoExiste) status = 'aplicada';
+          else aviso = [aviso, rr?.etiqueta?.error || (naoExiste ? 'etiqueta não encontrada na tela' : 'não consegui marcar pela tela')].filter(Boolean).join('; ');
+        } catch (err) {
+          aviso = [aviso, err.message].filter(Boolean).join('; ');
+        }
+        x = { id: x.id, status, aviso };
+      }
+      try { await salvar(x.id, x.status, x.aviso); } catch (err) { await etqDiag(cred, `não consegui gravar o resultado: ${err.message}`); return; }
+      contagem[x.status] = (contagem[x.status] || 0) + 1;
+      if (x.status === 'aplicada') await etqEspera(3000, 7000); // intervalo entre conversas etiquetadas
     }
+    await etqDiag(cred, `ok: ${itens.length} conferidos (aplicadas ${contagem.aplicada}, já estavam ${contagem.ja_estava}, sem conversa ${contagem.sem_conversa}, erro ${contagem.erro})`);
   } catch (err) {
     console.warn('[Inmovya etiquetas de projeto]', err?.message || err);
+    if (cred) await etqDiag(cred, `erro: ${err?.message || err}`);
   } finally {
     etqProjetoEmCurso = false;
   }

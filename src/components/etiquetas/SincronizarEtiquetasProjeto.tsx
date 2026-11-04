@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, Tags, CheckCircle2, AlertTriangle, PhoneOff } from "lucide-react";
-import { resumoEtiquetasProjeto, sincronizarEtiquetasProjeto, type ResumoSincronizacao } from "@/lib/etiquetasProjeto";
+import { diagnosticoExtensao, resumoEtiquetasProjeto, sincronizarEtiquetasProjeto, type ResumoSincronizacao } from "@/lib/etiquetasProjeto";
 
 // Botão "Sincronizar etiquetas de projeto": põe todos os leads com projeto na fila; o Inmovya Scale
 // (com o WhatsApp Web aberto) põe as etiquetas que faltam, com intervalo entre uma conversa e outra.
@@ -14,12 +14,14 @@ export function SincronizarEtiquetasProjeto() {
   const [rodando, setRodando] = useState(false);
   const [inicio, setInicio] = useState<number | null>(null);
   const [parado, setParado] = useState(false);
+  const [diag, setDiag] = useState<{ texto: string | null; em: string | null }>({ texto: null, em: null });
   const ultimoPendente = useRef<{ n: number; t: number }>({ n: -1, t: 0 });
 
   const atualizar = useCallback(async () => {
     try {
       const r = await resumoEtiquetasProjeto();
       setResumo(r);
+      diagnosticoExtensao().then(setDiag).catch(() => {});
       if (r.pendentes !== ultimoPendente.current.n) ultimoPendente.current = { n: r.pendentes, t: Date.now() };
       // 3 minutos sem andar: a extensão provavelmente não está trabalhando
       setParado(r.pendentes > 0 && Date.now() - ultimoPendente.current.t > 3 * 60 * 1000);
@@ -77,6 +79,12 @@ export function SincronizarEtiquetasProjeto() {
         <div className="h-2 rounded-full bg-muted overflow-hidden">
           <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
         </div>
+      )}
+
+      {diag.texto && (
+        <p className="text-xs text-muted-foreground">
+          Inmovya Scale{diag.em ? ` (${new Date(diag.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })})` : ""}: {diag.texto}
+        </p>
       )}
 
       {parado && (

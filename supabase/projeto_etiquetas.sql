@@ -361,3 +361,24 @@ set etiqueta_projeto = nullif(public.resolver_etiqueta_projeto(l.user_id, l.proj
     etiqueta_projeto_aviso = null;
 
 notify pgrst, 'reload schema';
+
+-- ---------- diagnóstico: a extensão conta como foi a última rodada (mostrado na tela de Sincronizar) ----------
+alter table public.agente_config add column if not exists etiquetas_diag text;
+alter table public.agente_config add column if not exists etiquetas_diag_em timestamptz;
+create or replace function public.agente_etiquetas_diag(p_token text, p_texto text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := public.agente_usuario(p_token);
+begin
+  if v_uid is null then
+    raise exception 'token do agente inválido' using errcode = '28000';
+  end if;
+  update public.agente_config set etiquetas_diag = left(p_texto, 400), etiquetas_diag_em = now() where user_id = v_uid;
+end;
+$$;
+grant execute on function public.agente_etiquetas_diag(text, text) to anon, authenticated;
+notify pgrst, 'reload schema';

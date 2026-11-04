@@ -84,6 +84,16 @@ export async function etiquetasDoWhatsApp(): Promise<{ nomes: string[]; em: stri
   return { nomes: ((data as any)?.etiquetas_wa as string[]) || [], em: (data as any)?.etiquetas_wa_em || null };
 }
 
+/** O que a extensão contou da última rodada (ex.: "ok: 10 conferidos…" ou "parou: aperte F5…"). */
+export async function diagnosticoExtensao(): Promise<{ texto: string | null; em: string | null }> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { texto: null, em: null };
+  const { data } = await supabase.from("agente_config" as any).select("etiquetas_diag, etiquetas_diag_em").eq("user_id", user.id).maybeSingle();
+  return { texto: (data as any)?.etiquetas_diag || null, em: (data as any)?.etiquetas_diag_em || null };
+}
+
 /** Botão "Sincronizar etiquetas de projeto": põe todos os leads com projeto na fila do Inmovya Scale. */
 export async function sincronizarEtiquetasProjeto(): Promise<{ inicio: string; na_fila: number }> {
   const { data, error } = await supabase.rpc("etiquetas_projeto_sincronizar" as any);
