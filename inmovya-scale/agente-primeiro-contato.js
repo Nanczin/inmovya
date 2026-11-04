@@ -179,36 +179,63 @@ function agenteEtiquetaDaOrigem(lead) {
   return null;
 }
 
-/** Devolve um aviso para a tela do Inmovya quando algo não deu certo (ou null). Nunca desfaz o envio. */
-async function agenteSalvarEEtiquetar(tel, lead) {
-  const etiqueta = agenteEtiquetaDaOrigem(lead);
+// Projeto de origem do lead (o Inmovya guarda o nome abreviado: supabase/projeto_origem.sql).
+async function agenteSiglaDoProjeto(lead) {
+  if (!lead?.id) return null;
+  try {
+    const cred = await agenteCredenciais();
+    if (!cred) return null;
+    const r = await agenteRpc(cred, 'agente_projeto_lead', { p_token: cred.token, p_lead: lead.id });
+    return r?.sigla ? String(r.sigla).trim() || null : null;
+  } catch (_) {
+    return null; // SQL ainda não rodado: segue só com a etiqueta da origem
+  }
+}
+
+/** Devolve um aviso para a tela do Inmovya quando algo não deu certo (ou null). Nunca desfaz o envio.
+ *  Etiquetas: a da origem (Bitrix / Meta Ads / Midrah) e a do projeto (nome abreviado; criada se faltar). */
+async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
+  const origem = opcoes.semOrigem ? null : agenteEtiquetaDaOrigem(lead);
+  const projeto = await agenteSiglaDoProjeto(lead);
+  const etiquetas = [origem, projeto].filter(Boolean);
+  const salvar = opcoes.semSalvar ? '' : (lead.nome || '');
+  if (!etiquetas.length && !salvar) return null; // nada a fazer no WhatsApp
   try {
     let r = null;
     try {
-      r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: lead.nome || '', etiqueta }, 'agent_save_and_label_tab'));
+      r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: salvar, etiquetas, criar: projeto ? [projeto] : [] }, 'agent_save_and_label_tab'));
     } catch (_) { r = null; }
-    const etiquetaOk = r?.etiqueta && r.etiqueta.ok !== false && !(r.etiqueta.alteracoes || []).some(a => /não existe/.test(a));
+    const faltando = res => (res?.alteracoes || []).some(a => /não existe/.test(a));
+    const etiquetaOk = !etiquetas.length || (r?.etiqueta && r.etiqueta.ok !== false && !faltando(r.etiqueta));
     // "já estava salvo" só vale se o nome do topo bater com o do lead (lead novo quase nunca está salvo;
     // o WhatsApp pode mostrar o nome do perfil do lead no topo de um número não salvo)
     const primeiro = agenteSemAcento(String(lead.nome || '').split(/\s+/)[0] || '');
     const salvoDeVerdade = c => c?.salvo && (!c.jaEstava || (primeiro && agenteSemAcento(c.motivo || '').includes(primeiro)));
     // não salvou (ou a etiqueta falhou) na janelinha do canto? tenta de novo numa aba normal
-    if (!r || (r.contato && !salvoDeVerdade(r.contato)) || (etiqueta && !etiquetaOk)) {
+    if (!r || (salvar && r.contato && !salvoDeVerdade(r.contato)) || !etiquetaOk) {
       await new Promise(resolve => setTimeout(resolve, 3000));
-      const r2 = await naVezWA(() => agenteNaConversa({ phone: tel, background: false, nome: lead.nome || '', etiqueta: etiquetaOk ? null : etiqueta }, 'agent_save_and_label_tab'));
-      r = { contato: r2?.contato || r?.contato, etiqueta: etiquetaOk ? r.etiqueta : (r2?.etiqueta || r?.etiqueta) };
+      const r2 = await naVezWA(() => agenteNaConversa({ phone: tel, background: false, nome: salvar, etiquetas: etiquetaOk ? [] : etiquetas, criar: projeto && !etiquetaOk ? [projeto] : [] }, 'agent_save_and_label_tab'));
+      r = { contato: r2?.contato || r?.contato, etiqueta: etiquetaOk ? r?.etiqueta : (r2?.etiqueta || r?.etiqueta), criadas: [...(r?.criadas || []), ...(r2?.criadas || [])] };
     }
     const problemas = [];
-    if (r?.contato && !r.contato.salvo) problemas.push(`contato de ${lead.nome || tel} não foi salvo (${r.contato.motivo})`);
-    else if (r?.contato && !salvoDeVerdade(r.contato)) problemas.push(`contato de ${lead.nome || tel} pode não ter sido salvo (${r.contato.motivo})`);
-    else if (r?.contato?.salvo && r.contato.sincronizado === false && !r.contato.jaEstava)
-      problemas.push(`contato de ${lead.nome || tel} salvo no WhatsApp, mas não achei a opção de sincronizar com a agenda do celular`);
-    const naoExiste = (r?.etiqueta?.alteracoes || []).find(a => /não existe/.test(a));
-    if (etiqueta && naoExiste) problemas.push(`${naoExiste} — crie a etiqueta "${etiqueta}" no WhatsApp Business para o agente marcar`);
-    else if (etiqueta && r?.etiqueta && r.etiqueta.ok === false) problemas.push(`não consegui marcar a etiqueta ${etiqueta} (${r.etiqueta.error || 'erro'})`);
-    return problemas.length ? `1º contato: ${problemas.join('; ')}.` : null;
+    if (salvar) {
+      if (r?.contato && !r.contato.salvo) problemas.push(`contato de ${lead.nome || tel} não foi salvo (${r.contato.motivo})`);
+      else if (r?.contato && !salvoDeVerdade(r.contato)) problemas.push(`contato de ${lead.nome || tel} pode não ter sido salvo (${r.contato.motivo})`);
+      else if (r?.contato?.salvo && r.contato.sincronizado === false && !r.contato.jaEstava)
+        problemas.push(`contato de ${lead.nome || tel} salvo no WhatsApp, mas não achei a opção de sincronizar com a agenda do celular`);
+    }
+    for (const c of r?.criadas || []) if (c && c.ok === false && c.aviso) problemas.push(c.aviso);
+    const naoExiste = (r?.etiqueta?.alteracoes || []).filter(a => /não existe/.test(a));
+    for (const n of naoExiste) {
+      const nome = (n.match(/"([^"]+)"/) || [])[1] || '';
+      if (projeto && agenteSemAcento(nome) === agenteSemAcento(projeto)) continue; // já avisado acima
+      problemas.push(`${n} — crie a etiqueta "${nome}" no WhatsApp Business para o agente marcar`);
+    }
+    if (etiquetas.length && r?.etiqueta && r.etiqueta.ok === false) problemas.push(`não consegui marcar a etiqueta ${etiquetas.join(' e ')} (${r.etiqueta.error || 'erro'})`);
+    const prefixo = opcoes.prefixo || '1º contato';
+    return problemas.length ? `${prefixo}: ${problemas.join('; ')}.` : null;
   } catch (err) {
-    return `1º contato: não consegui salvar o contato/etiqueta de ${lead.nome || tel}: ${err.message}`;
+    return `${opcoes.prefixo || '1º contato'}: não consegui salvar o contato/etiqueta de ${lead.nome || tel}: ${err.message}`;
   }
 }
 
@@ -427,7 +454,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           p_email: l.email || '',
           p_empreendimento: l.empreendimento || ''
         });
-        resultados.push({ id: l.id, ok: true, acao: r?.acao });
+        // lead novo: etiqueta do projeto no WhatsApp (sem mandar mensagem e sem salvar o contato)
+        let aviso = null;
+        if (r?.acao === 'criado' && r?.id) {
+          aviso = await agenteSalvarEEtiquetar(tel, { id: r.id, nome: l.nome || '' }, { semOrigem: true, semSalvar: true, prefixo: 'Midrah' });
+        }
+        resultados.push({ id: l.id, ok: true, acao: r?.acao, aviso });
       } catch (err) {
         resultados.push({ id: l.id, ok: false, erro: err.message });
       }

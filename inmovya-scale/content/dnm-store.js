@@ -143,6 +143,42 @@
     }).filter(m => (m.texto && !/^data:|^\/9j\//.test(m.texto)) || m.anuncio);
   }
 
+  // ---------- Etiqueta do projeto (usada pelo 1º contato e pela captura do Midrah) ----------
+  const normal = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const espera = ms => new Promise(r => setTimeout(r, ms));
+  function moduloCriarEtiqueta() {
+    for (const n of ['WAWebBizLabelEditingAction', 'WAWebLabelEditingAction', 'WAWebBizLabelActions']) {
+      const m = exigir(n);
+      if (m && typeof m.labelAddAction === 'function') return m;
+    }
+    try {
+      const mapa = (exigir('__debug') || {}).modulesMap || {};
+      for (const nome of Object.keys(mapa).filter(n => /label/i.test(n) && /action|edit/i.test(n))) {
+        const m = exigir(nome);
+        if (m && typeof m.labelAddAction === 'function') return m;
+      }
+    } catch (_) { /* sem mapa de módulos nesta versão */ }
+    return null;
+  }
+  const etiquetaPeloNome = nome => lista(colecoes().Label).find(l => normal(pegar(l, 'name')) === normal(nome));
+
+  async function garantirEtiqueta(nome, limite = 20) {
+    nome = String(nome || '').trim().slice(0, 25);
+    if (!nome) return { ok: false, erro: 'sem nome' };
+    const labels = lista(colecoes().Label);
+    if (!labels.length) return { ok: false, erro: 'as etiquetas do WhatsApp ainda não carregaram' };
+    if (etiquetaPeloNome(nome)) return { ok: true, existe: true };
+    if (labels.length >= limite) return { ok: false, cheio: true, total: labels.length };
+    const mod = moduloCriarEtiqueta();
+    if (!mod) return { ok: false, erro: 'não achei como criar etiqueta nesta versão do WhatsApp Web' };
+    await mod.labelAddAction(nome, labels.length % 20);
+    for (let i = 0; i < 30; i++) {
+      if (etiquetaPeloNome(nome)) return { ok: true, criada: true };
+      await espera(300);
+    }
+    return { ok: false, erro: 'pedi para criar, mas a etiqueta não apareceu' };
+  }
+
   window.addEventListener('message', async ev => {
     if (ev.source !== window || !ev.data || ev.data.__isDnm !== 'pedido') return;
     const { id, op, args = {} } = ev.data;
@@ -152,6 +188,7 @@
       else if (op === 'contatos') resposta = { ok: true, dados: contatosDaEtiqueta(args.labelId) };
       else if (op === 'abrir') resposta = { ok: true, dados: await abrirConversa(args.chatId) };
       else if (op === 'mensagens') resposta = { ok: true, dados: mensagens(args.chatId) };
+      else if (op === 'garantirEtiqueta') resposta = { ok: true, dados: await garantirEtiqueta(args.nome, args.limite) };
       else resposta = { ok: false, erro: 'operação desconhecida' };
     } catch (err) {
       resposta = { ok: false, erro: String(err && err.message || err) };

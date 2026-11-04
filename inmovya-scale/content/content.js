@@ -343,10 +343,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (!input) throw new Error('A conversa do WhatsApp não abriu.');
         await dom.delay(1500);
         // etiqueta PRIMEIRO: depois de salvar o contato o WhatsApp tira a conversa da tela
-        const etiqueta = request.etiqueta ? await agenteEtiquetar([request.etiqueta], []) : { ok: true, alteracoes: [] };
+        let lista = Array.isArray(request.etiquetas) ? request.etiquetas.filter(Boolean) : (request.etiqueta ? [request.etiqueta] : []);
+        // etiqueta do projeto: cria no WhatsApp Business se ainda não existir (máximo de 20 etiquetas)
+        const criadas = [];
+        for (const nome of request.criar || []) {
+          const g = await agenteGarantirEtiqueta(nome);
+          criadas.push(g);
+          if (!g.ok) lista = lista.filter(n => agenteNorm(n) !== agenteNorm(nome));
+        }
+        const etiqueta = lista.length ? await agenteEtiquetar(lista, []) : { ok: true, alteracoes: [] };
         await dom.delay(800);
         const contato = request.nome ? await agenteSalvarContato(request.nome, request.phone) : { salvo: false, motivo: 'sem nome' };
-        sendResponse({ ok: true, final: true, contato, etiqueta });
+        sendResponse({ ok: true, final: true, contato, etiqueta, criadas });
       } catch (error) {
         sendResponse({ ok: false, error: error.message });
       }
@@ -407,6 +415,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+// ---------- Etiqueta do projeto: cria no WhatsApp Business se faltar (pela memória do WhatsApp, dnm-store.js) ----------
+function agenteLoja(op, args = {}, timeout = 8000) {
+  return new Promise(resolve => {
+    const id = `ag${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const fim = setTimeout(() => { window.removeEventListener('message', ouvir); resolve({ ok: false, erro: 'sem resposta' }); }, timeout);
+    function ouvir(ev) {
+      if (ev.source !== window || !ev.data || ev.data.__isDnm !== 'resposta' || ev.data.id !== id) return;
+      clearTimeout(fim);
+      window.removeEventListener('message', ouvir);
+      resolve(ev.data);
+    }
+    window.addEventListener('message', ouvir);
+    window.postMessage({ __isDnm: 'pedido', id, op, args }, '*');
+  });
+}
+
+/** { ok, existe?, criada?, aviso? } — nunca passa de 20 etiquetas. */
+async function agenteGarantirEtiqueta(nome) {
+  const r = await agenteLoja('garantirEtiqueta', { nome, limite: 20 });
+  const d = r?.dados || {};
+  if (r?.ok && d.ok) return { ok: true, nome, existe: !!d.existe, criada: !!d.criada };
+  if (d.cheio) return { ok: false, nome, aviso: `a etiqueta do projeto "${nome}" não foi criada: o WhatsApp Business já tem ${d.total} etiquetas (o máximo é 20). Apague uma que não usa e o próximo lead deste projeto já recebe` };
+  return { ok: false, nome, aviso: `não consegui criar a etiqueta "${nome}" no WhatsApp (${d.erro || r?.erro || 'erro'}) — crie à mão com esse nome` };
+}
 
 // ---------- Agente: funções do lote ----------
 const agenteDelay = ms => new Promise(r => setTimeout(r, ms));

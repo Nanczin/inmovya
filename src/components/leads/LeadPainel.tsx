@@ -47,7 +47,8 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
   if (!lead) return null;
 
   const etapa = getStageForStatus(lead.status);
-  const empreendimento = empreendimentoDoLead(lead.observacoes, lead.nome);
+  const empreendimento = (lead as any).projeto_origem || empreendimentoDoLead(lead.observacoes, lead.nome);
+  const sigla: string | null = (lead as any).projeto_sigla || null;
   const zap = whatsappDe(lead.telefone);
   const lembretes = [...(lead.tasks || [])].sort((a: any, b: any) => (a.due_date || "").localeCompare(b.due_date || ""));
 
@@ -157,7 +158,18 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
             <section className="divide-y">
               {lead.telefone && linha(Phone, <span className="tabular-nums">{lead.telefone}</span>)}
               {lead.email && linha(Mail, lead.email)}
-              {empreendimento && linha(Building2, empreendimento)}
+              {empreendimento &&
+                linha(
+                  Building2,
+                  <>
+                    <span className="text-muted-foreground">Projeto de origem:</span> <b>{empreendimento}</b>
+                    {sigla && (
+                      <span className="ml-2 rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary" title="Etiqueta no Inmovya e no WhatsApp">
+                        {sigla}
+                      </span>
+                    )}
+                  </>
+                )}
               {lead.created_at && linha(CalendarClock, <>Chegou em {format(parseISO(lead.created_at), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}</>)}
               {!!lead.tags?.length &&
                 linha(

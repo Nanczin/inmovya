@@ -1529,6 +1529,11 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                         <div>
                           <span className="font-medium">Origem:</span> {lead.origem || 'N/A'}
                         </div>
+                        {(lead as any).projeto_origem && (
+                          <div className="truncate sm:col-span-2" title={(lead as any).projeto_origem}>
+                            <span className="font-medium">Projeto:</span> {(lead as any).projeto_origem}
+                          </div>
+                        )}
                         <div>
                           <span className="font-medium">Cadastro:</span> {new Date(lead.created_at).toLocaleDateString('pt-BR')}
                         </div>
@@ -1622,6 +1627,11 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                       </td>
                       <td className="p-3">
                         <Badge variant="outline">{lead.origem || 'N/A'}</Badge>
+                        {(lead as any).projeto_origem && (
+                          <div className="mt-1 text-xs text-muted-foreground truncate max-w-[180px]" title={`Projeto de origem: ${(lead as any).projeto_origem}`}>
+                            🏢 {(lead as any).projeto_sigla || (lead as any).projeto_origem}
+                          </div>
+                        )}
                       </td>
                       <td className="p-3">
                         <Badge className={`${getStatusColor(lead.status)} text-xs`}>

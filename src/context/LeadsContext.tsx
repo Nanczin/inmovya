@@ -10,6 +10,8 @@ export interface Lead {
     tags?: string[];
     dataCadastro?: string; // Mapped from created_at
     origem?: string;
+    projeto_origem?: string | null; // projeto (empreendimento) de onde o lead veio — Bitrix/Midrah
+    projeto_sigla?: string | null;  // nome abreviado (tag no Inmovya e etiqueta no WhatsApp)
     created_at?: string;
     observacoes?: string;
     temperatura?: 'quente' | 'morno' | 'frio';

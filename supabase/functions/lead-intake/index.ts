@@ -212,8 +212,51 @@ async function bitrixCall(method: string, params: Record<string, string>) {
 
 const firstMulti = (arr?: { VALUE?: string }[]) => (Array.isArray(arr) && arr[0]?.VALUE) || "";
 
+// Projeto (empreendimento) no Bitrix: muitos negócios vêm com o título "Informar Empreendimento";
+// então procura também nos campos do Bitrix cujo nome fala de empreendimento/projeto/produto/imóvel.
+const semAcentoBx = (t: string) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const naoEhProjetoBx = (t: string) => {
+  const n = semAcentoBx(t).replace(/\s+/g, " ");
+  return !n || /^(informar|informe|preencher|definir|a definir|sem|nenhum|qual|cadastrar)( o| um)? (empreendimento|empreendimentos|projeto|imovel|produto)$/.test(n) ||
+    /^(n a|na|n\/a|nao informado|a definir|indefinido|nenhum|sem|null|undefined|empreendimento|projeto|0)$/.test(n) || /^\d+$/.test(n);
+};
+const camposProjetoCache: Record<string, { codigo: string; itens: Record<string, string> }[]> = {};
+async function camposDeProjeto(entidade: "deal" | "lead") {
+  if (camposProjetoCache[entidade]) return camposProjetoCache[entidade];
+  const lista: { codigo: string; itens: Record<string, string> }[] = [];
+  try {
+    const campos = (await bitrixCall(`crm.${entidade}.fields`, {})) ?? {};
+    for (const [codigo, f] of Object.entries<any>(campos)) {
+      const rotulo = semAcentoBx([f?.title, f?.listLabel, f?.formLabel, f?.filterLabel].filter(Boolean).join(" "));
+      if (!/empreend|projeto|produto|imovel|lancamento|condominio/.test(rotulo)) continue;
+      const itens: Record<string, string> = {};
+      for (const it of f?.items ?? []) itens[String(it.ID)] = String(it.VALUE ?? "");
+      lista.push({ codigo, itens });
+    }
+  } catch (err) {
+    console.log("bitrix campos de projeto:", err instanceof Error ? err.message : err);
+  }
+  camposProjetoCache[entidade] = lista;
+  return lista;
+}
+async function projetoDoBitrix(entidade: "deal" | "lead", reg: any): Promise<string> {
+  for (const { codigo, itens } of await camposDeProjeto(entidade)) {
+    const brutos = Array.isArray(reg?.[codigo]) ? reg[codigo] : [reg?.[codigo]];
+    for (const b of brutos) {
+      if (b == null || b === "") continue;
+      const v = String(itens[String(b)] ?? b).trim();
+      if (!naoEhProjetoBx(v)) return v;
+    }
+  }
+  for (const v of [reg?.SOURCE_DESCRIPTION, reg?.UTM_CAMPAIGN, reg?.UTM_CONTENT]) {
+    const t = String(v ?? "").trim();
+    if (t && t.length <= 80 && !naoEhProjetoBx(t)) return t;
+  }
+  return "";
+}
+
 async function fetchBitrixLead(event: string, id: string): Promise<IncomingLead> {
-  let nome = "", telefone = "", email = "", titulo = "", campanha = "", comentario = "";
+  let nome = "", telefone = "", email = "", titulo = "", campanha = "", comentario = "", projeto = "";
   if (event.includes("LEAD")) {
     const l = await bitrixCall("crm.lead.get", { id });
     nome = [l.NAME, l.SECOND_NAME, l.LAST_NAME].filter(Boolean).join(" ") || l.TITLE;
@@ -222,11 +265,13 @@ async function fetchBitrixLead(event: string, id: string): Promise<IncomingLead>
     titulo = l.TITLE ?? "";
     campanha = l.UTM_CAMPAIGN ?? "";
     comentario = l.COMMENTS ?? "";
+    projeto = await projetoDoBitrix("lead", l);
   } else {
     const d = await bitrixCall("crm.deal.get", { id });
     titulo = d.TITLE ?? "";
     campanha = d.UTM_CAMPAIGN ?? "";
     comentario = d.COMMENTS ?? "";
+    projeto = await projetoDoBitrix("deal", d);
     if (d.CONTACT_ID && d.CONTACT_ID !== "0") {
       const c = await bitrixCall("crm.contact.get", { id: d.CONTACT_ID });
       nome = [c.NAME, c.SECOND_NAME, c.LAST_NAME].filter(Boolean).join(" ");
@@ -237,6 +282,11 @@ async function fetchBitrixLead(event: string, id: string): Promise<IncomingLead>
   }
   const clean = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const obs = [titulo && titulo !== nome && titulo, campanha && `Campanha: ${campanha}`, comentario && clean(comentario)].filter(Boolean).join(" | ");
+  // título sem o projeto ("Informar Empreendimento")? usa o que veio dos campos do Bitrix
+  const tituloTemProjeto = String(titulo).split("|").map((p) => p.trim()).some((p) => p && !/^\d+\s*:/.test(p) && !naoEhProjetoBx(p) && semAcentoBx(p) !== semAcentoBx(nome));
+  if (projeto && !tituloTemProjeto) {
+    return { nome, telefone, email, origem: "roleta", observacoes: `Empreendimento: ${projeto}\n${obs}`, tags: ["roleta"], fonte: "Bitrix" };
+  }
   return {
     nome,
     telefone,
