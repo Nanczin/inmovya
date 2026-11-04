@@ -11,7 +11,9 @@ export interface Lead {
     dataCadastro?: string; // Mapped from created_at
     origem?: string;
     projeto_origem?: string | null; // projeto (empreendimento) de onde o lead veio — Bitrix/Midrah
-    projeto_sigla?: string | null;  // nome abreviado (tag no Inmovya e etiqueta no WhatsApp)
+    etiqueta_projeto?: string[] | null; // etiqueta(s) de projeto do WhatsApp (resolvidas pelo banco)
+    etiqueta_projeto_status?: string | null;
+    etiqueta_projeto_aviso?: string | null;
     created_at?: string;
     observacoes?: string;
     temperatura?: 'quente' | 'morno' | 'frio';

@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { EmailComposer } from "@/components/EmailComposer";
 import { LeadFilters } from "@/components/LeadFilters";
+import { EtiquetaProjetoBadges } from "@/components/etiquetas/EtiquetaProjetoBadges";
+import { SincronizarEtiquetasProjeto } from "@/components/etiquetas/SincronizarEtiquetasProjeto";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { useLeads } from "@/context/LeadsContext";
 import { useNotifications } from "@/hooks/useNotifications";
@@ -108,6 +110,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     telefone: "",
     email: "",
     origem: "",
+    projeto_origem: "",
     observacoes: "",
     tags: [] as string[],
     renda: "",
@@ -117,11 +120,13 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     status: "",
     tagsRaw: undefined as string | undefined
   });
+  const [etiquetasProjetoAberto, setEtiquetasProjetoAberto] = useState(false);
   const [activeFilters, setActiveFilters] = useState({
     status: [] as string[],
     origem: [] as string[],
     etapa: [] as string[],
     tags: [] as string[],
+    etiquetaProjeto: [] as string[],
     dataInicio: "",
     dataFim: ""
   });
@@ -130,6 +135,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     telefone: "",
     email: "",
     origem: "",
+    projeto_origem: "",
     observacoes: "",
     tags: [] as string[],
     renda: "",
@@ -269,6 +275,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       activeFilters.origem.length +
       activeFilters.etapa.length +
       activeFilters.tags.length +
+      (activeFilters.etiquetaProjeto?.length || 0) +
       (activeFilters.dataInicio ? 1 : 0) +
       (activeFilters.dataFim ? 1 : 0);
   };
@@ -339,6 +346,13 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       if (!match) return false;
     }
 
+    // Filtro por etiqueta de projeto
+    if (activeFilters.etiquetaProjeto?.length) {
+      const etqs: string[] = (lead as any).etiqueta_projeto || [];
+      const ok = activeFilters.etiquetaProjeto.some((e) => (e === "__sem__" ? etqs.length === 0 : etqs.includes(e)));
+      if (!ok) return false;
+    }
+
     // Filtro por tags
     if (activeFilters.tags.length > 0) {
       const selectedTags = new Set(activeFilters.tags.map(normalizeLeadTag));
@@ -396,6 +410,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           telefone: newLead.telefone,
           email: newLead.email,
           origem: newLead.origem || null,
+          projeto_origem: newLead.projeto_origem?.trim() || null,
           observacoes: newLead.observacoes || null,
           ultimo_contato: new Date().toISOString(),
           status: newLead.status || 'Validação',
@@ -424,6 +439,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         telefone: "",
         email: "",
         origem: "",
+        projeto_origem: "",
         observacoes: "",
         tags: [],
         tagsRaw: "",
@@ -506,6 +522,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       telefone: lead.telefone,
       email: lead.email,
       origem: lead.origem || "",
+      projeto_origem: lead.projeto_origem || "",
       observacoes: lead.observacoes || "",
       tags: tagsNormais,
       renda: rendaTag ? rendaTag.replace("Renda: ", "") : "",
@@ -614,6 +631,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           telefone: editLead.telefone,
           email: editLead.email,
           origem: editLead.origem || null,
+          projeto_origem: editLead.projeto_origem?.trim() || null,
           observacoes: editLead.observacoes || null,
           status: editLead.status || 'Validação',
           tags: [
@@ -943,6 +961,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         "entrada (r$)", "entrada (valor)", "entrada reais"
       ]);
       const colInteresse = findColumn(["interesse", "projeto", "imovel", "imóvel", "property"]);
+      const colProjeto = findColumn(["projeto_origem", "projeto de origem", "projeto", "empreendimento"]);
       const colObservacoes = findColumn(["observacoes", "observações", "obs", "notas", "notes", "comentarios", "comentários"]);
       const colTags = findColumn(["tags", "etiquetas", "labels", "categorias"]);
 
@@ -1034,6 +1053,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
 
         const interesse = colInteresse ? row[colInteresse] : "";
         const observacoes = colObservacoes ? row[colObservacoes] : "";
+        const projetoOrigem = colProjeto ? String(row[colProjeto] ?? "").trim() : "";
         const tagsRaw = colTags ? row[colTags] : "";
 
         if (!nome && !email && !telefoneRaw) return null;
@@ -1094,6 +1114,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           status: 'novo',
           user_id: user.id,
           observacoes: observacoes || '',
+          ...(projetoOrigem ? { projeto_origem: projetoOrigem } : {}),
           tags: tags
         };
       }).filter(Boolean);
@@ -1299,6 +1320,15 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   </div>
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="projeto_origem">Projeto de origem</Label>
+                  <Input
+                    id="projeto_origem"
+                    value={newLead.projeto_origem}
+                    onChange={(e) => setNewLead({ ...newLead, projeto_origem: e.target.value })}
+                    placeholder="Ex.: Sync Ibirapuera (a etiqueta do WhatsApp sai daqui)"
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="observacoes">Observações</Label>
                   <Textarea
                     id="observacoes"
@@ -1401,6 +1431,22 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button variant="outline" className="col-span-2 sm:col-span-1 w-full sm:w-auto" onClick={() => setEtiquetasProjetoAberto(true)}>
+              <Tag className="w-4 h-4 mr-2" />
+              Etiquetas de projeto
+            </Button>
+            <Dialog open={etiquetasProjetoAberto} onOpenChange={setEtiquetasProjetoAberto}>
+              <DialogContent className="w-[95vw] max-w-[640px] max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Sincronizar etiquetas de projeto</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">
+                  Confere todos os leads com projeto de origem e põe no WhatsApp a etiqueta de projeto que estiver faltando (só adiciona; não mexe em
+                  20%, 50%, Lead, Bitrix…). Não manda mensagem. As regras ficam em Configurações → Etiquetas de projeto.
+                </p>
+                <SincronizarEtiquetasProjeto />
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -1530,8 +1576,9 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                           <span className="font-medium">Origem:</span> {lead.origem || 'N/A'}
                         </div>
                         {(lead as any).projeto_origem && (
-                          <div className="truncate sm:col-span-2" title={(lead as any).projeto_origem}>
-                            <span className="font-medium">Projeto:</span> {(lead as any).projeto_origem}
+                          <div className="sm:col-span-2 flex flex-wrap items-center gap-1.5" title={(lead as any).projeto_origem}>
+                            <span className="font-medium">Projeto:</span> <span className="truncate">{(lead as any).projeto_origem}</span>
+                            <EtiquetaProjetoBadges lead={lead} />
                           </div>
                         )}
                         <div>
@@ -1628,8 +1675,9 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                       <td className="p-3">
                         <Badge variant="outline">{lead.origem || 'N/A'}</Badge>
                         {(lead as any).projeto_origem && (
-                          <div className="mt-1 text-xs text-muted-foreground truncate max-w-[180px]" title={`Projeto de origem: ${(lead as any).projeto_origem}`}>
-                            🏢 {(lead as any).projeto_sigla || (lead as any).projeto_origem}
+                          <div className="mt-1 text-xs text-muted-foreground max-w-[220px]" title={`Projeto de origem: ${(lead as any).projeto_origem}`}>
+                            <div className="truncate">Projeto: {(lead as any).projeto_origem}</div>
+                            <EtiquetaProjetoBadges lead={lead} />
                           </div>
                         )}
                       </td>
@@ -1766,6 +1814,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         availableTags={getAvailableTags()}
         availableOrigins={getAvailableOrigins()}
         availableStages={funnelStages.map(s => s.name)}
+        availableProjectLabels={Array.from(new Set(leads.flatMap((l: any) => l.etiqueta_projeto || []))).sort((a: any, b: any) => String(a).localeCompare(String(b), "pt-BR")) as string[]}
       />
 
       {/* Edit Lead Dialog */}
@@ -1884,6 +1933,15 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   />
                 )}
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-projeto_origem">Projeto de origem</Label>
+              <Input
+                id="edit-projeto_origem"
+                value={editLead.projeto_origem}
+                onChange={(e) => setEditLead({ ...editLead, projeto_origem: e.target.value })}
+                placeholder="Ex.: Sync Ibirapuera (a etiqueta do WhatsApp sai daqui)"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-observacoes">Observações</Label>

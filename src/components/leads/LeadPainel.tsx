@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { NEGOCIO_STAGES, getStageForStatus } from "@/lib/negociosStages";
 import { empreendimentoDoLead, tirarDaEsteira } from "@/lib/esteiras";
+import { EtiquetaProjetoBadges } from "@/components/etiquetas/EtiquetaProjetoBadges";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { LeadTimeline } from "@/components/LeadTimeline";
 
@@ -48,7 +49,6 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
 
   const etapa = getStageForStatus(lead.status);
   const empreendimento = (lead as any).projeto_origem || empreendimentoDoLead(lead.observacoes, lead.nome);
-  const sigla: string | null = (lead as any).projeto_sigla || null;
   const zap = whatsappDe(lead.telefone);
   const lembretes = [...(lead.tasks || [])].sort((a: any, b: any) => (a.due_date || "").localeCompare(b.due_date || ""));
 
@@ -163,11 +163,9 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
                   Building2,
                   <>
                     <span className="text-muted-foreground">Projeto de origem:</span> <b>{empreendimento}</b>
-                    {sigla && (
-                      <span className="ml-2 rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary" title="Etiqueta do WhatsApp deste projeto (também é tag no Inmovya)">
-                        {sigla}
-                      </span>
-                    )}
+                    <span className="ml-2">
+                      <EtiquetaProjetoBadges lead={lead} />
+                    </span>
                   </>
                 )}
               {lead.created_at && linha(CalendarClock, <>Chegou em {format(parseISO(lead.created_at), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}</>)}

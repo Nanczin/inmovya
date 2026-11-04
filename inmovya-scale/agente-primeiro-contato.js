@@ -179,26 +179,12 @@ function agenteEtiquetaDaOrigem(lead) {
   return null;
 }
 
-// Projeto de origem do lead → a etiqueta do WhatsApp que você JÁ TEM para esse projeto
-// (o Inmovya casa o projeto com a lista das suas etiquetas: supabase/projeto_etiqueta_existente.sql).
-async function agenteSiglaDoProjeto(lead) {
-  if (!lead?.id) return null;
-  try {
-    const cred = await agenteCredenciais();
-    if (!cred) return null;
-    const r = await agenteRpc(cred, 'agente_projeto_lead', { p_token: cred.token, p_lead: lead.id });
-    return r?.sigla ? String(r.sigla).trim() || null : null;
-  } catch (_) {
-    return null; // SQL ainda não rodado: segue só com a etiqueta da origem
-  }
-}
-
 /** Devolve um aviso para a tela do Inmovya quando algo não deu certo (ou null). Nunca desfaz o envio.
- *  Etiquetas: a da origem (Bitrix / Meta Ads / Midrah) e a do projeto (uma que já existe; nunca cria). */
+ *  Etiqueta: só a da origem (Bitrix / Meta Ads / Midrah). A etiqueta de PROJETO é posta pela fila de
+ *  "etiquetas de projeto" (etqProjetoRodada, mais abaixo), igual para todos os leads. */
 async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
   const origem = opcoes.semOrigem ? null : agenteEtiquetaDaOrigem(lead);
-  const projeto = await agenteSiglaDoProjeto(lead);
-  const etiquetas = [origem, projeto].filter(Boolean);
+  const etiquetas = [origem].filter(Boolean);
   const salvar = opcoes.semSalvar ? '' : (lead.nome || '');
   if (!etiquetas.length && !salvar) return null; // nada a fazer no WhatsApp
   try {
@@ -415,6 +401,71 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
+// ---------- Etiquetas de projeto (projeto_origem → etiqueta do WhatsApp) ----------
+// O Inmovya resolve qual etiqueta cada lead precisa (supabase/projeto_etiquetas.sql) e deixa "pendente".
+// A cada 1 minuto, até 10 leads: a aba do WhatsApp Web acha a conversa pelo número (últimos 8 dígitos)
+// e só ADICIONA a etiqueta de projeto. Sem conversa: não cria conversa nem manda mensagem (tenta de novo
+// em 6 h). Etiqueta que não existe no WhatsApp: não cria; usa a reserva ("Outros projetos") e avisa.
+// Entre uma conversa e outra espera alguns segundos (aleatório) para não forçar o WhatsApp.
+const ETQ_PROJETO_ALARME = 'inmovya-etiquetas-projeto';
+chrome.alarms.create(ETQ_PROJETO_ALARME, { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener(a => { if (a.name === ETQ_PROJETO_ALARME) etqProjetoRodada(); });
+let etqProjetoEmCurso = false;
+const etqEspera = (min, max) => new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
+
+async function etqProjetoRodada() {
+  if (etqProjetoEmCurso) return;
+  etqProjetoEmCurso = true;
+  try {
+    const cred = await agenteCredenciais();
+    if (!cred) return;
+    let fila;
+    try {
+      fila = await agenteRpc(cred, 'agente_etiquetas_projeto_pendentes', { p_token: cred.token, p_limite: 10 });
+    } catch (_) {
+      return; // SQL ainda não rodado
+    }
+    const itens = fila?.itens || [];
+    if (!itens.length) return;
+    // a aba normal do WhatsApp Web (não as janelinhas de envio)
+    const abas = (await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' })).filter(t => !/inmovya_auto=1/.test(t.url || ''));
+    if (!abas.length) return; // WhatsApp Web fechado: espera
+    let resp = null;
+    for (const t of abas) {
+      try {
+        resp = await chrome.tabs.sendMessage(t.id, { action: 'projeto_etiquetar_lote', itens, reserva: fila.reserva || '' });
+        if (resp?.ok) break;
+      } catch (_) { /* aba antiga sem o código novo: tenta a próxima */ }
+    }
+    if (!resp?.ok) return;
+    const salvar = (id, status, aviso) =>
+      agenteRpc(cred, 'agente_etiqueta_projeto_resultado', { p_token: cred.token, p_lead: id, p_status: status, p_aviso: aviso || null }).catch(() => {});
+    for (const x of resp.resultados || []) {
+      if (x.status !== 'precisa_janela') {
+        await salvar(x.id, x.status, x.aviso);
+        continue;
+      }
+      // WhatsApp sem o atalho interno: abre a conversa (que já existe) numa janelinha e marca pela tela (só adiciona)
+      let status = 'erro';
+      let aviso = x.aviso || null;
+      try {
+        const rr = await naVezWA(() => agenteNaConversa({ phone: agenteTelefone(x.telefone), background: true, nome: '', etiquetas: x.faltam || [] }, 'agent_save_and_label_tab'));
+        const naoExiste = (rr?.etiqueta?.alteracoes || []).some(a => /não existe/.test(a));
+        if (rr?.etiqueta && rr.etiqueta.ok !== false && !naoExiste) status = 'aplicada';
+        else aviso = [aviso, rr?.etiqueta?.error || (naoExiste ? 'etiqueta não encontrada na tela' : 'não consegui marcar pela tela')].filter(Boolean).join('; ');
+      } catch (err) {
+        aviso = [aviso, err.message].filter(Boolean).join('; ');
+      }
+      await salvar(x.id, status, aviso);
+      await etqEspera(4000, 9000);
+    }
+  } catch (err) {
+    console.warn('[Inmovya etiquetas de projeto]', err?.message || err);
+  } finally {
+    etqProjetoEmCurso = false;
+  }
+}
+
 // ---------- Captura do CRM Midrah (a aba do Midrah manda os negócios novos; aqui cadastra no Inmovya) ----------
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request?.action !== 'midrah_capturar') return;
@@ -467,12 +518,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           p_email: l.email || '',
           p_empreendimento: l.empreendimento || ''
         });
-        // lead novo: etiqueta do projeto no WhatsApp (sem mandar mensagem e sem salvar o contato)
-        let aviso = null;
-        if (r?.acao === 'criado' && r?.id) {
-          aviso = await agenteSalvarEEtiquetar(tel, { id: r.id, nome: l.nome || '' }, { semOrigem: true, semSalvar: true, prefixo: 'Midrah' });
-        }
-        resultados.push({ id: l.id, ok: true, acao: r?.acao, aviso });
+        // a etiqueta de projeto vem pela fila de etiquetas de projeto (o banco marca o lead novo como pendente)
+        resultados.push({ id: l.id, ok: true, acao: r?.acao });
       } catch (err) {
         resultados.push({ id: l.id, ok: false, erro: err.message });
       }

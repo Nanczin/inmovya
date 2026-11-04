@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { EtiquetasProjetoConfig } from "@/components/etiquetas/EtiquetasProjetoConfig";
 import { Database, HardDrive, Moon, Sun, Monitor, RefreshCw, AlertTriangle, Check } from "lucide-react";
 
 type Uso = {
@@ -221,6 +222,8 @@ export function ConfiguracoesModule() {
           <Medidor usado={uso.storage_bytes} limite={limites.storage} />
         </section>
       )}
+
+      <EtiquetasProjetoConfig />
 
       <section className="rounded-2xl border bg-card p-5 sm:p-6 shadow-card">
         <h2 className="font-bold text-lg leading-tight mb-1">Aparência</h2>

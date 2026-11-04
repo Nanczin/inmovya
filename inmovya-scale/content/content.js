@@ -362,6 +362,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Etiquetas de projeto: acha a conversa pelo número e só ADICIONA a etiqueta de projeto (sem abrir conversa,
+  // sem mandar nada). Responde o resultado de cada lead para a extensão gravar no Inmovya.
+  if (request.action === 'projeto_etiquetar_lote') {
+    (async () => {
+      try {
+        sendResponse({ ok: true, resultados: await projetoEtiquetarLote(request.itens || [], request.reserva || '') });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
+    return true;
+  }
+
   // Lote do agente: numa única janela do WhatsApp, procura cada contato pela busca (sem recarregar).
   //  op "scan":   lê na lista de conversas se a última mensagem é sua (tique) ou do lead, e o texto dela
   //  op "labels": abre a conversa e troca as etiquetas
@@ -463,6 +476,50 @@ async function agenteGarantirEtiqueta(nome) {
   setTimeout(enviar, 20000);
   setInterval(enviar, 10 * 60 * 1000);
 })();
+
+// ---------- Etiquetas de projeto ----------
+async function projetoEtiquetarLote(itens, reserva) {
+  const norm = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const espera = ms => new Promise(r => setTimeout(r, ms));
+  const lista = await agenteLoja('etiquetas', {}, 8000);
+  const nomes = lista?.ok && Array.isArray(lista.dados) ? lista.dados.map(e => String(e.nome || '').trim()).filter(Boolean) : [];
+  if (!nomes.length) return itens.map(i => ({ id: i.id, status: 'erro', aviso: 'as etiquetas do WhatsApp ainda não carregaram' }));
+  const real = new Map(nomes.map(n => [norm(n), n]));
+  const reservaReal = reserva ? real.get(norm(reserva)) : null;
+  const resultados = [];
+  for (const item of itens) {
+    const c = await agenteLoja('acharConversa', { telefone: item.telefone }, 8000);
+    if (!c?.ok) { resultados.push({ id: item.id, status: 'erro', aviso: c?.erro || 'o WhatsApp não respondeu' }); continue; }
+    if (!c.dados) { resultados.push({ id: item.id, status: 'sem_conversa' }); continue; }
+    const avisos = [];
+    const quer = [];
+    for (const e of item.etiquetas || []) {
+      const r = real.get(norm(e));
+      if (r) { if (!quer.includes(r)) quer.push(r); continue; }
+      avisos.push(`a etiqueta "${e}" não existe no WhatsApp${reservaReal ? `; usei "${reservaReal}"` : ''}`);
+      if (reservaReal && !quer.includes(reservaReal)) quer.push(reservaReal);
+    }
+    if (!quer.length) { resultados.push({ id: item.id, status: 'erro', aviso: avisos.join('; ') || 'nenhuma etiqueta para pôr' }); continue; }
+    const tem = new Set((c.dados.etiquetas || []).map(norm));
+    const faltam = quer.filter(q => !tem.has(norm(q)));
+    if (!faltam.length) { resultados.push({ id: item.id, status: 'ja_estava', aviso: avisos.join('; ') || null }); continue; }
+    let semApi = false;
+    let erro = null;
+    for (const f of faltam) {
+      const a = await agenteLoja('adicionarEtiqueta', { chatId: c.dados.chatId, nome: f }, 12000);
+      if (a?.ok && a.dados?.ok) { await espera(700); continue; }
+      if (a?.dados?.semApi) semApi = true;
+      else erro = a?.dados?.erro || a?.erro || 'erro';
+      break;
+    }
+    if (semApi) resultados.push({ id: item.id, status: 'precisa_janela', telefone: item.telefone, faltam, aviso: avisos.join('; ') || null });
+    else if (erro) resultados.push({ id: item.id, status: 'erro', aviso: [erro, ...avisos].join('; ') });
+    else resultados.push({ id: item.id, status: 'aplicada', aviso: avisos.join('; ') || null });
+    // intervalo entre uma conversa e outra (aleatório)
+    await espera(3000 + Math.random() * 4000);
+  }
+  return resultados;
+}
 
 // ---------- Agente: funções do lote ----------
 const agenteDelay = ms => new Promise(r => setTimeout(r, ms));

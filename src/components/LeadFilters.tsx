@@ -17,6 +17,7 @@ interface FilterState {
   origem: string[];
   etapa: string[];
   tags: string[];
+  etiquetaProjeto?: string[];
   dataInicio: string;
   dataFim: string;
 }
@@ -29,9 +30,10 @@ interface LeadFiltersProps {
   availableTags: string[];
   availableOrigins: string[];
   availableStages: string[];
+  availableProjectLabels?: string[];
 }
 
-export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, availableTags, availableOrigins, availableStages = [] }: LeadFiltersProps) {
+export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, availableTags, availableOrigins, availableStages = [], availableProjectLabels = [] }: LeadFiltersProps) {
   const [filters, setFilters] = useState<FilterState>(activeFilters);
 
 
@@ -39,8 +41,8 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, av
     setFilters(prev => ({
       ...prev,
       [category]: checked
-        ? [...(prev[category] as string[]), value]
-        : (prev[category] as string[]).filter(item => item !== value)
+        ? [...((prev[category] as string[]) || []), value]
+        : ((prev[category] as string[]) || []).filter(item => item !== value)
     }));
   };
 
@@ -57,6 +59,7 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, av
       origem: [],
       etapa: [],
       tags: [],
+      etiquetaProjeto: [],
       dataInicio: "",
       dataFim: ""
     });
@@ -72,6 +75,7 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, av
       filters.origem.length +
       filters.etapa.length +
       filters.tags.length +
+      (filters.etiquetaProjeto?.length || 0) +
       (filters.dataInicio ? 1 : 0) +
       (filters.dataFim ? 1 : 0);
   };
@@ -139,6 +143,29 @@ export function LeadFilters({ isOpen, onClose, onApplyFilters, activeFilters, av
                     />
                     <Label htmlFor={`status-${etapa}`} className="text-sm">
                       {etapa}
+                    </Label>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Etiqueta de projeto */}
+          <div>
+            <Label className="text-base font-medium">Etiqueta de projeto</Label>
+            <div className="grid grid-cols-2 gap-3 mt-2 max-h-40 overflow-y-auto">
+              {availableProjectLabels.length === 0 ? (
+                <div className="col-span-2 text-sm text-muted-foreground p-2">Nenhum lead com etiqueta de projeto</div>
+              ) : (
+                ["__sem__", ...availableProjectLabels].map((et) => (
+                  <div key={et} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`etqp-${et}`}
+                      checked={(filters.etiquetaProjeto || []).includes(et)}
+                      onCheckedChange={(checked) => handleCheckboxChange('etiquetaProjeto', et, checked as boolean)}
+                    />
+                    <Label htmlFor={`etqp-${et}`} className="text-sm">
+                      {et === "__sem__" ? <span className="text-muted-foreground">Sem etiqueta de projeto</span> : et}
                     </Label>
                   </div>
                 ))

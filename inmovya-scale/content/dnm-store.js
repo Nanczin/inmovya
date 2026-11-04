@@ -179,6 +179,48 @@
     return { ok: false, erro: 'pedi para criar, mas a etiqueta não apareceu' };
   }
 
+  // ---------- Etiquetas de projeto: achar a conversa pelo número e SÓ ADICIONAR uma etiqueta ----------
+  const idTexto = c => {
+    const id = pegar(c, 'id');
+    return id ? String(id._serialized || pegar(id, '_serialized') || id) : '';
+  };
+  const ultimos8 = t => String(t || '').replace(/\D/g, '').slice(-8);
+  function nomesDasEtiquetas(chat) {
+    const ids = (pegar(chat, 'labels') || []).map(String);
+    if (!ids.length) return [];
+    return lista(colecoes().Label).filter(l => ids.includes(String(pegar(l, 'id')))).map(l => String(pegar(l, 'name') || '').trim());
+  }
+  // só conversas que JÁ existem na sua lista (nunca cria conversa)
+  function acharConversa(telefone) {
+    const alvo = ultimos8(telefone);
+    if (alvo.length < 8) return null;
+    const chats = lista(colecoes().Chat);
+    if (!chats.length) throw new Error('as conversas do WhatsApp ainda não carregaram');
+    const chat = chats.filter(ehPessoa).find(c => ultimos8(telefoneDoChat(c)) === alvo);
+    if (!chat) return null;
+    return { chatId: idTexto(chat), etiquetas: nomesDasEtiquetas(chat) };
+  }
+  async function adicionarEtiqueta(chatId, nome) {
+    const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);
+    if (!chat) return { ok: false, erro: 'conversa não encontrada' };
+    const etq = etiquetaPeloNome(nome);
+    if (!etq) return { ok: false, erro: `etiqueta "${nome}" não existe` };
+    const idEtq = String(pegar(etq, 'id'));
+    if ((pegar(chat, 'labels') || []).map(String).includes(idEtq)) return { ok: true, jaEstava: true };
+    const L = colecoes().Label;
+    if (!L || typeof L.addOrRemoveLabels !== 'function') return { ok: false, semApi: true };
+    try {
+      await L.addOrRemoveLabels([{ id: idEtq, type: 'add' }], [chat]);
+    } catch (err) {
+      return { ok: false, semApi: true, erro: String(err && err.message || err) };
+    }
+    for (let i = 0; i < 20; i++) {
+      if ((pegar(chat, 'labels') || []).map(String).includes(idEtq)) return { ok: true };
+      await espera(250);
+    }
+    return { ok: false, semApi: true, erro: 'a etiqueta não apareceu na conversa' };
+  }
+
   window.addEventListener('message', async ev => {
     if (ev.source !== window || !ev.data || ev.data.__isDnm !== 'pedido') return;
     const { id, op, args = {} } = ev.data;
@@ -188,6 +230,8 @@
       else if (op === 'contatos') resposta = { ok: true, dados: contatosDaEtiqueta(args.labelId) };
       else if (op === 'abrir') resposta = { ok: true, dados: await abrirConversa(args.chatId) };
       else if (op === 'mensagens') resposta = { ok: true, dados: mensagens(args.chatId) };
+      else if (op === 'acharConversa') resposta = { ok: true, dados: acharConversa(args.telefone) };
+      else if (op === 'adicionarEtiqueta') resposta = { ok: true, dados: await adicionarEtiqueta(args.chatId, args.nome) };
       else if (op === 'garantirEtiqueta') resposta = { ok: true, dados: await garantirEtiqueta(args.nome, args.limite) };
       else resposta = { ok: false, erro: 'operação desconhecida' };
     } catch (err) {

@@ -6,7 +6,7 @@
 --                    e ETIQUETA no WhatsApp (o WhatsApp Business aceita só 20 etiquetas).
 -- Vale para os leads novos (gatilho) e para os que já estão no Inmovya (no fim do arquivo).
 -- Não apaga nada: só preenche os campos novos e acrescenta a tag.
--- Rode no SQL Editor → colar tudo → Run. DEPOIS rode supabase/projeto_etiqueta_existente.sql (usa as etiquetas que já existem no WhatsApp).
+-- Rode no SQL Editor → colar tudo → Run. DEPOIS rode supabase/projeto_etiquetas.sql (regras projeto → etiqueta do WhatsApp; substitui o gatilho e não mexe em tags).
 
 alter table public.leads add column if not exists projeto_origem text;
 alter table public.leads add column if not exists projeto_sigla text;
