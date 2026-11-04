@@ -164,7 +164,7 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
                   <>
                     <span className="text-muted-foreground">Projeto de origem:</span> <b>{empreendimento}</b>
                     {sigla && (
-                      <span className="ml-2 rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary" title="Etiqueta no Inmovya e no WhatsApp">
+                      <span className="ml-2 rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary" title="Etiqueta do WhatsApp deste projeto (também é tag no Inmovya)">
                         {sigla}
                       </span>
                     )}

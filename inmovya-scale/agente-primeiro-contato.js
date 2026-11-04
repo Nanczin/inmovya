@@ -179,7 +179,8 @@ function agenteEtiquetaDaOrigem(lead) {
   return null;
 }
 
-// Projeto de origem do lead (o Inmovya guarda o nome abreviado: supabase/projeto_origem.sql).
+// Projeto de origem do lead → a etiqueta do WhatsApp que você JÁ TEM para esse projeto
+// (o Inmovya casa o projeto com a lista das suas etiquetas: supabase/projeto_etiqueta_existente.sql).
 async function agenteSiglaDoProjeto(lead) {
   if (!lead?.id) return null;
   try {
@@ -193,7 +194,7 @@ async function agenteSiglaDoProjeto(lead) {
 }
 
 /** Devolve um aviso para a tela do Inmovya quando algo não deu certo (ou null). Nunca desfaz o envio.
- *  Etiquetas: a da origem (Bitrix / Meta Ads / Midrah) e a do projeto (nome abreviado; criada se faltar). */
+ *  Etiquetas: a da origem (Bitrix / Meta Ads / Midrah) e a do projeto (uma que já existe; nunca cria). */
 async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
   const origem = opcoes.semOrigem ? null : agenteEtiquetaDaOrigem(lead);
   const projeto = await agenteSiglaDoProjeto(lead);
@@ -203,7 +204,7 @@ async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
   try {
     let r = null;
     try {
-      r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: salvar, etiquetas, criar: projeto ? [projeto] : [] }, 'agent_save_and_label_tab'));
+      r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: salvar, etiquetas }, 'agent_save_and_label_tab'));
     } catch (_) { r = null; }
     const faltando = res => (res?.alteracoes || []).some(a => /não existe/.test(a));
     const etiquetaOk = !etiquetas.length || (r?.etiqueta && r.etiqueta.ok !== false && !faltando(r.etiqueta));
@@ -214,8 +215,8 @@ async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
     // não salvou (ou a etiqueta falhou) na janelinha do canto? tenta de novo numa aba normal
     if (!r || (salvar && r.contato && !salvoDeVerdade(r.contato)) || !etiquetaOk) {
       await new Promise(resolve => setTimeout(resolve, 3000));
-      const r2 = await naVezWA(() => agenteNaConversa({ phone: tel, background: false, nome: salvar, etiquetas: etiquetaOk ? [] : etiquetas, criar: projeto && !etiquetaOk ? [projeto] : [] }, 'agent_save_and_label_tab'));
-      r = { contato: r2?.contato || r?.contato, etiqueta: etiquetaOk ? r?.etiqueta : (r2?.etiqueta || r?.etiqueta), criadas: [...(r?.criadas || []), ...(r2?.criadas || [])] };
+      const r2 = await naVezWA(() => agenteNaConversa({ phone: tel, background: false, nome: salvar, etiquetas: etiquetaOk ? [] : etiquetas }, 'agent_save_and_label_tab'));
+      r = { contato: r2?.contato || r?.contato, etiqueta: etiquetaOk ? r?.etiqueta : (r2?.etiqueta || r?.etiqueta) };
     }
     const problemas = [];
     if (salvar) {
@@ -224,12 +225,10 @@ async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
       else if (r?.contato?.salvo && r.contato.sincronizado === false && !r.contato.jaEstava)
         problemas.push(`contato de ${lead.nome || tel} salvo no WhatsApp, mas não achei a opção de sincronizar com a agenda do celular`);
     }
-    for (const c of r?.criadas || []) if (c && c.ok === false && c.aviso) problemas.push(c.aviso);
     const naoExiste = (r?.etiqueta?.alteracoes || []).filter(a => /não existe/.test(a));
     for (const n of naoExiste) {
       const nome = (n.match(/"([^"]+)"/) || [])[1] || '';
-      if (projeto && agenteSemAcento(nome) === agenteSemAcento(projeto)) continue; // já avisado acima
-      problemas.push(`${n} — crie a etiqueta "${nome}" no WhatsApp Business para o agente marcar`);
+      problemas.push(`${n} — confira o nome da etiqueta "${nome}" no WhatsApp Business`);
     }
     if (etiquetas.length && r?.etiqueta && r.etiqueta.ok === false) problemas.push(`não consegui marcar a etiqueta ${etiquetas.join(' e ')} (${r.etiqueta.error || 'erro'})`);
     const prefixo = opcoes.prefixo || '1º contato';
@@ -401,6 +400,20 @@ async function agenteFilaCaptura() {
     agenteFilaEmCurso = false;
   }
 }
+
+// ---------- Lista das etiquetas do WhatsApp → Inmovya (para casar cada projeto com a etiqueta certa) ----------
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request?.action !== 'agente_sync_etiquetas') return;
+  (async () => {
+    const cred = await agenteCredenciais();
+    if (!cred) return { ok: false, error: 'sem configuração do 1º contato neste Chrome' };
+    const r = await agenteRpc(cred, 'agente_salvar_etiquetas', { p_token: cred.token, p_nomes: (request.nomes || []).map(String) });
+    return { ok: !!r?.ok, ...r };
+  })()
+    .then(r => sendResponse(r))
+    .catch(err => sendResponse({ ok: false, error: err.message }));
+  return true;
+});
 
 // ---------- Captura do CRM Midrah (a aba do Midrah manda os negócios novos; aqui cadastra no Inmovya) ----------
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

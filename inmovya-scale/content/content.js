@@ -441,6 +441,29 @@ async function agenteGarantirEtiqueta(nome) {
   return { ok: false, nome, aviso: `não consegui criar a etiqueta "${nome}" no WhatsApp (${d.erro || r?.erro || 'erro'}) — crie à mão com esse nome` };
 }
 
+// Manda para o Inmovya a lista das suas etiquetas do WhatsApp (só nomes), para ele casar o projeto
+// de cada lead com a etiqueta que você já tem. Só na aba normal do WhatsApp (não nas janelinhas de envio).
+(() => {
+  if (/inmovya_auto=1/.test(location.href)) return;
+  let ultima = '';
+  let ultimaVez = 0;
+  const enviar = async () => {
+    try {
+      const r = await agenteLoja('etiquetas', {}, 8000);
+      const nomes = r?.ok && Array.isArray(r.dados) ? r.dados.map(e => String(e.nome || '').trim()).filter(Boolean) : [];
+      if (!nomes.length) return;
+      const assinatura = nomes.slice().sort().join('|');
+      if (assinatura === ultima && Date.now() - ultimaVez < 6 * 3600 * 1000) return;
+      chrome.runtime.sendMessage({ action: 'agente_sync_etiquetas', nomes }, resp => {
+        if (chrome.runtime.lastError) return;
+        if (resp?.ok) { ultima = assinatura; ultimaVez = Date.now(); console.log('[Inmovya] etiquetas do WhatsApp enviadas ao Inmovya', resp); }
+      });
+    } catch (_) { /* tenta de novo no próximo ciclo */ }
+  };
+  setTimeout(enviar, 20000);
+  setInterval(enviar, 10 * 60 * 1000);
+})();
+
 // ---------- Agente: funções do lote ----------
 const agenteDelay = ms => new Promise(r => setTimeout(r, ms));
 const agenteNorm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
