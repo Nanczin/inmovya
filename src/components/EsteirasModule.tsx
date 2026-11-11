@@ -71,6 +71,18 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/whatsappOcupado";
 import {
+  ConfigPiloto,
+  lerPiloto,
+  salvarPiloto,
+  horarioDaVez,
+  marcarHorarioFeito,
+  proximoEnvio,
+  leadRespondeu,
+  marcarRespondeu,
+  avisar,
+  pedirPermissaoDeAviso,
+} from "@/lib/pilotoAutomatico";
+import {
   assinarExecucao,
   lerExecucao,
   setEstadoEsteira,
@@ -106,6 +118,7 @@ import {
   CalendarClock,
   Settings2,
   Users,
+  Bot,
 } from "lucide-react";
 
 type LeadEsteira = Lead & {
@@ -407,19 +420,44 @@ export function EsteirasModule() {
       }, 1000);
     });
 
-  const rodar = async () => {
+  // ---------------- PILOTO AUTOMÁTICO ----------------
+  const [piloto, setPilotoState] = useState<ConfigPiloto>(lerPiloto);
+  const mudarPiloto = (c: Partial<ConfigPiloto>) => {
+    setPilotoState((atual) => {
+      const n = { ...atual, ...c };
+      salvarPiloto(n);
+      return n;
+    });
+  };
+  const [respondidosHoje, setRespondidosHoje] = useState<string[]>([]);
+  const [verPiloto, setVerPiloto] = useState(false);
+  const [novoHorario, setNovoHorario] = useState("");
+
+  const rodar = async (opts: { auto?: boolean } = {}) => {
+    let selecionadosAgora = [...selecionados];
     // libera a leitura dos arquivos do computador (o Chrome pede logo após o clique)
-    const comAnexo = selecionados.flatMap((i) => i.passo.anexos || []);
+    const comAnexo = selecionadosAgora.flatMap((i) => i.passo.anexos || []);
     const unicos = Array.from(new Map(comAnexo.map((a) => [a.local_id || a.path || a.name, a])).values());
     if (unicos.length) {
       const faltando = await liberarArquivosLocais(unicos);
       if (faltando.length) {
+        if (!opts.auto) {
+          toast({
+            title: "Arquivo não encontrado neste computador",
+            description: `${faltando.join(", ")}. Anexe de novo na aba Esteiras ou desmarque esses leads.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        // automático: segue com quem não depende desses arquivos e avisa
+        const falta = new Set(faltando);
+        selecionadosAgora = selecionadosAgora.filter((i) => !(i.passo.anexos || []).some((a) => falta.has(a.name)));
         toast({
-          title: "Arquivo não encontrado neste computador",
-          description: `${faltando.join(", ")}. Anexe de novo na aba Esteiras ou desmarque esses leads.`,
+          title: "Piloto automático: alguns anexos precisam de liberação",
+          description: `${faltando.join(", ")} — clique em Enviar uma vez para liberar. Os leads com esses arquivos ficaram para depois.`,
           variant: "destructive",
         });
-        return;
+        avisar("Inmovya: anexo precisa de liberação", `${faltando.join(", ")}. Abra o Inmovya e clique em Enviar.`);
       }
     }
     const ok = await checarExtensao();
@@ -440,7 +478,7 @@ export function EsteirasModule() {
       });
       return;
     }
-    const lista = [...selecionados];
+    const lista = selecionadosAgora;
     if (!lista.length) return;
     pararRef.current = false;
     setRodando(true);
@@ -459,6 +497,22 @@ export function EsteirasModule() {
       if (motivo) {
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: `não enviado: ${motivo}` } }));
         continue; // sem esperar o intervalo: nada foi enviado
+      }
+      // respondeu? sai da esteira e vai para Respondeu (não recebe follow-up)
+      if (piloto.checarResposta && item.telefone) {
+        setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
+        const respondeu = await leadRespondeu(item.telefone);
+        if (respondeu) {
+          try {
+            await marcarRespondeu(item.lead.id);
+            setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: "respondeu: foi para Respondeu" } }));
+            setRespondidosHoje((r) => (r.includes(item.lead.nome) ? r : [...r, item.lead.nome]));
+            avisar("Lead respondeu", `${item.lead.nome} respondeu no WhatsApp e saiu da esteira ${item.esteira.nome}.`);
+          } catch (err: any) {
+            setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: `respondeu, mas não consegui mover: ${err?.message || "erro"}` } }));
+          }
+          continue;
+        }
       }
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
       try {
@@ -505,8 +559,10 @@ export function EsteirasModule() {
         return n;
       });
     }
-    toast({ title: "Esteira de hoje", description: `${enviados} mensagem(ns) enviada(s).` });
+    toast({ title: opts.auto ? "Piloto automático" : "Esteira de hoje", description: `${enviados} mensagem(ns) enviada(s).` });
+    if (opts.auto) avisar("Inmovya: esteiras enviadas", `${enviados} mensagem(ns) enviada(s) pelo piloto automático.`);
   };
+
 
   // Só colar: o Inmovya Scale abre a conversa do lead na aba do WhatsApp (pelo nome; senão pelo número),
   // ENVIA as mídias do passo e deixa o texto escrito, sem enviar. Você confere e aperta Enter.
@@ -631,6 +687,33 @@ export function EsteirasModule() {
     await refreshLeads();
     toast({ title: "2ª rodada liberada", description: `${ids.length} lead(s) voltaram para a fila de hoje com o próximo passo.` });
   };
+
+  // relógio do piloto: a cada 30 s confere se chegou um horário marcado
+  const rodarRef = useRef(rodar);
+  rodarRef.current = rodar;
+  const ocupadoRef = useRef(false);
+  ocupadoRef.current = rodando || colando || carregando;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const checar = async () => {
+      setTick((t) => t + 1); // atualiza o "próximo envio"
+      const h = horarioDaVez(lerPiloto());
+      if (!h || ocupadoRef.current) return;
+      marcarHorarioFeito(h);
+      const ok = await checarExtensao();
+      setExtensaoOk(ok);
+      if (!ok) {
+        avisar("Inmovya: piloto automático parado", "O Inmovya Scale não respondeu. Abra o Inmovya no Chrome com a extensão e o WhatsApp Web.");
+        return;
+      }
+      await refreshLeads();
+      setTimeout(() => rodarRef.current({ auto: true }), 1500); // deixa a fila atualizar com os leads novos
+    };
+    const t = setInterval(checar, 30000);
+    checar();
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---------------- EDITOR ----------------
   const [esteiraSel, setEsteiraSel] = useState<string | null>(null);
@@ -1208,12 +1291,95 @@ export function EsteirasModule() {
                   >
                     {colando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ClipboardPaste className="w-4 h-4 mr-1" />} Só colar
                   </Button>
-                  <Button className="h-11 px-5 bg-success hover:bg-success/90 text-success-foreground font-bold" disabled={!selecionados.length} onClick={rodar}>
+                  <Button className="h-11 px-5 bg-success hover:bg-success/90 text-success-foreground font-bold" disabled={!selecionados.length} onClick={() => rodar()}>
                     <Play className="w-4 h-4 mr-1.5" /> Enviar {selecionados.length}
                   </Button>
                   </>
                 )}
                 </div>
+              </div>
+
+              {/* Piloto automático */}
+              <div className={`rounded-2xl border p-4 flex flex-col gap-3 ${piloto.ativo ? "border-success/40 bg-success/[0.06]" : "bg-card"}`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Bot className={`w-5 h-5 shrink-0 ${piloto.ativo ? "text-success" : "text-muted-foreground"}`} aria-hidden="true" />
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="text-sm font-extrabold">Piloto automático {piloto.ativo ? "ligado" : "desligado"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {piloto.ativo
+                        ? piloto.horarios.length
+                          ? `Envia sozinho às ${piloto.horarios.join(" e ")}${piloto.soDiasUteis ? " (seg a sex)" : ""} · próximo: ${proximoEnvio(piloto) || "—"}`
+                          : "Escolha pelo menos um horário."
+                        : "Ligue para a fila do dia ser enviada sozinha nos horários que você escolher."}
+                    </div>
+                  </div>
+                  <Button variant="ghost" className="h-10 px-3 text-sm" onClick={() => setVerPiloto((v) => !v)} aria-expanded={verPiloto}>
+                    {verPiloto ? "Fechar" : "Horários"}
+                  </Button>
+                  <Switch
+                    checked={piloto.ativo}
+                    aria-label="Ligar piloto automático"
+                    onCheckedChange={(v) => {
+                      if (v) pedirPermissaoDeAviso();
+                      mudarPiloto({ ativo: v });
+                    }}
+                  />
+                </div>
+                {verPiloto && (
+                  <div className="flex flex-col gap-3 border-t pt-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-muted-foreground">Horários de envio:</span>
+                      {piloto.horarios.map((h) => (
+                        <span key={h} className="inline-flex items-center gap-1 h-9 pl-3 pr-1 rounded-lg border bg-card text-sm font-semibold tabular-nums">
+                          {h}
+                          <button
+                            type="button"
+                            className="p-1 text-muted-foreground hover:text-destructive"
+                            aria-label={`Tirar o horário ${h}`}
+                            onClick={() => mudarPiloto({ horarios: piloto.horarios.filter((x) => x !== h) })}
+                          >
+                            <XIcon className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      ))}
+                      <Input
+                        type="time"
+                        className="h-9 w-[120px]"
+                        aria-label="Adicionar horário"
+                        value={novoHorario}
+                        onChange={(ev) => setNovoHorario(ev.target.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        className="h-9"
+                        disabled={!novoHorario}
+                        onClick={() => {
+                          mudarPiloto({ horarios: Array.from(new Set([...piloto.horarios, novoHorario])).sort() });
+                          setNovoHorario("");
+                        }}
+                      >
+                        <Plus className="w-4 h-4 mr-1" /> Adicionar
+                      </Button>
+                    </div>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
+                      <Switch checked={piloto.soDiasUteis} onCheckedChange={(v) => mudarPiloto({ soDiasUteis: v })} />
+                      Só de segunda a sexta
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer w-fit">
+                      <Switch checked={piloto.checarResposta} onCheckedChange={(v) => mudarPiloto({ checarResposta: v })} />
+                      Antes de enviar, conferir se o lead respondeu (se sim, sai da esteira e vai para Respondeu)
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Para funcionar, deixe este Inmovya aberto numa aba do Chrome (pode ficar atrás) com o Inmovya Scale e o WhatsApp Web. O envio usa as mesmas regras
+                      de sempre: intervalo de 2 a 3 min, pausas de cada esteira, variações {"{a|b}"} e ninguém recebe duas vezes no dia.
+                    </p>
+                  </div>
+                )}
+                {respondidosHoje.length > 0 && (
+                  <div className="text-xs rounded-lg bg-primary/10 text-foreground px-3 py-2">
+                    <b>Responderam e saíram da esteira:</b> {respondidosHoje.join(", ")}
+                  </div>
+                )}
               </div>
 
               {verAgendados && (

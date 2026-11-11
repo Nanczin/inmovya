@@ -36,7 +36,7 @@ const CHAVE_FECHADAS = "inmovya_esteiras_fechadas";
 const lerFechadas = (): Set<string> | null => {
   try {
     const v = localStorage.getItem(CHAVE_FECHADAS);
-    return v ? new Set(JSON.parse(v)) : null;
+    return v ? new Set<string>(JSON.parse(v) as string[]) : null;
   } catch {
     return null;
   }
@@ -72,7 +72,7 @@ export function LinhasEsteiras({ esteiras, passosDe, leads, fimDeHoje, seleciona
   // primeira vez: esteiras sem lead começam encolhidas
   useEffect(() => {
     if (fechadas || !esteiras.length) return;
-    setFechadas(new Set(esteiras.filter((e) => !leads.some((l) => l.esteira_id === e.id)).map((e) => e.id)));
+    setFechadas(new Set<string>(esteiras.filter((e) => !leads.some((l) => l.esteira_id === e.id)).map((e) => e.id)));
   }, [esteiras, leads, fechadas]);
 
   const salvarFechadas = (s: Set<string>) => {
@@ -142,7 +142,7 @@ export function LinhasEsteiras({ esteiras, passosDe, leads, fimDeHoje, seleciona
         </label>
         <button
           type="button"
-          onClick={() => salvarFechadas(todasFechadas ? new Set() : new Set(esteiras.map((e) => e.id)))}
+          onClick={() => salvarFechadas(todasFechadas ? new Set<string>() : new Set<string>(esteiras.map((e) => e.id)))}
           className="h-11 px-4 rounded-xl border bg-card text-sm font-semibold hover:bg-muted"
         >
           {todasFechadas ? "Expandir todas" : "Encolher todas"}
@@ -187,7 +187,7 @@ export function LinhasEsteiras({ esteiras, passosDe, leads, fimDeHoje, seleciona
         const cor = corDaEsteira(esteiras, e.id);
         const contar = (i: number) => (porParada.get(`${e.id}:${i}`) || []).length;
         const total = ps.reduce((a, _, i) => a + contar(i), 0) + contar(ps.length);
-        const achouAqui = buscando && Array.from(achadas).some((k) => k.startsWith(`${e.id}:`));
+        const achouAqui = buscando && Array.from<string>(achadas).some((k) => k.startsWith(`${e.id}:`));
         const aberta = !fechadasAgora.has(e.id) || achouAqui;
         const sel = selecionada?.esteiraId === e.id ? selecionada.idx : null;
         const paradas = [...ps.map((p, i) => ({ i, rotulo: rotuloCurto(p, i), titulo: p.titulo || `Passo ${i + 1}`, fim: false })), { i: ps.length, rotulo: "Fim", titulo: "Aguardando resposta", fim: true }];
