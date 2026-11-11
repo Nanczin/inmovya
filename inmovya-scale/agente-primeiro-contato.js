@@ -190,7 +190,7 @@ async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
   try {
     let r = null;
     try {
-      r = await naVezWA(() => agenteNaConversa({ phone: tel, background: true, nome: salvar, etiquetas }, 'agent_save_and_label_tab'));
+      r = await naVezWAPrioridade(() => agenteNaConversa({ phone: tel, background: true, nome: salvar, etiquetas }, 'agent_save_and_label_tab'));
     } catch (_) { r = null; }
     const faltando = res => (res?.alteracoes || []).some(a => /não existe/.test(a));
     const etiquetaOk = !etiquetas.length || (r?.etiqueta && r.etiqueta.ok !== false && !faltando(r.etiqueta));
@@ -201,7 +201,7 @@ async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
     // não salvou (ou a etiqueta falhou) na janelinha do canto? tenta de novo numa aba normal
     if (!r || (salvar && r.contato && !salvoDeVerdade(r.contato)) || !etiquetaOk) {
       await new Promise(resolve => setTimeout(resolve, 3000));
-      const r2 = await naVezWA(() => agenteNaConversa({ phone: tel, background: false, nome: salvar, etiquetas: etiquetaOk ? [] : etiquetas }, 'agent_save_and_label_tab'));
+      const r2 = await naVezWAPrioridade(() => agenteNaConversa({ phone: tel, background: false, nome: salvar, etiquetas: etiquetaOk ? [] : etiquetas }, 'agent_save_and_label_tab'));
       r = { contato: r2?.contato || r?.contato, etiqueta: etiquetaOk ? r?.etiqueta : (r2?.etiqueta || r?.etiqueta) };
     }
     const problemas = [];
@@ -252,6 +252,7 @@ async function agenteRodadaAgora() {
     console.warn('[Inmovya agente] sem acesso ao banco:', err.message);
     return;
   }
+  await chrome.storage.local.set({ agentePendentes: dados?.ativo && Array.isArray(dados?.leads) ? dados.leads.length : 0 });
   if (Date.now() - agenteUltimoEnvio < AGENTE_INTERVALO_MIN_MS - 2000) return; // nunca menos de 2 min
   if (Date.now() < agenteProximoEnvio - 2000) return; // ainda não chegou a hora sorteada
   if (!dados?.ativo || !Array.isArray(dados.leads) || !dados.leads.length) return;
@@ -264,7 +265,7 @@ async function agenteRodadaAgora() {
     await new Promise(resolve => setTimeout(resolve, agenteSortear(AGENTE_ESPERA_MIN_MS, AGENTE_ESPERA_MAX_MS)));
     if (!(await agenteAindaLigado(cred))) return; // desligou durante a espera
     for (const lead of dados.leads) {
-      const r = await agenteAtender(cred, cfg, lead);
+      const r = await comPrioridade(() => agenteAtender(cred, cfg, lead));
       if (r === 'enviado' || r === 'erro') {
         // conta o intervalo a partir do momento em que a mensagem saiu, não do fim do salvar contato/etiqueta
         const base = r === 'enviado' && agenteMomentoEnvio ? agenteMomentoEnvio : Date.now();
@@ -313,7 +314,7 @@ async function agenteAtender(cred, cfg, lead) {
 
   try {
     // 1) conversa já tem mensagem sua? não faz nada
-    const leitura = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'agent_read_chat_tab'));
+    const leitura = await naVezWAPrioridade(() => agenteNaConversa({ phone: tel, background: true }, 'agent_read_chat_tab'));
     const conversa = Array.isArray(leitura?.mensagens) ? leitura.mensagens : [];
     if (conversa.some(m => m.dir === 'out')) { await resultado('pulado', { erro: 'já existe mensagem sua nesta conversa do WhatsApp' }); return 'pulado'; }
 
@@ -322,7 +323,7 @@ async function agenteAtender(cred, cfg, lead) {
     let aviso = await agenteSalvarEEtiquetar(tel, lead);
 
     // 3) DEPOIS manda a mensagem (confere de novo, colado no envio, se o 1º contato continua ligado)
-    const feito = await naVezWA(async () => {
+    const feito = await naVezWAPrioridade(async () => {
       const msg = await agenteGerarMensagem(lead, cfg);
       if (!(await agenteAindaLigado(cred))) return { parou: true };
       await sendCampaignMessage({ phone: tel, text: msg.texto, background: true, gapMinMs: 0, gapMaxMs: 0 });
@@ -371,7 +372,7 @@ async function agenteFilaCaptura() {
       if (!tel || tel.length < 12) tem = false;
       else {
         try {
-          const conf = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
+          const conf = await naVezWAPrioridade(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
           if (conf?.temWhatsapp === true) tem = true;
           else if (conf?.temWhatsapp === false) tem = false;
         } catch (_) { tem = null; } // WhatsApp Web não respondeu: tenta no próximo minuto
@@ -523,7 +524,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         let conf = null;
         try {
-          conf = await naVezWA(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
+          conf = await naVezWAPrioridade(() => agenteNaConversa({ phone: tel, background: true }, 'checar_whatsapp_tab'));
         } catch (_) { conf = null; }
         if (conf?.temWhatsapp === false) {
           resultados.push({ id: l.id, ok: true, acao: 'sem_whatsapp' });

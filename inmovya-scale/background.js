@@ -26,11 +26,53 @@ chrome.action.onClicked.addListener((tab) => {
 
 // Uma coisa por vez no WhatsApp: envios do Inmovya (esteira, disparo), leituras e o 1º contato automático
 // da própria extensão entram nesta fila — nunca abrem duas janelas do WhatsApp ao mesmo tempo.
-let filaWA = Promise.resolve();
-function naVezWA(tarefa) {
-  const p = filaWA.then(tarefa, tarefa);
-  filaWA = p.catch(() => {});
-  return p;
+// PRIORIDADE: o 1º contato de lead novo (e a conferência de WhatsApp da captura) passa na frente da esteira
+// e do disparo, para não perder o tempo do lead. Enquanto o 1º contato está atendendo um lead
+// (conferir conversa → salvar contato → enviar), a esteira espera ele terminar.
+const filaWAAlta = [];
+const filaWANormal = [];
+let filaWARodando = false;
+let prioridadeAtiva = 0; // > 0: um atendimento de 1º contato em andamento
+function naVezWA(tarefa, opcoes = {}) {
+  return new Promise((resolve, reject) => {
+    (opcoes.prioridade ? filaWAAlta : filaWANormal).push({ tarefa, resolve, reject });
+    processarFilaWA();
+  });
+}
+const naVezWAPrioridade = tarefa => naVezWA(tarefa, { prioridade: true });
+async function processarFilaWA() {
+  if (filaWARodando) return;
+  filaWARodando = true;
+  try {
+    for (;;) {
+      let item = filaWAAlta.shift();
+      if (!item) {
+        if (!filaWANormal.length) break;
+        // 1º contato no meio do atendimento: a esteira espera (no máximo 10 min, por segurança)
+        const limite = Date.now() + 10 * 60 * 1000;
+        while (prioridadeAtiva > 0 && !filaWAAlta.length && Date.now() < limite) await new Promise(r => setTimeout(r, 500));
+        item = filaWAAlta.shift() || filaWANormal.shift();
+        if (!item) continue;
+      }
+      try {
+        item.resolve(await item.tarefa());
+      } catch (err) {
+        item.reject(err);
+      }
+    }
+  } finally {
+    filaWARodando = false;
+    if (filaWAAlta.length || filaWANormal.length) processarFilaWA();
+  }
+}
+/** Marca o começo/fim de um atendimento de 1º contato (vários passos seguidos no WhatsApp). */
+async function comPrioridade(fn) {
+  prioridadeAtiva++;
+  try {
+    return await fn();
+  } finally {
+    prioridadeAtiva = Math.max(0, prioridadeAtiva - 1);
+  }
 }
 
 async function waitForTabComplete(tabId, timeoutMs = 30000) {
@@ -445,6 +487,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     naVezWA(() => agenteNaConversa(request, 'agent_save_and_label_tab', sender.tab?.id || null))
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (request?.action === 'prioridade_status') {
+    chrome.storage.local.get(['agentePendentes', 'agenteProximoEnvio']).then(d => {
+      sendResponse({ ok: true, emAtendimento: prioridadeAtiva > 0, naFila: filaWAAlta.length, pendentes: d.agentePendentes || 0, proximoEnvio: d.agenteProximoEnvio || 0 });
+    });
     return true;
   }
   if (request?.action === 'agent_read_chat' || request?.action === 'agent_set_labels') {

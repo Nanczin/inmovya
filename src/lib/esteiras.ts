@@ -476,7 +476,7 @@ export const enviarAgora = (
     const timeout = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
       reject(Object.assign(new Error("Tempo esgotado aguardando a confirmação da extensão."), { semResposta: true }));
-    }, timeoutMs ?? 120000 + attachments.length * 60000 + (text.split("===").length + attachments.length) * gap.max * 1000);
+    }, timeoutMs ?? 120000 + 12 * 60000 /* pode esperar o 1º contato passar na frente */ + attachments.length * 60000 + (text.split("===").length + attachments.length) * gap.max * 1000);
     const onResult = (event: CustomEvent) => {
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);
@@ -496,6 +496,44 @@ export const enviarAgora = (
         },
       }));
   });
+
+// ---------- Prioridade do 1º contato ----------
+// Lead novo não pode esperar: antes de cada envio da esteira, se o 1º contato estiver atendendo
+// ou com lead novo na vez, a esteira espera (Inmovya Scale 1.11.0+).
+export type StatusPrioridade = { emAtendimento: boolean; naFila: number; pendentes: number; proximoEnvio: number };
+export const perguntarPrioridade = (timeoutMs = 3000) =>
+  new Promise<StatusPrioridade | null>((resolve) => {
+    const token = crypto.randomUUID();
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener("INMOVYA_PRIORIDADE_RESULT", onResult as EventListener);
+      resolve(null); // extensão antiga: segue sem esperar
+    }, timeoutMs);
+    const onResult = (event: CustomEvent) => {
+      if (event.detail?.token !== token) return;
+      window.clearTimeout(timeout);
+      window.removeEventListener("INMOVYA_PRIORIDADE_RESULT", onResult as EventListener);
+      resolve(event.detail?.ok ? event.detail : null);
+    };
+    window.addEventListener("INMOVYA_PRIORIDADE_RESULT", onResult as EventListener);
+    window.dispatchEvent(new CustomEvent("INMOVYA_PRIORIDADE", { detail: { token } }));
+  });
+
+/** Espera o 1º contato terminar (no máximo `maxMin` minutos). Devolve quantas vezes precisou esperar. */
+export async function esperarVezDoPrimeiroContato(aoEsperar?: (s: StatusPrioridade) => void, deveParar?: () => boolean, maxMin = 15) {
+  const limite = Date.now() + maxMin * 60000;
+  let esperas = 0;
+  while (Date.now() < limite) {
+    if (deveParar?.()) break;
+    const st = await perguntarPrioridade();
+    if (!st) break;
+    const naVez = st.emAtendimento || st.naFila > 0 || (st.pendentes > 0 && st.proximoEnvio <= Date.now() + 20000);
+    if (!naVez) break;
+    esperas++;
+    aoEsperar?.(st);
+    await new Promise((r) => setTimeout(r, 10000));
+  }
+  return esperas;
+}
 
 /** Só colar em lote: o Scale abre cada conversa na aba do WhatsApp e cola o texto, sem enviar e sem esperar. */
 export const colarEmLotePeloScale = (items: { id: string; phone: string; name: string; text: string; attachments?: any[] }[]) =>

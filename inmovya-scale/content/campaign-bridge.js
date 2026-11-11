@@ -50,6 +50,17 @@
     });
   });
 
+  // Prioridade: o Inmovya pergunta se o 1º contato está atendendo / tem lead novo esperando
+  window.addEventListener('INMOVYA_PRIORIDADE', event => {
+    const detail = event.detail || {};
+    chrome.runtime.sendMessage({ action: 'prioridade_status' }, response => {
+      const error = chrome.runtime.lastError?.message;
+      window.dispatchEvent(new CustomEvent('INMOVYA_PRIORIDADE_RESULT', {
+        detail: { ...(response || {}), token: detail.token, ok: !!response?.ok && !error, error: error || response?.error || '' }
+      }));
+    });
+  });
+
   // Leitura das etiquetas do WhatsApp (o WhatsApp é a referência do Inmovya)
   window.addEventListener('INMOVYA_READ_WA_LABELS', event => {
     const detail = event.detail || {};

@@ -98,7 +98,7 @@ export const proximoEnvio = (c: ConfigPiloto, agora = new Date()): string | null
 type MensagemConversa = { dir: "in" | "out"; texto?: string; tipo?: string; data?: string | null; hora?: string | null };
 
 /** Lê as últimas mensagens da conversa pelo Inmovya Scale (abre o WhatsApp numa janelinha). */
-const lerConversaAgora = (phone: string, timeoutMs = 60000) =>
+const lerConversaAgora = (phone: string, timeoutMs = 13 * 60000) =>
   new Promise<MensagemConversa[]>((resolve, reject) => {
     const token = crypto.randomUUID();
     const timeout = window.setTimeout(() => {

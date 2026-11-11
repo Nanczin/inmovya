@@ -62,6 +62,7 @@ import {
   telefoneWhatsApp,
   tirarDaEsteira,
   moverParaPasso,
+  esperarVezDoPrimeiroContato,
 } from "@/lib/esteiras";
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { PrimeiroContatoPainel } from "@/components/esteiras/PrimeiroContatoPainel";
@@ -498,6 +499,13 @@ export function EsteirasModule() {
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: `não enviado: ${motivo}` } }));
         continue; // sem esperar o intervalo: nada foi enviado
       }
+      // 1º contato de lead novo tem prioridade: espera ele passar
+      const esperou = await esperarVezDoPrimeiroContato(
+        () => setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando", erro: "aguardando o 1º contato de um lead novo" } })),
+        () => pararRef.current
+      );
+      if (pararRef.current) break;
+      if (esperou) setEstado((s) => ({ ...s, [item.lead.id]: { s: "pendente" } }));
       // respondeu? sai da esteira e vai para Respondeu (não recebe follow-up)
       if (piloto.checarResposta && item.telefone) {
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
@@ -1558,6 +1566,9 @@ export function EsteirasModule() {
                                 {item.esteira.nome} · {item.passo.titulo || `Passo ${item.passo.ordem + 1}`} <span className="tabular-nums opacity-70">{item.passos.indexOf(item.passo) + 1}/{item.passos.length}</span>
                               </span>
                               {st === "enviando" && <Loader2 className="w-4 h-4 animate-spin text-blue-600" />}
+                              {st === "enviando" && estado[item.lead.id]?.erro && (
+                                <span className="text-xs text-muted-foreground">{estado[item.lead.id]?.erro}</span>
+                              )}
                               {st === "enviado" && !estado[item.lead.id]?.colado && <CheckCircle2 className="w-4 h-4 text-green-600" />}
                               {st === "enviado" && estado[item.lead.id]?.colado && (
                                 <span className="text-[11px] font-semibold rounded-md bg-success/15 text-success px-1.5 py-0.5">colado na conversa</span>
