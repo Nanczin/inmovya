@@ -74,14 +74,15 @@ function SpintaxBarra({ mensagem, onMensagem }: { mensagem: string; onMensagem: 
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="text-muted-foreground">
-          Spintax: escreva {"{Oi|Olá|Oii}"} e cada lead recebe uma opção diferente.
-        </span>
         {!valido ? (
           <span className="font-semibold text-destructive">Tem chave {"{ }"} sobrando ou faltando</span>
         ) : n > 1 ? (
-          <span className="font-semibold text-success">{n.toLocaleString("pt-BR")} combinações</span>
-        ) : null}
+          <span className="font-semibold text-success">✓ Variação ativa · {n.toLocaleString("pt-BR")} combinações (cada lead recebe um texto diferente)</span>
+        ) : (
+          <span className="font-semibold text-warning">
+            Sem variação: todos recebem o mesmo texto, o que aumenta o risco de bloqueio. Use {"{Oi|Olá|Oii}"} ou clique em Gerar spintax.
+          </span>
+        )}
         <div className="ml-auto flex gap-1">
           <button
             type="button"
@@ -210,10 +211,10 @@ export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, pl
           className="inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 hover:bg-slate-50 disabled:opacity-60"
         >
           {anexando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
-          Anexar arquivo do computador
+          Anexar PDF ou imagem
         </button>
         <span className="text-[11px] text-muted-foreground">
-          PDF, vídeo, imagem, áudio, documentos · até {ANEXO_MAX_MB} MB · separe as mensagens com === e escolha depois de qual mensagem cada arquivo vai · o arquivo fica no seu computador (não mova nem apague)
+          PDF, JPG, PNG (e vídeo) · até {ANEXO_MAX_MB} MB · separe as mensagens com === e escolha depois de qual mensagem cada arquivo vai · o arquivo fica no seu computador (não mova nem apague)
         </span>
       </div>
       {anexos.length > 0 && (

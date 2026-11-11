@@ -89,7 +89,14 @@ export async function escolherArquivosDoComputador(): Promise<EsteiraAnexo[]> {
   if (!anexosLocaisSuportados()) throw new Error("Use o Google Chrome (ou Edge) no computador para anexar arquivos.");
   let handles: any[] = [];
   try {
-    handles = await (window as any).showOpenFilePicker({ multiple: true });
+    handles = await (window as any).showOpenFilePicker({
+      multiple: true,
+      excludeAcceptAllOption: false, // "Todos os arquivos" continua disponível
+      types: [
+        { description: "PDF e imagens (JPG, PNG)", accept: { "application/pdf": [".pdf"], "image/jpeg": [".jpg", ".jpeg"], "image/png": [".png"], "image/webp": [".webp"] } },
+        { description: "Vídeos", accept: { "video/*": [".mp4", ".mov", ".3gp"] } },
+      ],
+    });
   } catch (err: any) {
     if (err?.name === "AbortError") return [];
     throw err;

@@ -66,6 +66,8 @@ import {
 import { ConteudoPassoEditor } from "@/components/esteiras/ConteudoPassoEditor";
 import { PrimeiroContatoPainel } from "@/components/esteiras/PrimeiroContatoPainel";
 import { RelatorioPrimeiroContato } from "@/components/esteiras/RelatorioPrimeiroContato";
+import { LinhasEsteiras, ParadaSelecionada, LeadNaLinha, corDaEsteira } from "@/components/esteiras/LinhasEsteiras";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { baixarBackupEsteiras, lerBackupEsteiras, restaurarBackupEsteiras, BackupEsteiras } from "@/lib/esteirasBackup";
 import { isWhatsAppOcupado, setWhatsAppOcupado } from "@/lib/whatsappOcupado";
 import {
@@ -102,6 +104,8 @@ import {
   ClipboardPaste,
   ChevronDown,
   CalendarClock,
+  Settings2,
+  Users,
 } from "lucide-react";
 
 type LeadEsteira = Lead & {
@@ -158,7 +162,10 @@ export function EsteirasModule() {
   const [carregando, setCarregando] = useState(true);
   const [semTabelas, setSemTabelas] = useState(false);
   const [extensaoOk, setExtensaoOk] = useState<boolean | null>(null);
-  const [aba, setAba] = useState("hoje");
+  const [aba, setAba] = useState("esteiras");
+  const [verLista, setVerLista] = useState(false); // lista de quem recebe hoje
+  const [parada, setParada] = useState<ParadaSelecionada>(null); // bolinha aberta
+  const [configAberta, setConfigAberta] = useState(false); // painel de configurações da esteira
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -763,6 +770,8 @@ export function EsteirasModule() {
     const { error } = await supabase.from("esteiras").delete().eq("id", rascunho.esteira.id);
     if (error) return toast({ title: "Erro", description: error.message, variant: "destructive" });
     setEsteiraSel(null);
+    setConfigAberta(false);
+    setParada(null);
     await carregar();
     await refreshLeads();
   };
@@ -905,7 +914,7 @@ export function EsteirasModule() {
       setPlano(null);
       await carregar();
       await refreshLeads();
-      setAba("hoje");
+      setAba("esteiras");
     } catch (err: any) {
       toast({ title: "Erro na importação", description: err?.message, variant: "destructive" });
     } finally {
@@ -935,6 +944,129 @@ export function EsteirasModule() {
     } catch (err: any) {
       toast({ title: "Erro", description: err?.message, variant: "destructive" });
     }
+  };
+
+  // ---------------- PARADA (bolinha aberta) ----------------
+  // a lista de quem recebe aparece ao pedir, enquanto envia ou vindo do Negócios
+  const mostrarLista = verLista || rodando || colando || !!colunaAlvo;
+
+  const renderPainelParada = (e: Esteira, idx: number, naParada: LeadNaLinha[]) => {
+    const ps = passosDe(e.id);
+    const fim = idx >= ps.length;
+    const salvo = ps[idx];
+    const p = rascunho && rascunho.esteira.id === e.id ? rascunho.passos[idx] : undefined;
+    const alterado =
+      !!p && !!salvo && (p.mensagem !== salvo.mensagem || p.dias_espera !== salvo.dias_espera || JSON.stringify(p.anexos || []) !== JSON.stringify(salvo.anexos || []));
+    const ultimo = ps[ps.length - 1];
+    const diasFim = Number(e.ao_concluir_dias) > 0 ? Number(e.ao_concluir_dias) : Math.max(1, Number(ultimo?.dias_espera) || 0);
+    const tags = etiquetasDaEsteira(e);
+    const limite = fimDeHoje();
+    return (
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="lg:w-72 shrink-0 space-y-2">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-extrabold">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: corDaEsteira(esteiras, e.id) }} />
+              {fim ? "Aguardando resposta" : salvo?.titulo || `Passo ${idx + 1}`}
+            </div>
+            <div className="text-xs text-muted-foreground">{naParada.length ? `${naParada.length} lead${naParada.length === 1 ? "" : "s"} nesta parada` : "Ninguém nesta parada"}</div>
+          </div>
+          {naParada.length > 0 && (
+            <div className="max-h-64 overflow-y-auto divide-y rounded-xl border">
+              {naParada.map((l) => {
+                const t = l.esteira_proximo ? new Date(l.esteira_proximo).getTime() : 0;
+                const hoje = t <= limite;
+                return (
+                  <div key={l.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                    <span className="flex-1 min-w-0 truncate">{l.nome}</span>
+                    {!fim &&
+                      (hoje ? (
+                        <span className="text-[11px] font-semibold text-success shrink-0">hoje</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={rodando}
+                          className="text-[11px] text-muted-foreground hover:text-foreground underline shrink-0"
+                          title="Trazer o envio para hoje"
+                          onClick={() => trazerParaHoje(l.id)}
+                        >
+                          {new Date(t).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                        </button>
+                      ))}
+                    <button
+                      type="button"
+                      disabled={rodando}
+                      className="p-1 text-muted-foreground hover:text-destructive shrink-0"
+                      title="Tirar da esteira"
+                      aria-label={`Tirar ${l.nome} da esteira`}
+                      onClick={() => tirarLead(l.id, l.nome)}
+                    >
+                      <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0 space-y-3">
+          {fim ? (
+            <p className="text-sm text-muted-foreground">
+              Já receberam todos os passos. Sem resposta em <b className="text-foreground">{diasFim} dia(s)</b> vão para{" "}
+              <b className="text-foreground">{e.ao_concluir_etapa || "fora do funil"}</b>
+              {tags.length ? (
+                <>
+                  {" "}+ etiqueta <b className="text-foreground">{tags.join(", ")}</b>
+                </>
+              ) : null}
+              . Quem responder, mova para Respondeu.
+            </p>
+          ) : !p ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Enviar</span>
+                <Input
+                  type="number"
+                  min={0}
+                  className="h-9 w-16"
+                  aria-label="Dias de espera"
+                  value={p.dias_espera}
+                  onChange={(ev) => mudarPasso(idx, "dias_espera", parseInt(ev.target.value) || 0)}
+                />
+                <span className="text-muted-foreground">{idx === 0 ? "dia(s) depois de entrar na esteira" : "dia(s) depois do passo anterior"}</span>
+              </div>
+              <ConteudoPassoEditor
+                mensagem={p.mensagem}
+                anexos={p.anexos || []}
+                onMensagem={(v) => mudarPasso(idx, "mensagem", v)}
+                onAnexos={(v) => mudarPasso(idx, "anexos", v)}
+              />
+            </>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              className="h-10 px-2"
+              onClick={() => {
+                setEsteiraSel(e.id);
+                setConfigAberta(true);
+              }}
+            >
+              <Settings2 className="w-4 h-4 mr-1.5" /> Configurações da esteira
+            </Button>
+            {!fim && (
+              <Button className="h-10 px-5" onClick={salvarEsteira} disabled={salvando || !alterado}>
+                <Save className="w-4 h-4 mr-1.5" /> {salvando ? "Salvando..." : alterado ? "Salvar" : "Salvo"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // ---------------- UI ----------------
@@ -973,8 +1105,7 @@ export function EsteirasModule() {
       <Tabs value={aba} onValueChange={setAba} className="min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList className="h-10">
-            <TabsTrigger value="hoje" className="font-semibold">Hoje <span className="ml-1.5 tabular-nums text-muted-foreground">{fila.length}</span></TabsTrigger>
-            <TabsTrigger value="esteiras" className="font-semibold">Esteiras</TabsTrigger>
+            <TabsTrigger value="esteiras" className="font-semibold">Esteiras <span className="ml-1.5 tabular-nums text-muted-foreground">{fila.length}</span></TabsTrigger>
             <TabsTrigger value="primeiro" className="font-semibold">1º contato</TabsTrigger>
             <TabsTrigger value="importar" className="font-semibold">Backup</TabsTrigger>
           </TabsList>
@@ -992,8 +1123,8 @@ export function EsteirasModule() {
           <PrimeiroContatoPainel />
         </TabsContent>
 
-        {/* HOJE */}
-        <TabsContent value="hoje" className="mt-4 space-y-4">
+        {/* ESTEIRAS: envio de hoje + linhas */}
+        <TabsContent value="esteiras" className="mt-4 space-y-4">
           {carregando ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
@@ -1063,6 +1194,11 @@ export function EsteirasModule() {
                       <Clock className="w-4 h-4 mr-1" /> 2ª rodada ({segundaRodada.length})
                     </Button>
                   )}
+                  {filaAuto.length > 0 && (
+                    <Button variant="outline" className="h-11" onClick={() => setVerLista((v) => !v)} aria-expanded={mostrarLista}>
+                      <Users className="w-4 h-4 mr-1" /> {mostrarLista ? "Esconder lista" : "Ver quem recebe"}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     className="h-11"
@@ -1111,7 +1247,7 @@ export function EsteirasModule() {
                 </div>
               )}
 
-              {fila.length > 0 && (
+              {mostrarLista && fila.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
@@ -1138,7 +1274,7 @@ export function EsteirasModule() {
                 </div>
               )}
 
-              {momentosDaEsteira.length > 1 && (
+              {mostrarLista && momentosDaEsteira.length > 1 && (
                 <div className="flex flex-wrap gap-1.5 pl-3 border-l-2 border-primary/30">
                   <button
                     type="button"
@@ -1162,15 +1298,14 @@ export function EsteirasModule() {
                 </div>
               )}
 
-              {fila.length === 0 && (
+              {fila.length === 0 && esteiras.length === 0 && (
                 <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-                  <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-success/60" />
-                  <span className="block font-semibold text-foreground">Tudo enviado por hoje.</span>
-                  {esteiras.length === 0 && " Importe suas esteiras do Scale ou crie uma na aba Esteiras."}
+                  <span className="block font-semibold text-foreground">Nenhuma esteira ainda.</span>
+                  Clique em “Nova esteira” ou importe do Scale na aba Backup.
                 </div>
               )}
 
-              {filaAuto.length > 0 && (
+              {mostrarLista && filaAuto.length > 0 && (
                 <div className="space-y-2">
                   {(() => {
                     const marcaveis = filaAuto.filter((i) => i.telefone && estado[i.lead.id]?.s !== "enviado" && !bloqueios[i.lead.id]);
@@ -1349,7 +1484,7 @@ export function EsteirasModule() {
                 </div>
               )}
 
-              {filaManual.length > 0 && (
+              {mostrarLista && filaManual.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold mt-2">Envio manual (passos “só colar”)</h3>
                   {filaManual.map((item) => {
@@ -1383,38 +1518,35 @@ export function EsteirasModule() {
                   })}
                 </div>
               )}
+              <div className="flex items-center justify-between gap-2 pt-2">
+                <h2 className="text-sm font-extrabold uppercase tracking-wide text-muted-foreground">Suas esteiras</h2>
+                <Button variant="outline" className="h-10" onClick={async () => { await novaEsteira(); setConfigAberta(true); }}>
+                  <Plus className="w-4 h-4 mr-1" /> Nova esteira
+                </Button>
+              </div>
+              <LinhasEsteiras
+                esteiras={esteiras}
+                passosDe={passosDe}
+                leads={leadsEmEsteira as LeadNaLinha[]}
+                fimDeHoje={fimDeHoje()}
+                selecionada={parada}
+                onSelecionar={(p) => {
+                  setParada(p);
+                  if (p) setEsteiraSel(p.esteiraId);
+                }}
+                renderPainel={renderPainelParada}
+              />
             </>
           )}
         </TabsContent>
 
-        {/* ESTEIRAS */}
-        <TabsContent value="esteiras" className="mt-4">
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="lg:w-64 shrink-0 space-y-2">
-              {esteiras.map((e) => {
-                const qtd = leadsEmEsteira.filter((l) => l.esteira_id === e.id).length;
-                return (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => setEsteiraSel(e.id)}
-                    className={`w-full text-left rounded-xl border px-3 py-2.5 text-sm ${esteiraSel === e.id ? "border-primary bg-primary/10" : "bg-card hover:bg-muted"}`}
-                  >
-                    <div className="font-medium truncate">{e.nome}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {e.etapa ? `Entra em ${e.etapa} · ` : ""}
-                      {todosPassosDe(e.id).some((p) => p.etapa) ? `Colunas ${todosPassosDe(e.id).filter((p) => p.etapa).map((p) => p.etapa).join(", ")} · ` : ""}
-                      {e.etapa_final ? `Final ${e.etapa_final} · ` : ""}
-                      {passosDe(e.id).length} passo(s) · {qtd} lead(s)
-                    </div>
-                  </button>
-                );
-              })}
-              <Button variant="outline" className="w-full" onClick={novaEsteira}>
-                <Plus className="w-4 h-4 mr-1" /> Nova esteira
-              </Button>
-            </div>
-
+        {/* CONFIGURAÇÕES DA ESTEIRA (painel lateral) */}
+        <Sheet open={configAberta} onOpenChange={setConfigAberta}>
+          <SheetContent side="right" className="w-full sm:max-w-3xl overflow-y-auto">
+            <SheetHeader className="mb-4">
+              <SheetTitle>Configurações da esteira</SheetTitle>
+              <SheetDescription>Nome, passos, pausas, fim sem resposta e coluna de entrada. Clique em Salvar esteira no fim.</SheetDescription>
+            </SheetHeader>
             {rascunho ? (
               <div className="flex-1 min-w-0 space-y-4">
                 <div className="grid sm:grid-cols-2 gap-3 rounded-2xl border bg-card p-4">
@@ -1819,12 +1951,12 @@ export function EsteirasModule() {
                 </div>
               </div>
             ) : (
-              <div className="flex-1 rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                Crie uma esteira ou importe do Scale.
+              <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                Escolha uma esteira.
               </div>
             )}
-          </div>
-        </TabsContent>
+          </SheetContent>
+        </Sheet>
 
         {/* IMPORTAR */}
         <TabsContent value="importar" className="mt-4 space-y-4">
