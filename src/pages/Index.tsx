@@ -20,6 +20,7 @@ import { FunilModule } from "@/components/FunilModule";
 import { NegociosModule } from "@/components/NegociosModule";
 import { EsteirasModule } from "@/components/EsteirasModule";
 import { EsteiraEmAndamento } from "@/components/esteiras/EsteiraEmAndamento";
+import { RespostasWhatsApp } from "@/components/esteiras/RespostasWhatsApp";
 import { WhatsappModule } from "@/components/WhatsappModule";
 import { ArenaModule } from "@/components/ArenaModule";
 import { MetasDoDia } from "@/components/arena/MetasDoDia";
@@ -164,6 +165,7 @@ const Index = () => {
       onVerLead={(id) => { setActiveModule("leads"); setNavigationParams({ id }); }}
     />
     <MetasDoDia onAbrirArena={() => setActiveModule("arena")} />
+    <RespostasWhatsApp />
     {activeModule !== "esteiras" && <EsteiraEmAndamento onAbrir={() => setActiveModule("esteiras")} />}
     </SidebarProvider>
   );

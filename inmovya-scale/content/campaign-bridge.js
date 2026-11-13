@@ -50,6 +50,23 @@
     });
   });
 
+  // Respostas dos leads (WhatsApp → Inmovya): o lead sai da esteira na hora
+  const entregarRespostasNaPagina = itens => {
+    if (Array.isArray(itens) && itens.length) window.dispatchEvent(new CustomEvent('INMOVYA_RESPOSTAS', { detail: { itens } }));
+  };
+  chrome.runtime.onMessage.addListener(msg => {
+    if (msg?.action === 'inmovya_respostas') entregarRespostasNaPagina(msg.itens);
+  });
+  const buscarRespostas = () =>
+    chrome.runtime.sendMessage({ action: 'respostas_pendentes' }, r => {
+      if (chrome.runtime.lastError) return;
+      entregarRespostasNaPagina(r?.itens);
+    });
+  window.addEventListener('INMOVYA_RESPOSTAS_BUSCAR', buscarRespostas);
+  window.addEventListener('INMOVYA_RESPOSTAS_OK', event => {
+    chrome.runtime.sendMessage({ action: 'respostas_ok', telefones: event.detail?.telefones || [] }, () => void chrome.runtime.lastError);
+  });
+
   // Prioridade: o Inmovya pergunta se o 1º contato está atendendo / tem lead novo esperando
   window.addEventListener('INMOVYA_PRIORIDADE', event => {
     const detail = event.detail || {};

@@ -65,6 +65,26 @@ async function processarFilaWA() {
     if (filaWAAlta.length || filaWANormal.length) processarFilaWA();
   }
 }
+// ---------- Respostas dos leads (tira da esteira na hora) ----------
+// Fila guardada (sobrevive ao Chrome fechar); entregue a toda aba do Inmovya aberta.
+async function respostaRecebida(telefone, t) {
+  const tel = String(telefone || '').replace(/\D/g, '');
+  if (tel.length < 10) return;
+  const { respostasPendentes = [] } = await chrome.storage.local.get('respostasPendentes');
+  const resto = respostasPendentes.filter(x => String(x.telefone) !== tel && Date.now() - (x.t || 0) < 3 * 24 * 3600 * 1000);
+  resto.push({ telefone: tel, t: t || Date.now() });
+  await chrome.storage.local.set({ respostasPendentes: resto.slice(-300) });
+  entregarRespostas().catch(() => {});
+}
+async function entregarRespostas() {
+  const { respostasPendentes = [] } = await chrome.storage.local.get('respostasPendentes');
+  if (!respostasPendentes.length) return;
+  const abas = await chrome.tabs.query({ url: 'https://inmovya-main.vercel.app/*' });
+  for (const aba of abas) {
+    chrome.tabs.sendMessage(aba.id, { action: 'inmovya_respostas', itens: respostasPendentes }, () => void chrome.runtime.lastError);
+  }
+}
+
 /** Marca o começo/fim de um atendimento de 1º contato (vários passos seguidos no WhatsApp). */
 async function comPrioridade(fn) {
   prioridadeAtiva++;
@@ -487,6 +507,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     naVezWA(() => agenteNaConversa(request, 'agent_save_and_label_tab', sender.tab?.id || null))
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  // Lead respondeu no WhatsApp: guarda na fila e entrega para o Inmovya tirar da esteira na hora
+  if (request?.action === 'lead_respondeu') {
+    respostaRecebida(request.telefone, request.t).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (request?.action === 'respostas_pendentes') {
+    chrome.storage.local.get('respostasPendentes').then(d => sendResponse({ ok: true, itens: d.respostasPendentes || [] }));
+    return true;
+  }
+  if (request?.action === 'respostas_ok') {
+    const feitos = new Set((request.telefones || []).map(String));
+    chrome.storage.local.get('respostasPendentes').then(async d => {
+      await chrome.storage.local.set({ respostasPendentes: (d.respostasPendentes || []).filter(x => !feitos.has(String(x.telefone))) });
+      sendResponse({ ok: true });
+    });
     return true;
   }
   if (request?.action === 'prioridade_status') {
