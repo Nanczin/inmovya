@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,8 +51,19 @@ import {
   CalendarPlus,
   Phone,
   Loader2,
-  Tag
+  Tag,
+  Users
 } from "lucide-react";
+
+/** DDD + últimos 8 dígitos: o mesmo número com ou sem 55 e com ou sem o 9 da frente. */
+const chaveTelefone = (tel?: string | null) => {
+  let d = String(tel || "").replace(/\D/g, "");
+  if (d.startsWith("55") && d.length >= 12) d = d.slice(2);
+  if (d.length < 10) return "";
+  return d.slice(0, 2) + d.slice(-8);
+};
+/** Lead sem e-mail: um e-mail de exemplo, único por telefone (nunca recebe nada). */
+const emailDeExemplo = (tel?: string | null) => `${String(tel || "").replace(/\D/g, "") || Date.now()}@sememail.inmovya.com`;
 
 const normalizeLeadTag = (tag: string) => tag
   .normalize("NFD")
@@ -131,6 +142,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     dataInicio: "",
     dataFim: ""
   });
+  const [confirmouDuplicado, setConfirmouDuplicado] = useState(false);
   const [newLead, setNewLead] = useState({
     nome: "",
     telefone: "",
@@ -379,12 +391,60 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
     return true;
   });
 
+  // todos os leads duplicados (mesmo telefone ou mesmo e-mail), para conferir
+  const [verDuplicados, setVerDuplicados] = useState(false);
+  const gruposDuplicados = useMemo(() => {
+    const porTel = new Map<string, any[]>();
+    const porEmail = new Map<string, any[]>();
+    (leads || []).forEach((l: any) => {
+      const k = chaveTelefone(l.telefone);
+      if (k) porTel.set(k, [...(porTel.get(k) || []), l]);
+      const e = String(l.email || "").trim().toLowerCase();
+      if (e && e.includes("@") && !e.endsWith("@sememail.inmovya.com") && !/^(sem|nao|naotem|teste|x+)@/.test(e)) porEmail.set(e, [...(porEmail.get(e) || []), l]);
+    });
+    const grupos: { chave: string; motivo: string; leads: any[] }[] = [];
+    const jaNoGrupo = new Set<string>();
+    porTel.forEach((ls, k) => {
+      if (ls.length > 1) {
+        grupos.push({ chave: `t${k}`, motivo: `Mesmo telefone (${ls[0].telefone})`, leads: ls });
+        ls.forEach((l) => jaNoGrupo.add(l.id));
+      }
+    });
+    porEmail.forEach((ls, e) => {
+      if (ls.length > 1 && !ls.every((l) => jaNoGrupo.has(l.id))) grupos.push({ chave: `e${e}`, motivo: `Mesmo e-mail (${e})`, leads: ls });
+    });
+    return grupos;
+  }, [leads]);
+
+  // leads parecidos com o que está sendo cadastrado: mesmo telefone (DDD + últimos 8 dígitos) ou mesmo e-mail
+  const duplicadosNovo = useMemo(() => {
+    const kTel = chaveTelefone(newLead.telefone);
+    const email = (newLead.email || "").trim().toLowerCase();
+    if (!kTel && !email) return [] as any[];
+    return (leads || []).filter((l: any) => {
+      if (kTel && chaveTelefone(l.telefone) === kTel) return true;
+      if (email && !email.endsWith("@sememail.inmovya.com") && String(l.email || "").trim().toLowerCase() === email) return true;
+      return false;
+    }).slice(0, 5);
+  }, [leads, newLead.telefone, newLead.email]);
+  useEffect(() => setConfirmouDuplicado(false), [newLead.telefone, newLead.email]);
+
   const handleCreateLead = async () => {
-    // Validação básica
-    if (!newLead.nome || !newLead.telefone || !newLead.email) {
+    // Validação básica: nome e telefone (e-mail é opcional)
+    if (!newLead.nome.trim() || !newLead.telefone.trim()) {
       toast({
-        title: "Erro de validação",
-        description: "Nome, telefone e email são obrigatórios.",
+        title: "Faltou preencher",
+        description: "Nome e telefone são obrigatórios.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // já existe lead com esse telefone ou e-mail? avisa e só cadastra no segundo clique
+    if (duplicadosNovo.length && !confirmouDuplicado) {
+      setConfirmouDuplicado(true);
+      toast({
+        title: "Esse lead parece já estar cadastrado",
+        description: `${duplicadosNovo.map((d) => d.nome).join(", ")}. Abra o existente ou clique de novo em Cadastrar mesmo assim.`,
         variant: "destructive",
       });
       return;
@@ -409,7 +469,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         .insert([{
           nome: newLead.nome,
           telefone: newLead.telefone,
-          email: newLead.email,
+          email: newLead.email.trim() || emailDeExemplo(newLead.telefone),
           origem: newLead.origem || null,
           projeto_origem: grafiaCadastrada(newLead.projeto_origem, leads),
           observacoes: newLead.observacoes || null,
@@ -451,15 +511,20 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
         status: "Validação"
       });
       setIsDialogOpen(false);
+      setConfirmouDuplicado(false);
 
       // Recarregar a lista de leads
       refreshLeads();
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao criar lead:', JSON.stringify(error, null, 2));
+      const msg = String(error?.message || "");
       toast({
-        title: "Erro ao criar lead",
-        description: "Houve um problema ao salvar o lead. Tente novamente.",
+        title: "Não consegui cadastrar o lead",
+        description:
+          error?.code === "23505" || /duplicate|unique/i.test(msg)
+            ? "Já existe um lead com esse telefone ou e-mail. Procure por ele na lista (busque pelo telefone) e atualize o existente."
+            : `${msg || "erro desconhecido"}${error?.details ? ` (${error.details})` : ""}${error?.hint ? ` · ${error.hint}` : ""}`,
         variant: "destructive",
       });
     }
@@ -1233,15 +1298,41 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
+                  <Label htmlFor="email">Email (opcional)</Label>
                   <Input
                     id="email"
                     type="email"
                     value={newLead.email}
                     onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
-                    placeholder="seuemail@inmovya.com"
+                    placeholder="Sem e-mail? Deixe vazio que o Inmovya preenche"
                   />
                 </div>
+                {duplicadosNovo.length > 0 && (
+                  <div role="alert" className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
+                    <div className="text-sm font-bold">Atenção: já existe lead com esse telefone ou e-mail</div>
+                    {duplicadosNovo.map((d: any) => (
+                      <div key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-semibold">{d.nome}</span>
+                        <span className="text-muted-foreground">{d.telefone}</span>
+                        {d.status && <span className="text-xs rounded bg-muted px-1.5 py-0.5">{d.status}</span>}
+                        {d.projeto_origem && <span className="text-xs text-muted-foreground">· {d.projeto_origem}</span>}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="ml-auto h-8"
+                          onClick={() => {
+                            setIsDialogOpen(false);
+                            handleEditLead(d);
+                          }}
+                        >
+                          Abrir este
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="text-xs text-muted-foreground">Se for outra pessoa, clique em “Cadastrar mesmo assim”.</div>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="origem">Origem</Label>
                   <Input
@@ -1364,8 +1455,8 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   )}
                 </div>
                 <div className="flex gap-2 pt-4">
-                  <Button onClick={handleCreateLead} className="flex-1">
-                    Criar Lead
+                  <Button onClick={handleCreateLead} className="flex-1" variant={duplicadosNovo.length && confirmouDuplicado ? "destructive" : "default"}>
+                    {duplicadosNovo.length && confirmouDuplicado ? "Cadastrar mesmo assim" : "Criar Lead"}
                   </Button>
                   <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1">
                     Cancelar
@@ -1445,6 +1536,53 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   20%, 50%, Lead, Bitrix…). Não manda mensagem. As regras ficam em Configurações → Etiquetas de projeto.
                 </p>
                 <SincronizarEtiquetasProjeto />
+              </DialogContent>
+            </Dialog>
+            <Button variant="outline" className="col-span-2 sm:col-span-1 w-full sm:w-auto" onClick={() => setVerDuplicados(true)}>
+              <Users className="w-4 h-4 mr-2" />
+              Duplicados{gruposDuplicados.length ? ` (${gruposDuplicados.length})` : ""}
+            </Button>
+            <Dialog open={verDuplicados} onOpenChange={setVerDuplicados}>
+              <DialogContent className="w-[95vw] max-w-[720px] max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Leads duplicados</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">
+                  Leads com o mesmo telefone (com ou sem 55 e o 9 da frente) ou o mesmo e-mail. Abra cada um para conferir e apague ou atualize o que sobrar.
+                </p>
+                {gruposDuplicados.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum lead duplicado. 👍</div>
+                ) : (
+                  <div className="space-y-3">
+                    {gruposDuplicados.map((g) => (
+                      <div key={g.chave} className="rounded-lg border p-3 space-y-1.5">
+                        <div className="text-xs font-semibold text-muted-foreground">
+                          {g.motivo} · {g.leads.length} leads
+                        </div>
+                        {g.leads.map((l: any) => (
+                          <div key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold">{l.nome}</span>
+                            <span className="text-muted-foreground">{l.telefone}</span>
+                            {l.status && <span className="text-xs rounded bg-muted px-1.5 py-0.5">{l.status}</span>}
+                            {l.projeto_origem && <span className="text-xs text-muted-foreground">· {l.projeto_origem}</span>}
+                            {l.created_at && <span className="text-xs text-muted-foreground">· desde {new Date(l.created_at).toLocaleDateString("pt-BR")}</span>}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="ml-auto h-8"
+                              onClick={() => {
+                                setVerDuplicados(false);
+                                handleEditLead(l);
+                              }}
+                            >
+                              Abrir
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </DialogContent>
             </Dialog>
           </div>
