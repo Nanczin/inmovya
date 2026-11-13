@@ -11,6 +11,7 @@ export type LeadNaLinha = {
   esteira_id?: string | null;
   esteira_passo?: number | null;
   esteira_proximo?: string | null;
+  observacoes?: string | null;
 };
 
 export type ParadaSelecionada = { esteiraId: string; idx: number } | null;

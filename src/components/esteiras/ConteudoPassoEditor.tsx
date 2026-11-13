@@ -1,5 +1,5 @@
 // Mensagem + anexos de um passo da esteira (usado na mensagem padrão e em cada versão por projeto).
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -7,10 +7,12 @@ import {
   EsteiraAnexo,
   ANEXO_MAX_MB,
   escolherArquivosDoComputador,
+  guardarAtalhoDeArquivo,
   partesDaMensagem,
   tamanhoLegivel,
 } from "@/lib/esteiras";
-import { Loader2, Paperclip, Shuffle, Eye, X as XIcon } from "lucide-react";
+import { Loader2, Paperclip, Shuffle, Eye, X as XIcon, Upload, Smartphone } from "lucide-react";
+import { PreviaWhatsApp } from "@/components/esteiras/PreviaWhatsApp";
 import { contarVariacoes, gerarSpintax, spin, spintaxValido } from "@/lib/spintax";
 
 // Formatação do WhatsApp: *negrito*, _itálico_, ~tachado~, ```mono```
@@ -120,12 +122,71 @@ interface Props {
   onMensagem: (v: string) => void;
   onAnexos: (v: EsteiraAnexo[]) => void;
   placeholder?: string;
+  /** lead usado na prévia (nome e empreendimento); sem ele, um nome de exemplo */
+  exemploLead?: { nome?: string | null; observacoes?: string | null } | null;
 }
 
-export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, placeholder }: Props) {
+const TIPOS_OK = /^(image\/(jpeg|png|webp|gif)|application\/pdf|video\/)/;
+
+export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, placeholder, exemploLead }: Props) {
   const { toast } = useToast();
   const [anexando, setAnexando] = useState(false);
+  const [arrastando, setArrastando] = useState(false);
+  const [previa, setPrevia] = useState(false);
   const partes = partesDaMensagem(mensagem);
+
+  // arquivo solto fora da caixa não pode abrir no lugar do Inmovya
+  useEffect(() => {
+    const segurar = (ev: DragEvent) => {
+      if (ev.dataTransfer?.types?.includes("Files")) ev.preventDefault();
+    };
+    window.addEventListener("dragover", segurar);
+    window.addEventListener("drop", segurar);
+    return () => {
+      window.removeEventListener("dragover", segurar);
+      window.removeEventListener("drop", segurar);
+    };
+  }, []);
+
+  // arrastar e soltar: guarda o atalho do arquivo (o arquivo continua no computador)
+  const soltar = async (ev: React.DragEvent) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    setArrastando(false);
+    const itens = (Array.from(ev.dataTransfer.items || []) as DataTransferItem[]).filter((i) => i.kind === "file");
+    const pegarAtalho = (i: DataTransferItem) => (i as any).getAsFileSystemHandle?.() as Promise<any> | undefined;
+    // precisa pedir todos os atalhos já, ainda dentro do evento
+    const pedidos = itens.map((i) => pegarAtalho(i));
+    if (!pedidos.length) return;
+    if (pedidos.some((p) => !p)) {
+      toast({ title: "Use o botão Anexar", description: "Este navegador não deixa guardar arquivo arrastado. Use o Google Chrome ou clique em Anexar.", variant: "destructive" });
+      return;
+    }
+    setAnexando(true);
+    try {
+      const novos: EsteiraAnexo[] = [];
+      for (const p of pedidos) {
+        const h = await p;
+        if (!h || h.kind !== "file") continue;
+        const f: File = await h.getFile();
+        if (f.size > ANEXO_MAX_MB * 1024 * 1024) throw new Error(`${f.name} tem mais de ${ANEXO_MAX_MB} MB.`);
+        if (f.type && !TIPOS_OK.test(f.type)) {
+          toast({ title: `${f.name} não foi anexado`, description: "Use PDF, JPG, PNG ou vídeo.", variant: "destructive" });
+          continue;
+        }
+        const local_id = await guardarAtalhoDeArquivo(h);
+        novos.push({ local_id, name: f.name, type: f.type || "application/octet-stream", size: f.size });
+      }
+      if (novos.length) {
+        onAnexos([...anexos, ...novos]);
+        toast({ title: `${novos.length} anexo(s) adicionado(s)`, description: "Clique em Salvar para guardar na esteira." });
+      }
+    } catch (err: any) {
+      toast({ title: "Anexo não adicionado", description: err?.message, variant: "destructive" });
+    } finally {
+      setAnexando(false);
+    }
+  };
 
   const anexar = async () => {
     setAnexando(true);
@@ -208,15 +269,42 @@ export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, pl
           type="button"
           disabled={anexando}
           onClick={anexar}
-          className="inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 hover:bg-slate-50 disabled:opacity-60"
+          onDragOver={(ev) => {
+            ev.preventDefault();
+            setArrastando(true);
+          }}
+          onDragLeave={() => setArrastando(false)}
+          onDrop={soltar}
+          className={`w-full flex items-center justify-center gap-2 min-h-14 rounded-lg border-2 border-dashed px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-60 ${
+            arrastando ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/60 hover:bg-muted/50"
+          }`}
         >
-          {anexando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
-          Anexar PDF ou imagem
+          {anexando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+          {arrastando ? "Solte aqui para anexar" : "Anexar PDF ou imagem: clique ou arraste o arquivo aqui"}
         </button>
         <span className="text-[11px] text-muted-foreground">
-          PDF, JPG, PNG (e vídeo) · até {ANEXO_MAX_MB} MB · separe as mensagens com === e escolha depois de qual mensagem cada arquivo vai · o arquivo fica no seu computador (não mova nem apague)
+          PDF, JPG, PNG (e vídeo) · até {ANEXO_MAX_MB} MB · o arquivo fica no seu computador (não mova nem apague) · separe as mensagens com === para escolher depois de qual vai cada arquivo
         </span>
       </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setPrevia((v) => !v)}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border bg-card text-sm font-semibold hover:bg-muted"
+          aria-expanded={previa}
+        >
+          <Smartphone className="w-4 h-4" /> {previa ? "Fechar prévia" : "Ver prévia no WhatsApp"}
+        </button>
+      </div>
+      {previa && (
+        <PreviaWhatsApp
+          mensagem={mensagem}
+          anexos={anexos}
+          leadNome={exemploLead?.nome || undefined}
+          observacoes={exemploLead?.observacoes}
+          onFechar={() => setPrevia(false)}
+        />
+      )}
       {anexos.length > 0 && (
         <div className="rounded-md bg-blue-50/60 border border-blue-100 px-2 py-1.5">
           <div className="text-[11px] font-semibold text-blue-900 mb-0.5">Ordem do envio deste passo</div>

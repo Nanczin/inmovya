@@ -1135,6 +1135,7 @@ export function EsteirasModule() {
                 anexos={p.anexos || []}
                 onMensagem={(v) => mudarPasso(idx, "mensagem", v)}
                 onAnexos={(v) => mudarPasso(idx, "anexos", v)}
+                exemploLead={naParada[0] || leadsEmEsteira.find((l) => l.esteira_id === e.id) || null}
               />
             </>
           )}
@@ -1996,6 +1997,7 @@ export function EsteirasModule() {
                         anexos={p.anexos || []}
                         onMensagem={(v) => mudarPasso(idx, "mensagem", v)}
                         onAnexos={(v) => mudarPasso(idx, "anexos", v)}
+                        exemploLead={leadsDaEsteiraSel[0] || null}
                       />
                     </div>
                   ))}
