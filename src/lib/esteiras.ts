@@ -71,16 +71,69 @@ const abrirDb = () =>
     req.onupgradeneeded = () => req.result.createObjectStore("arquivos");
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("O armazenamento de arquivos está travado por outra aba do Inmovya. Feche as outras abas e tente de novo."));
   });
 const idb = async <T,>(modo: IDBTransactionMode, fn: (st: IDBObjectStore) => IDBRequest<T>) => {
-  const db = await abrirDb();
-  return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction("arquivos", modo);
-    const req = fn(tx.objectStore("arquivos"));
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+  // nunca fica travado em silêncio: em 20 s dá erro
+  let timer = 0;
+  const limite = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error("O navegador não respondeu ao guardar o arquivo. Recarregue a página (F5) e tente de novo.")), 20000);
   });
+  try {
+    return await Promise.race([
+      (async () => {
+        const db = await abrirDb();
+        return new Promise<T>((resolve, reject) => {
+          const tx = db.transaction("arquivos", modo);
+          const req = fn(tx.objectStore("arquivos"));
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+          tx.onabort = () => reject(tx.error || new Error("Não consegui guardar o arquivo (espaço do navegador cheio?)."));
+        });
+      })(),
+      limite,
+    ]);
+  } finally {
+    window.clearTimeout(timer);
+  }
 };
+
+// Anexos novos: uma CÓPIA do arquivo fica guardada neste navegador (IndexedDB), no seu computador,
+// nunca no Supabase. Não depende de permissão do Chrome nem de o arquivo continuar na mesma pasta.
+export const TIPOS_ANEXO_ACEITOS = ".pdf,.jpg,.jpeg,.png,.webp,.mp4,.mov,.3gp,application/pdf,image/jpeg,image/png,image/webp,video/*";
+
+/** Abre a janela de escolher arquivo (chamar direto no clique). Cancelar devolve lista vazia. */
+export function escolherArquivos(accept = TIPOS_ANEXO_ACEITOS): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.accept = accept;
+    input.style.display = "none";
+    let feito = false;
+    const fim = (files: File[]) => {
+      if (feito) return;
+      feito = true;
+      input.remove();
+      resolve(files);
+    };
+    input.addEventListener("change", () => fim(Array.from(input.files || [])));
+    input.addEventListener("cancel", () => fim([]));
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
+/** Guarda a cópia do arquivo neste navegador e devolve o anexo. */
+export async function guardarArquivoNoNavegador(f: File): Promise<EsteiraAnexo> {
+  if (f.size > ANEXO_MAX_MB * 1024 * 1024) throw new Error(`${f.name} tem mais de ${ANEXO_MAX_MB} MB.`);
+  const local_id = crypto.randomUUID();
+  await idb("readwrite", (st) => st.put(f, local_id));
+  return { local_id, name: f.name, type: f.type || "application/octet-stream", size: f.size };
+}
+
+/** O que está guardado pode ser a cópia (File/Blob) ou o atalho antigo para o arquivo (FileSystemFileHandle). */
+const ehCopia = (v: any): v is Blob => typeof Blob !== "undefined" && v instanceof Blob;
 
 export const anexosLocaisSuportados = () => typeof (window as any).showOpenFilePicker === "function";
 
@@ -123,6 +176,7 @@ export async function guardarAtalhoDeArquivo(handle: any) {
 export async function lerArquivoLocal(local_id: string, nome = "arquivo"): Promise<File> {
   const h: any = await idb("readonly", (st) => st.get(local_id)).catch(() => null);
   if (!h) throw new Error(`O arquivo ${nome} não está neste computador. Anexe de novo no template.`);
+  if (ehCopia(h)) return h instanceof File ? h : new File([h], nome, { type: h.type });
   const p = await h.queryPermission?.({ mode: "read" });
   if (p && p !== "granted") throw new Error(`Sem permissão para ler ${nome}. Clique em "Liberar arquivos" no disparo automático.`);
   try {
@@ -146,6 +200,7 @@ export async function liberarArquivosLocais(anexos: EsteiraAnexo[]) {
       faltando.push(a.name);
       continue;
     }
+    if (ehCopia(h)) continue; // cópia guardada: não precisa de permissão
     let p = await h.queryPermission?.({ mode: "read" });
     if (p !== "granted") p = await h.requestPermission?.({ mode: "read" });
     if (p !== "granted") faltando.push(a.name);
@@ -172,7 +227,7 @@ export async function prepararAnexosParaEnvio(anexos?: EsteiraAnexo[] | null, le
       const h: any = await idb("readonly", (st) => st.get(a.local_id!)).catch(() => null);
       if (!h) throw new Error(`O arquivo ${a.name} não está neste computador. Anexe de novo na esteira.`);
       try {
-        blob = await h.getFile();
+        blob = ehCopia(h) ? h : await h.getFile();
       } catch {
         throw new Error(`Não consegui abrir ${a.name} (foi movido, apagado ou sem permissão).`);
       }

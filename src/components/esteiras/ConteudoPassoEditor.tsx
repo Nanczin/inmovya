@@ -1,13 +1,13 @@
 // Mensagem + anexos de um passo da esteira (usado na mensagem padrão e em cada versão por projeto).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent as ReactDragEvent } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   EsteiraAnexo,
   ANEXO_MAX_MB,
-  escolherArquivosDoComputador,
-  guardarAtalhoDeArquivo,
+  escolherArquivos,
+  guardarArquivoNoNavegador,
   partesDaMensagem,
   tamanhoLegivel,
 } from "@/lib/esteiras";
@@ -148,59 +148,49 @@ export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, pl
     };
   }, []);
 
-  // arrastar e soltar: guarda o atalho do arquivo (o arquivo continua no computador)
-  const soltar = async (ev: React.DragEvent) => {
+  // aviso que fica na tela (o balão some rápido)
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+
+  // guarda a cópia de cada arquivo neste navegador e põe na lista de anexos do passo
+  const adicionar = async (files: File[]) => {
+    if (!files.length) return;
+    setAnexando(true);
+    setAviso(null);
+    const novos: EsteiraAnexo[] = [];
+    const erros: string[] = [];
+    for (const f of files) {
+      try {
+        if (f.type && !TIPOS_OK.test(f.type)) throw new Error(`${f.name}: use PDF, JPG, PNG ou vídeo`);
+        novos.push(await guardarArquivoNoNavegador(f));
+      } catch (err: any) {
+        erros.push(err?.message || `${f.name}: não consegui guardar`);
+      }
+    }
+    if (novos.length) onAnexos([...anexos, ...novos]);
+    const nomes = novos.map((n) => n.name).join(", ");
+    if (novos.length && !erros.length) {
+      setAviso({ ok: true, texto: `✓ Anexado: ${nomes}. Agora clique em Salvar para guardar na esteira.` });
+      toast({ title: `${novos.length} anexo(s) adicionado(s)`, description: "Clique em Salvar para guardar na esteira." });
+    } else if (novos.length) {
+      setAviso({ ok: false, texto: `Anexado: ${nomes}. Não anexados: ${erros.join("; ")}.` });
+    } else {
+      setAviso({ ok: false, texto: `Nenhum arquivo anexado: ${erros.join("; ")}.` });
+      toast({ title: "Anexo não adicionado", description: erros.join("; "), variant: "destructive" });
+    }
+    setAnexando(false);
+  };
+
+  // arrastar e soltar
+  const soltar = (ev: ReactDragEvent) => {
     ev.preventDefault();
     ev.stopPropagation();
     setArrastando(false);
-    const itens = (Array.from(ev.dataTransfer.items || []) as DataTransferItem[]).filter((i) => i.kind === "file");
-    const pegarAtalho = (i: DataTransferItem) => (i as any).getAsFileSystemHandle?.() as Promise<any> | undefined;
-    // precisa pedir todos os atalhos já, ainda dentro do evento
-    const pedidos = itens.map((i) => pegarAtalho(i));
-    if (!pedidos.length) return;
-    if (pedidos.some((p) => !p)) {
-      toast({ title: "Use o botão Anexar", description: "Este navegador não deixa guardar arquivo arrastado. Use o Google Chrome ou clique em Anexar.", variant: "destructive" });
-      return;
-    }
-    setAnexando(true);
-    try {
-      const novos: EsteiraAnexo[] = [];
-      for (const p of pedidos) {
-        const h = await p;
-        if (!h || h.kind !== "file") continue;
-        const f: File = await h.getFile();
-        if (f.size > ANEXO_MAX_MB * 1024 * 1024) throw new Error(`${f.name} tem mais de ${ANEXO_MAX_MB} MB.`);
-        if (f.type && !TIPOS_OK.test(f.type)) {
-          toast({ title: `${f.name} não foi anexado`, description: "Use PDF, JPG, PNG ou vídeo.", variant: "destructive" });
-          continue;
-        }
-        const local_id = await guardarAtalhoDeArquivo(h);
-        novos.push({ local_id, name: f.name, type: f.type || "application/octet-stream", size: f.size });
-      }
-      if (novos.length) {
-        onAnexos([...anexos, ...novos]);
-        toast({ title: `${novos.length} anexo(s) adicionado(s)`, description: "Clique em Salvar para guardar na esteira." });
-      }
-    } catch (err: any) {
-      toast({ title: "Anexo não adicionado", description: err?.message, variant: "destructive" });
-    } finally {
-      setAnexando(false);
-    }
+    adicionar(Array.from(ev.dataTransfer.files || []) as File[]);
   };
 
-  const anexar = async () => {
-    setAnexando(true);
-    try {
-      const novos = await escolherArquivosDoComputador();
-      if (novos.length) {
-        onAnexos([...anexos, ...novos]);
-        toast({ title: `${novos.length} anexo(s) adicionado(s)`, description: "Clique em Salvar esteira para guardar." });
-      }
-    } catch (err: any) {
-      toast({ title: "Anexo não adicionado", description: err?.message, variant: "destructive" });
-    } finally {
-      setAnexando(false);
-    }
+  // clique: abre a janela de escolher arquivo (tem que ser direto no clique)
+  const anexar = () => {
+    escolherArquivos().then(adicionar);
   };
   const mudarAnexo = (chave: string, campos: Partial<EsteiraAnexo>) =>
     onAnexos(anexos.map((a) => ((a.local_id || a.path) === chave ? { ...a, ...campos } : a)));
@@ -283,8 +273,16 @@ export function ConteudoPassoEditor({ mensagem, anexos, onMensagem, onAnexos, pl
           {arrastando ? "Solte aqui para anexar" : "Anexar PDF ou imagem: clique ou arraste o arquivo aqui"}
         </button>
         <span className="text-[11px] text-muted-foreground">
-          PDF, JPG, PNG (e vídeo) · até {ANEXO_MAX_MB} MB · o arquivo fica no seu computador (não mova nem apague) · separe as mensagens com === para escolher depois de qual vai cada arquivo
+          PDF, JPG, PNG (e vídeo) · até {ANEXO_MAX_MB} MB · uma cópia fica guardada neste navegador (não vai para a internet) · separe as mensagens com === para escolher depois de qual vai cada arquivo
         </span>
+        {aviso && (
+          <div
+            role="status"
+            className={`w-full rounded-md px-3 py-2 text-sm font-semibold ${aviso.ok ? "bg-success/15 text-success border border-success/30" : "bg-destructive/10 text-destructive border border-destructive/30"}`}
+          >
+            {aviso.texto}
+          </div>
+        )}
       </div>
       <div className="flex justify-end">
         <button
