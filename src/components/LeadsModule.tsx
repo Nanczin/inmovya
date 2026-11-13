@@ -18,6 +18,7 @@ import { EtiquetaProjetoBadges } from "@/components/etiquetas/EtiquetaProjetoBad
 import { SincronizarEtiquetasProjeto } from "@/components/etiquetas/SincronizarEtiquetasProjeto";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { useLeads } from "@/context/LeadsContext";
+import { ProjetoOrigemInput, grafiaCadastrada } from "@/components/leads/ProjetoOrigemInput";
 import { useNotifications } from "@/hooks/useNotifications";
 import { supabase } from "@/integrations/supabase/client";
 import Papa from "papaparse";
@@ -410,7 +411,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           telefone: newLead.telefone,
           email: newLead.email,
           origem: newLead.origem || null,
-          projeto_origem: newLead.projeto_origem?.trim() || null,
+          projeto_origem: grafiaCadastrada(newLead.projeto_origem, leads),
           observacoes: newLead.observacoes || null,
           ultimo_contato: new Date().toISOString(),
           status: newLead.status || 'Validação',
@@ -631,7 +632,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           telefone: editLead.telefone,
           email: editLead.email,
           origem: editLead.origem || null,
-          projeto_origem: editLead.projeto_origem?.trim() || null,
+          projeto_origem: grafiaCadastrada(editLead.projeto_origem, leads),
           observacoes: editLead.observacoes || null,
           status: editLead.status || 'Validação',
           tags: [
@@ -1114,7 +1115,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
           status: 'novo',
           user_id: user.id,
           observacoes: observacoes || '',
-          ...(projetoOrigem ? { projeto_origem: projetoOrigem } : {}),
+          ...(projetoOrigem ? { projeto_origem: grafiaCadastrada(projetoOrigem, leads) } : {}),
           tags: tags
         };
       }).filter(Boolean);
@@ -1321,11 +1322,10 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="projeto_origem">Projeto de origem</Label>
-                  <Input
+                  <ProjetoOrigemInput
                     id="projeto_origem"
                     value={newLead.projeto_origem}
-                    onChange={(e) => setNewLead({ ...newLead, projeto_origem: e.target.value })}
-                    placeholder="Ex.: Sync Ibirapuera (a etiqueta do WhatsApp sai daqui)"
+                    onChange={(v) => setNewLead({ ...newLead, projeto_origem: v })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1936,11 +1936,10 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-projeto_origem">Projeto de origem</Label>
-              <Input
+              <ProjetoOrigemInput
                 id="edit-projeto_origem"
                 value={editLead.projeto_origem}
-                onChange={(e) => setEditLead({ ...editLead, projeto_origem: e.target.value })}
-                placeholder="Ex.: Sync Ibirapuera (a etiqueta do WhatsApp sai daqui)"
+                onChange={(v) => setEditLead({ ...editLead, projeto_origem: v })}
               />
             </div>
             <div className="space-y-2">
