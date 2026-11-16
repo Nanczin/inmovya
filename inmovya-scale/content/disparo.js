@@ -24,6 +24,7 @@ window.IS.Disparo = (() => {
     horaIni: '08:00',
     horaFim: '20:00',
     evitarDias: 7, // não manda para quem recebeu disparo nos últimos N dias (0 = desliga)
+    maxPessoas: 0, // envia para no máximo N pessoas da lista (0 = todas)
     autoVariar: true, // cada envio sai diferente: sinônimos e pontuação sorteados
     tempoAuto: true, // tempo "humano": intervalo, tamanho do lote e pausas sorteados sozinhos
   };
@@ -89,14 +90,16 @@ window.IS.Disparo = (() => {
   };
 
   // spintax {Oi|Olá|Oii} (aceita um dentro do outro); {{variáveis}} ficam protegidas
-  function spin(texto) {
+  // marcar=true: o trecho sorteado fica entre \u0002 e \u0003 (para mostrar o que variou)
+  function spin(texto, marcar = false) {
     const vars = [];
     let t = String(texto || '').replace(/\{\{[^{}]*\}\}/g, m => `\u0000${vars.push(m) - 1}\u0000`);
     for (let i = 0; i < 20; i++) {
       const antes = t;
       t = t.replace(/\{([^{}]*)\}/g, (_, dentro) => {
         const op = dentro.split('|');
-        return op[Math.floor(Math.random() * op.length)];
+        const escolhido = op[Math.floor(Math.random() * op.length)];
+        return marcar && op.length > 1 ? `\u0002${escolhido.replace(/[\u0002\u0003]/g, '')}\u0003` : escolhido;
       });
       if (t === antes) break;
     }
@@ -180,13 +183,13 @@ window.IS.Disparo = (() => {
     return t.replace(/\u0001(\d+)\u0001/g, (_, i) => guardados[+i]).replace(/\u0001(\d+)\u0001/g, (_, i) => guardados[+i]);
   }
   /** Toques finais sorteados em cada envio: pontuação. */
-  function variarDetalhes(texto) {
+  function variarDetalhes(texto, marcar = false) {
     const partes = texto.split(/(^\s*===\s*$)/m);
     return partes.map(p => {
       if (/^\s*===\s*$/.test(p)) return p;
       let x = p;
       // "!" às vezes vira "." ou "!!"
-      x = x.replace(/!(?=\s|$)/g, () => { const r = Math.random(); return r < 0.2 ? '.' : r < 0.32 ? '!!' : '!'; });
+      x = x.replace(/!(?=[\s\u0002\u0003]|$)/g, () => { const r = Math.random(); const t = r < 0.2 ? '.' : r < 0.32 ? '!!' : '!'; return marcar && t !== '!' ? `\u0002${t}\u0003` : t; });
       return x;
     }).join('');
   }
@@ -199,14 +202,16 @@ window.IS.Disparo = (() => {
     while ((m = re.exec(t))) total *= Math.max(1, m[1].split('|').length);
     return total;
   }
-  function montarTexto(modelo, contato, auto = false) {
+  const tirarMarcas = t => String(t || '').replace(/[\u0002\u0003]/g, '');
+  const marcasHtml = t => esc(t).replace(/\u0002/g, '<mark>').replace(/\u0003/g, '</mark>');
+  function montarTexto(modelo, contato, auto = false, marcar = false) {
     const nome = primeiroNome(contato.nome);
     const base = auto ? gerarSpintax(modelo) : modelo;
-    const sorteado = auto ? variarDetalhes(spin(base)) : spin(base);
+    const sorteado = auto ? variarDetalhes(spin(base, marcar), marcar) : spin(base, marcar);
     return sorteado
       .replace(/\{\{\s*nome\s*\}\}/gi, nome)
       .replace(/\{\{\s*nome_completo\s*\}\}/gi, String(contato.nome || '').trim() || nome)
-      .replace(/\{\{\s*saudacao\s*\}\}/gi, (m, pos, tudo) => (/^\s*$|[.!?\n]\s*$/.test(tudo.slice(0, pos)) ? saudacao() : saudacao().toLowerCase()))
+      .replace(/\{\{\s*saudacao\s*\}\}/gi, (m, pos, tudo) => (/^[\s\u0002\u0003]*$|[.!?\n][\s\u0002\u0003]*$/.test(tudo.slice(0, pos)) ? saudacao() : saudacao().toLowerCase()))
       .replace(/\s+([,.!?])/g, '$1') // "Oi , tudo bem" quando não tem nome
       .replace(/^[,\s]+/, '');
   }
@@ -396,7 +401,9 @@ window.IS.Disparo = (() => {
 
   function montarEnvio(contato) {
     const partes = String(st.campanha.mensagem || '');
-    const texto = montarTexto(partes, contato, !!st.campanha.cfg?.autoVariar);
+    const auto = !!st.campanha.cfg?.autoVariar;
+    const marcado = montarTexto(partes, contato, auto, true);
+    const texto = tirarMarcas(marcado);
     const nPartes = texto.split(/^\s*===\s*$/m).length;
     const anexos = (st.anexos || []).map(a => ({
       id: a.id,
@@ -406,10 +413,14 @@ window.IS.Disparo = (() => {
       data: a.data,
       messageIndex: nPartes - 1, // depois da última mensagem
       // legenda própria do anexo (aceita {{nome}} e variações); senão, opção de usar o texto da mensagem
-      caption: String(a.legendaTexto || '').trim() ? montarTexto(a.legendaTexto, contato, !!st.campanha.cfg?.autoVariar) : '',
+      captionMarcada: String(a.legendaTexto || '').trim() ? montarTexto(a.legendaTexto, contato, auto, true) : '',
       useCaption: !String(a.legendaTexto || '').trim() && !!a.legenda && (a.type || '').startsWith('image/'),
     }));
-    return { texto, anexos };
+    // o que este contato recebeu (com o que variou marcado), para você conferir depois
+    const legendas = anexos.filter(x => x.captionMarcada).map(x => `📎 ${x.name}: ${x.captionMarcada}`);
+    const registro = [marcado, ...legendas].filter(Boolean).join('\n');
+    anexos.forEach(x => { x.caption = tirarMarcas(x.captionMarcada); delete x.captionMarcada; });
+    return { texto, anexos, registro };
   }
 
   // aviso do WhatsApp de número inválido / sem WhatsApp
@@ -458,7 +469,8 @@ window.IS.Disparo = (() => {
   }
 
   async function enviarUm(contato) {
-    const { texto, anexos } = montarEnvio(contato);
+    const { texto, anexos, registro } = montarEnvio(contato);
+    contato.textoEnviado = registro;
     const pedido = { text: texto, attachments: anexos, envioId: contato.envioId, gapMinMs: 1500, gapMaxMs: 4000 };
     // 1º jeito: aqui mesmo, na aba que você está usando (sem reiniciar o WhatsApp).
     // Com a aba escondida o Chrome deixa a página lenta; aí usa a janelinha de reserva.
@@ -500,6 +512,11 @@ window.IS.Disparo = (() => {
       while (c.status === 'rodando') {
         const item = c.contatos.find(x => x.status === 'pendente');
         if (!item) { c.status = 'concluido'; break; }
+        if (cfg.maxPessoas > 0 && c.contatos.filter(x => x.status === 'enviado').length >= cfg.maxPessoas) {
+          for (const x of c.contatos) if (x.status === 'pendente') { x.status = 'pulado'; x.erro = `limite de ${cfg.maxPessoas} pessoas atingido`; }
+          c.status = 'concluido';
+          break;
+        }
         if (!dentroDoHorario(cfg)) { await esperar(60000, `Fora do horário (${cfg.horaIni} às ${cfg.horaFim}). Continua sozinho no horário.`); continue; }
         if ((await contadorHoje()) >= cfg.limiteDia) { await esperar(5 * 60000, `Limite de ${cfg.limiteDia} envios por dia atingido. Continua amanhã.`); continue; }
         const loteAlvo = cfg.tempoAuto ? (c.loteAlvo ||= sorteio(TEMPO_AUTO.loteMin, TEMPO_AUTO.loteMax)) : cfg.lote;
@@ -602,6 +619,7 @@ window.IS.Disparo = (() => {
       horaFim: /^\d{2}:\d{2}$/.test(c.horaFim) ? c.horaFim : CFG_PADRAO.horaFim,
       evitarDias: n(c.evitarDias, 0, 90, CFG_PADRAO.evitarDias),
       autoVariar: c.autoVariar !== false,
+      maxPessoas: n(c.maxPessoas, 0, 100000, 0),
       tempoAuto: c.tempoAuto !== false,
     };
     if (out.intervaloMax < out.intervaloMin) out.intervaloMax = out.intervaloMin;
@@ -623,9 +641,9 @@ window.IS.Disparo = (() => {
   function baixarRelatorio() {
     const c = st.campanha;
     if (!c) return;
-    const linhas = [['Nome', 'Telefone', 'Situação', 'Motivo', 'Quando'].join(';')];
+    const linhas = [['Nome', 'Telefone', 'Situação', 'Motivo', 'Quando', 'Mensagem enviada'].join(';')];
     for (const x of c.contatos) {
-      linhas.push([x.nome, telBonito(x.telefone), x.status, x.erro || '', x.em ? new Date(x.em).toLocaleString('pt-BR') : ''].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
+      linhas.push([x.nome, telBonito(x.telefone), x.status, x.erro || '', x.em ? new Date(x.em).toLocaleString('pt-BR') : '', tirarMarcas(x.textoEnviado || '')].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'));
     }
     const blob = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -691,6 +709,11 @@ window.IS.Disparo = (() => {
       #is-dsp .dsp-ok{padding:8px 10px;border-radius:8px;background:#e8f6ee;color:#0a6b3a;font-size:12px}
       #is-dsp .dsp-erro{padding:8px 10px;border-radius:8px;background:#fdecee;color:#a8212f;font-size:12px}
       #is-dsp .dsp-alerta{padding:8px 10px;border-radius:8px;background:#fff7e6;color:#7a4b00;font-size:12px}
+      #is-dsp mark{background:#ffe08a;color:#111b21;border-radius:3px;padding:0 2px}
+      #is-dsp .dsp-enviado summary{display:flex;gap:6px;align-items:center;cursor:pointer;list-style:none}
+      #is-dsp .dsp-enviado summary::-webkit-details-marker{display:none}
+      #is-dsp .dsp-enviado .dsp-previa{margin:4px 0 6px;font-size:12px}
+      #is-dsp .dsp-log .dsp-previa{display:block;border-bottom:0;padding:6px 8px}
       #is-dsp .dsp-previa{white-space:pre-wrap;background:#d9fdd3;color:#111b21;border-radius:8px;padding:8px 10px;font-size:13px}
       #is-dsp .dsp-anexo{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--inmovya-border,#d1d7db);border-radius:8px}
       #is-dsp .dsp-anexo span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -761,8 +784,9 @@ window.IS.Disparo = (() => {
     const medioSeg = auto ? (TEMPO_AUTO.min + TEMPO_AUTO.max) / 2 + 0.12 * 150 : (cfg.intervaloMin + cfg.intervaloMax) / 2;
     const loteMedio = auto ? (TEMPO_AUTO.loteMin + TEMPO_AUTO.loteMax) / 2 : cfg.lote;
     const pausaMedia = auto ? (TEMPO_AUTO.pausaMin + TEMPO_AUTO.pausaMax) / 2 : cfg.pausaLote;
-    const tempoMedio = medioSeg * Math.max(0, st.contatos.length - 1);
-    const pausas = loteMedio > 0 ? Math.floor(Math.max(0, st.contatos.length - 1) / loteMedio) * pausaMedia * 60 : 0;
+    const qtd = cfg.maxPessoas > 0 ? Math.min(cfg.maxPessoas, st.contatos.length) : st.contatos.length;
+    const tempoMedio = medioSeg * Math.max(0, qtd - 1);
+    const pausas = loteMedio > 0 ? Math.floor(Math.max(0, qtd - 1) / loteMedio) * pausaMedia * 60 : 0;
     const etiquetas = st.etiquetas === undefined
       ? '<div class="dsp-mini">Carregando etiquetas…</div>'
       : st.etiquetas === null
@@ -789,6 +813,8 @@ window.IS.Disparo = (() => {
           <div class="dsp-mini">Do Excel/Google Planilhas: copie as colunas Nome e Telefone e cole aqui, ou salve como CSV.</div>
         `}
         ${st.contatos.length ? `<div class="dsp-mini"><b>${st.contatos.length}</b> na lista: ${st.contatos.slice(0, 4).map(c => esc(c.nome || telBonito(c.telefone))).join(', ')}${st.contatos.length > 4 ? '…' : ''}</div>` : ''}
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px">Enviar para no máximo <input type="number" min="0" data-cfg="maxPessoas" value="${cfg.maxPessoas || ''}" placeholder="todas" style="width:90px"> pessoas</label>
+        ${cfg.maxPessoas > 0 && st.contatos.length > cfg.maxPessoas ? `<div class="dsp-mini">Vai enviar para <b>${cfg.maxPessoas}</b> de ${st.contatos.length} (na ordem da lista). Os outros ficam de fora.</div>` : ''}
       </div>
 
       <div class="dsp-sec">
@@ -808,7 +834,7 @@ window.IS.Disparo = (() => {
             : '<div class="dsp-alerta">Sem variação: todos recebem o mesmo texto, o que aumenta o risco de bloqueio. Use {Oi|Olá|Oii}.</div>'
           : ''}
         <div style="display:flex;gap:6px;align-items:center"><button type="button" class="dsp-btn dsp-sec2" data-previa>👁️ Ver prévia</button><span class="dsp-mini">com ${esc(st.contatos[0]?.nome || 'Maria Silva')}</span></div>
-        ${st.previa ? `<div class="dsp-previa">${esc(st.previa)}</div>` : ''}
+        ${st.previa ? `<div class="dsp-mini">3 exemplos de como cada um recebe. <mark>Destacado</mark> = o que foi sorteado.</div>${st.previa.map(p => `<div class="dsp-mini" style="margin-top:4px"><b>Para ${esc(p.nome)}:</b></div><div class="dsp-previa">${marcasHtml(p.texto)}</div>`).join('')}<button type="button" class="dsp-btn dsp-sec2" data-previa>🎲 Sortear de novo</button>` : ''}
       </div>
 
       <div class="dsp-sec">
@@ -841,7 +867,7 @@ window.IS.Disparo = (() => {
         </div>
         `}
         ${!auto && cfg.intervaloMin < 60 ? '<div class="dsp-alerta">Intervalo abaixo de 1 minuto aumenta muito o risco de bloqueio.</div>' : ''}
-        ${st.contatos.length ? `<div class="dsp-mini">Tempo estimado: <b>${mmss((tempoMedio + pausas) * 1000)}</b> para ${st.contatos.length} contato(s)${st.contatos.length > cfg.limiteDia ? `, em ${Math.ceil(st.contatos.length / cfg.limiteDia)} dias (limite de ${cfg.limiteDia}/dia)` : ''}.</div>` : ''}
+        ${st.contatos.length ? `<div class="dsp-mini">Tempo estimado: <b>${mmss((tempoMedio + pausas) * 1000)}</b> para ${qtd} contato(s)${qtd > cfg.limiteDia ? `, em ${Math.ceil(qtd / cfg.limiteDia)} dias (limite de ${cfg.limiteDia}/dia)` : ''}.</div>` : ''}
       </div>`;
   }
 
@@ -868,8 +894,18 @@ window.IS.Disparo = (() => {
             ? `<div class="dsp-sec"><div class="dsp-mini" style="text-align:center">${esc(st.espera)}</div>${st.proximoEm ? `<div class="dsp-contagem" id="dsp-contagem">${mmss(st.proximoEm - Date.now())}</div>` : ''}</div>`
             : '<div class="dsp-mini">Preparando…</div>'
         : `<div class="dsp-alerta">⏸️ Pausado. ${t.pendente ? `Faltam ${t.pendente}.` : ''} Deixe o WhatsApp Web aberto e clique em Continuar.</div>`}
-      <div class="dsp-mini">Deixe esta aba do WhatsApp aberta. Cada envio abre uma janelinha no canto da tela e fecha sozinha. Se chegar um lead novo, o 1º contato passa na frente.</div>
-      ${ultimos.length ? `<div class="dsp-log">${ultimos.map(x => `<div><span>${marca[x.status] || ''}</span><b>${esc(x.nome || telBonito(x.telefone))}</b><span class="dsp-mini">${esc(x.status === 'enviado' ? (x.em ? new Date(x.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '') : x.erro || '')}</span></div>`).join('')}</div>` : ''}`;
+      <div class="dsp-mini">Deixe esta aba do WhatsApp aberta e na frente: cada envio abre a conversa aqui mesmo e volta para onde você estava (evite digitar durante o envio). Se chegar um lead novo, o 1º contato passa na frente.</div>
+      ${ultimos.length ? `<div class="dsp-mini">Clique em um enviado para ver a mensagem que ele recebeu (<mark>destacado</mark> = o que variou).</div><div class="dsp-log">${ultimos.map(linhaLog).join('')}</div>` : ''}`;
+  }
+
+  function linhaLog(x) {
+    const marca = { enviado: '✅', erro: '⚠️', pulado: '⏭️', enviando: '⏳' };
+    const info = esc(x.status === 'enviado' ? (x.em ? new Date(x.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '') : x.erro || '');
+    const cab = `<span>${marca[x.status] || ''}</span><b>${esc(x.nome || telBonito(x.telefone))}</b><span class="dsp-mini">${info}</span>`;
+    if (x.status === 'enviado' && x.textoEnviado) {
+      return `<details class="dsp-enviado"><summary>${cab}</summary><div class="dsp-previa">${marcasHtml(x.textoEnviado.replace(/^\s*===\s*$/gm, '— — —'))}</div></details>`;
+    }
+    return `<div>${cab}</div>`;
   }
 
   function htmlFim() {
@@ -878,6 +914,7 @@ window.IS.Disparo = (() => {
     return `
       <div class="dsp-ok" style="font-size:14px">✅ Disparo concluído: <b>${t.enviado}</b> enviado(s)${t.erro ? `, ${t.erro} com erro` : ''}${t.pulado ? `, ${t.pulado} pulado(s)` : ''}.</div>
       <div class="dsp-mini">${esc(c.origem)}</div>
+      ${t.enviado ? `<div class="dsp-sec"><div class="dsp-tit">O que cada um recebeu</div><div class="dsp-mini"><mark>Destacado</mark> = o que variou. O relatório traz a mensagem de cada um.</div><div class="dsp-log">${c.contatos.filter(x => x.status === 'enviado').map(linhaLog).join('')}</div></div>` : ''}
       ${t.erro ? `<div class="dsp-sec"><div class="dsp-tit">Com erro</div><div class="dsp-log">${c.contatos.filter(x => x.status === 'erro').map(x => `<div><span>⚠️</span><b>${esc(x.nome || telBonito(x.telefone))}</b><span class="dsp-mini">${esc(x.erro)}</span></div>`).join('')}</div>
         <button type="button" class="dsp-btn dsp-sec2" data-reenviar-erros>Tentar de novo os com erro</button></div>` : ''}`;
   }
@@ -1016,14 +1053,17 @@ window.IS.Disparo = (() => {
       return redesenhar();
     }
     if ('previa' in d) {
-      const exemplo = st.contatos[0] || { nome: 'Maria Silva' };
+      const exemplos = st.contatos.length ? st.contatos.slice(0, 3) : [{ nome: 'Maria Silva' }, { nome: 'João' }, { nome: 'Ana' }];
       const auto = st.cfg.autoVariar !== false;
-      const texto = st.mensagem.trim() ? montarTexto(st.mensagem, exemplo, auto).replace(/^\s*===\s*$/gm, '— — —') : '';
-      const anexos = st.anexos.map(x => {
-        const leg = String(x.legendaTexto || '').trim() ? montarTexto(x.legendaTexto, exemplo, auto) : x.legenda && (x.type || '').startsWith('image/') ? '(texto da mensagem acima)' : '';
-        return `📎 ${x.name}${leg ? `\n   Legenda: ${leg}` : ''}`;
-      });
-      st.previa = [texto, ...anexos].filter(Boolean).join('\n— — —\n');
+      const um = ex => {
+        const texto = st.mensagem.trim() ? montarTexto(st.mensagem, ex, auto, true).replace(/^\s*===\s*$/gm, '— — —') : '';
+        const anexos = st.anexos.map(x => {
+          const leg = String(x.legendaTexto || '').trim() ? montarTexto(x.legendaTexto, ex, auto, true) : x.legenda && (x.type || '').startsWith('image/') ? '(texto da mensagem acima)' : '';
+          return `📎 ${x.name}${leg ? `\n   Legenda: ${leg}` : ''}`;
+        });
+        return [texto, ...anexos].filter(Boolean).join('\n');
+      };
+      st.previa = (st.mensagem.trim() || st.anexos.length) ? exemplos.map(ex => ({ nome: ex.nome || telBonito(ex.telefone), texto: um(ex) })) : '';
       if (!st.previa) st.erro = 'Escreva a mensagem ou anexe um arquivo.';
       return redesenhar();
     }
