@@ -394,24 +394,15 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   // todos os leads duplicados (mesmo telefone ou mesmo e-mail), para conferir
   const [verDuplicados, setVerDuplicados] = useState(false);
   const gruposDuplicados = useMemo(() => {
+    // duplicado = mesmo NÚMERO (DDD + últimos 8 dígitos); nome e e-mail não contam
     const porTel = new Map<string, any[]>();
-    const porEmail = new Map<string, any[]>();
     (leads || []).forEach((l: any) => {
       const k = chaveTelefone(l.telefone);
       if (k) porTel.set(k, [...(porTel.get(k) || []), l]);
-      const e = String(l.email || "").trim().toLowerCase();
-      if (e && e.includes("@") && !e.endsWith("@sememail.inmovya.com") && !/^(sem|nao|naotem|teste|x+)@/.test(e)) porEmail.set(e, [...(porEmail.get(e) || []), l]);
     });
     const grupos: { chave: string; motivo: string; leads: any[] }[] = [];
-    const jaNoGrupo = new Set<string>();
     porTel.forEach((ls, k) => {
-      if (ls.length > 1) {
-        grupos.push({ chave: `t${k}`, motivo: `Mesmo telefone (${ls[0].telefone})`, leads: ls });
-        ls.forEach((l) => jaNoGrupo.add(l.id));
-      }
-    });
-    porEmail.forEach((ls, e) => {
-      if (ls.length > 1 && !ls.every((l) => jaNoGrupo.has(l.id))) grupos.push({ chave: `e${e}`, motivo: `Mesmo e-mail (${e})`, leads: ls });
+      if (ls.length > 1) grupos.push({ chave: `t${k}`, motivo: `Mesmo número (${ls[0].telefone})`, leads: ls });
     });
     return grupos;
   }, [leads]);
@@ -419,15 +410,10 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
   // leads parecidos com o que está sendo cadastrado: mesmo telefone (DDD + últimos 8 dígitos) ou mesmo e-mail
   const duplicadosNovo = useMemo(() => {
     const kTel = chaveTelefone(newLead.telefone);
-    const email = (newLead.email || "").trim().toLowerCase();
-    if (!kTel && !email) return [] as any[];
-    return (leads || []).filter((l: any) => {
-      if (kTel && chaveTelefone(l.telefone) === kTel) return true;
-      if (email && !email.endsWith("@sememail.inmovya.com") && String(l.email || "").trim().toLowerCase() === email) return true;
-      return false;
-    }).slice(0, 5);
-  }, [leads, newLead.telefone, newLead.email]);
-  useEffect(() => setConfirmouDuplicado(false), [newLead.telefone, newLead.email]);
+    if (!kTel) return [] as any[];
+    return (leads || []).filter((l: any) => chaveTelefone(l.telefone) === kTel).slice(0, 5);
+  }, [leads, newLead.telefone]);
+  useEffect(() => setConfirmouDuplicado(false), [newLead.telefone]);
 
   const handleCreateLead = async () => {
     // Validação básica: nome e telefone (e-mail é opcional)
@@ -444,7 +430,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
       setConfirmouDuplicado(true);
       toast({
         title: "Esse lead parece já estar cadastrado",
-        description: `${duplicadosNovo.map((d) => d.nome).join(", ")}. Abra o existente ou clique de novo em Cadastrar mesmo assim.`,
+        description: `Esse número já está em: ${duplicadosNovo.map((d) => d.nome).join(", ")}. Abra o existente ou clique de novo em Cadastrar mesmo assim.`,
         variant: "destructive",
       });
       return;
@@ -1309,7 +1295,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                 </div>
                 {duplicadosNovo.length > 0 && (
                   <div role="alert" className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
-                    <div className="text-sm font-bold">Atenção: já existe lead com esse telefone ou e-mail</div>
+                    <div className="text-sm font-bold">Atenção: já existe lead com esse número</div>
                     {duplicadosNovo.map((d: any) => (
                       <div key={d.id} className="flex flex-wrap items-center gap-2 text-sm">
                         <span className="font-semibold">{d.nome}</span>
@@ -1548,7 +1534,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                   <DialogTitle>Leads duplicados</DialogTitle>
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground">
-                  Leads com o mesmo telefone (com ou sem 55 e o 9 da frente) ou o mesmo e-mail. Abra cada um para conferir e apague ou atualize o que sobrar.
+                  Leads com o mesmo número de telefone (com ou sem 55 e o 9 da frente). Nome e e-mail não contam. Abra cada um para conferir e apague ou atualize o que sobrar.
                 </p>
                 {gruposDuplicados.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum lead duplicado. 👍</div>
