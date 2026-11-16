@@ -59,9 +59,7 @@ const grupos: { titulo: string; itens: Item[] }[] = [
   {
     titulo: "Conteúdo",
     itens: [
-      { id: "materiais", label: "Materiais", icon: FileText },
       { id: "templates", label: "Templates", icon: LayoutTemplate },
-      { id: "funil", label: "Funil", icon: Filter },
     ],
   },
   {

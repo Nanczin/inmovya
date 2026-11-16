@@ -362,10 +362,10 @@ export function FunilModule() {
     };
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10 fade-in">
+        <div className="space-y-6 pb-10">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight">Funil de Vendas</h2>
+                    <h2 className="text-lg font-extrabold tracking-tight">Funil de vendas</h2>
                     <p className="text-muted-foreground mt-1">
                         Visualize o fluxo de conversão e exporte seus leads segmentados por etapa.
                     </p>

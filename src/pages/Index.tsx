@@ -9,14 +9,12 @@ import { Header } from "@/components/Header";
 import { Dashboard } from "@/components/Dashboard";
 import { LeadsModule } from "@/components/LeadsModule";
 import { GmailSystemModule } from "@/components/GmailSystemModule";
-import { MateriaisModule } from "@/components/MateriaisModule";
 import { MailingModule } from "@/components/MailingModule";
 import { LigacoesModule } from "@/components/LigacoesModule";
 import { TemplatesModule } from "@/components/TemplatesModule";
 import { RelatoriosModule } from "@/components/RelatoriosModule";
 import { ConfiguracoesModule } from "@/components/ConfiguracoesModule";
 import { AgendaModule } from "@/components/AgendaModule";
-import { FunilModule } from "@/components/FunilModule";
 import { NegociosModule } from "@/components/NegociosModule";
 import { EsteirasModule } from "@/components/EsteirasModule";
 import { EsteiraEmAndamento } from "@/components/esteiras/EsteiraEmAndamento";
@@ -107,16 +105,13 @@ const Index = () => {
         return <NegociosModule onNavigate={handleNavigation} />;
       case "esteiras":
         return <EsteirasModule />;
-      case "materiais":
-        return <MateriaisModule />;
       case "mailing":
         return <MailingModule onModuleChange={setActiveModule} />;
       case "ligacoes":
         return <LigacoesModule />;
       case "templates":
         return <TemplatesModule />;
-      case "funil":
-        return <FunilModule />;
+      case "funil": // o funil agora fica dentro de Relatórios
       case "relatorios":
         return <RelatoriosModule />;
       case "arena":

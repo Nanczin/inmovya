@@ -5,6 +5,7 @@ import { ArrowDownRight, ArrowUpRight, Minus, Table2, BarChart3 } from "lucide-r
 import { supabase } from "@/integrations/supabase/client";
 import { useLeads } from "@/context/LeadsContext";
 import { RegistrosComerciais } from "@/components/relatorios/RegistrosComerciais";
+import { FunilModule } from "@/components/FunilModule";
 import { getFunilTier, getStageForStatus, normalizeStatus, PERDIDO_STAGE_ID } from "@/lib/negociosStages";
 
 // ---------- período ----------
@@ -606,6 +607,10 @@ export function RelatoriosModule() {
         </Painel>
       </div>
       <p className="text-[11px] text-muted-foreground">As ligações ficam guardadas por 60 dias.</p>
+
+      <div className="pt-4 border-t">
+        <FunilModule />
+      </div>
     </div>
   );
 }
