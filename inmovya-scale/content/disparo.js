@@ -754,16 +754,18 @@ window.IS.Disparo = (() => {
         <div class="dsp-tit"><span class="dsp-num">4</span> Proteção contra bloqueio</div>
         <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit;margin-bottom:6px"><input type="checkbox" data-cfg-bool="tempoAuto" ${auto ? 'checked' : ''} style="width:auto"> <span><b>⏱️ Tempo automático (recomendado)</b> — o sistema sorteia sozinho o tempo entre envios, quantos manda antes de pausar e o tamanho da pausa</span></label>
         ${auto ? `<div class="dsp-ok">Entre ${TEMPO_AUTO.min / 60} e ${Math.round(TEMPO_AUTO.max / 60 * 10) / 10} min entre um envio e outro (às vezes um pouco mais) · pausa de ${TEMPO_AUTO.pausaMin} a ${TEMPO_AUTO.pausaMax} min a cada ${TEMPO_AUTO.loteMin}–${TEMPO_AUTO.loteMax} envios. Nunca repete o mesmo ritmo.</div>` : ''}
+        ${auto ? `<div class="dsp-mini">Também respeita: até ${cfg.limiteDia} envios por dia · das ${esc(cfg.horaIni)} às ${esc(cfg.horaFim)} · não repete quem recebeu nos últimos ${cfg.evitarDias} dia(s). Para mudar, desmarque o tempo automático.</div>` : `
         <div class="dsp-grade">
-          ${auto ? '' : `<label>Intervalo mínimo (segundos)<input type="number" min="20" data-cfg="intervaloMin" value="${cfg.intervaloMin}"></label>
+          <label>Intervalo mínimo (segundos)<input type="number" min="20" data-cfg="intervaloMin" value="${cfg.intervaloMin}"></label>
           <label>Intervalo máximo (segundos)<input type="number" min="20" data-cfg="intervaloMax" value="${cfg.intervaloMax}"></label>
           <label>Pausar a cada (envios)<input type="number" min="0" data-cfg="lote" value="${cfg.lote}"></label>
-          <label>Pausa de (minutos)<input type="number" min="1" data-cfg="pausaLote" value="${cfg.pausaLote}"></label>`}
+          <label>Pausa de (minutos)<input type="number" min="1" data-cfg="pausaLote" value="${cfg.pausaLote}"></label>
           <label>Limite por dia<input type="number" min="1" data-cfg="limiteDia" value="${cfg.limiteDia}"></label>
           <label>Não repetir por (dias)<input type="number" min="0" data-cfg="evitarDias" value="${cfg.evitarDias}"></label>
           <label>Enviar a partir de<input type="time" data-cfg="horaIni" value="${esc(cfg.horaIni)}"></label>
           <label>Até<input type="time" data-cfg="horaFim" value="${esc(cfg.horaFim)}"></label>
         </div>
+        `}
         ${!auto && cfg.intervaloMin < 60 ? '<div class="dsp-alerta">Intervalo abaixo de 1 minuto aumenta muito o risco de bloqueio.</div>' : ''}
         ${st.contatos.length ? `<div class="dsp-mini">Tempo estimado: <b>${mmss((tempoMedio + pausas) * 1000)}</b> para ${st.contatos.length} contato(s)${st.contatos.length > cfg.limiteDia ? `, em ${Math.ceil(st.contatos.length / cfg.limiteDia)} dias (limite de ${cfg.limiteDia}/dia)` : ''}.</div>` : ''}
       </div>`;
