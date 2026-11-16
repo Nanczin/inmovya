@@ -24,7 +24,12 @@ window.IS.Disparo = (() => {
     horaIni: '08:00',
     horaFim: '20:00',
     evitarDias: 7, // não manda para quem recebeu disparo nos últimos N dias (0 = desliga)
+    autoVariar: true, // cada envio sai diferente: sinônimos, pontuação e emoji sorteados
+    tempoAuto: true, // tempo "humano": intervalo, tamanho do lote e pausas sorteados sozinhos
   };
+
+  // tempo automático: nunca menos de 2 min entre envios
+  const TEMPO_AUTO = { min: 120, max: 260, loteMin: 12, loteMax: 22, pausaMin: 10, pausaMax: 25 };
 
   const st = {
     aberto: false,
@@ -97,6 +102,100 @@ window.IS.Disparo = (() => {
     }
     return t.replace(/\u0000(\d+)\u0000/g, (_, i) => vars[+i]);
   }
+  // ---------- gerador automático de variações (sinônimos em português) ----------
+  // cada grupo: palavras/expressões que podem trocar de lugar sem mudar o sentido
+  const SINONIMOS = [
+    ['oi', 'olá', 'oii', 'opa'],
+    ['tudo bem', 'tudo bom', 'tudo certo', 'como vai'],
+    ['bom dia', 'ótimo dia'],
+    ['boa tarde', 'ótima tarde'],
+    ['boa noite', 'ótima noite'],
+    ['separei', 'selecionei', 'reservei'],
+    ['oportunidade', 'opção'],
+    ['excelente', 'espetacular', 'sensacional'],
+    ['ótima', 'excelente', 'muito boa'],
+    ['ótimo', 'excelente', 'muito bom'],
+    ['incrível', 'espetacular', 'sensacional'],
+    ['imperdível', 'muito vantajosa', 'que vale a pena'],
+    ['gostaria', 'queria'],
+    ['posso te enviar', 'posso te mandar', 'te envio'],
+    ['posso te mostrar', 'posso te apresentar'],
+    ['te mostrar', 'te apresentar'],
+    ['enviar', 'mandar'],
+    ['envio', 'mando'],
+    ['mais informações', 'mais detalhes'],
+    ['informações', 'detalhes'],
+    ['agora', 'neste momento'],
+    ['hoje', 'ainda hoje'],
+    ['rapidinho', 'rapidamente'],
+    ['me avisa', 'me fala', 'me diz'],
+    ['me chama', 'me dá um toque', 'me responde'],
+    ['fico à disposição', 'estou à disposição', 'qualquer dúvida, é só chamar'],
+    ['obrigado', 'valeu', 'agradeço'],
+    ['abraço', 'abraços', 'um abraço'],
+    ['interessado', 'com interesse'],
+    ['investimento', 'negócio'],
+    ['localização', 'região'],
+    ['lançamento', 'novo empreendimento'],
+    ['apartamento', 'apto', 'imóvel'],
+    ['condições', 'facilidades'],
+    ['parcelas', 'prestações'],
+    ['visitar', 'conhecer'],
+    ['podemos', 'a gente pode'],
+    ['conversar', 'bater um papo', 'falar'],
+    ['aproveitar', 'garantir'],
+    ['últimas unidades', 'poucas unidades'],
+    ['lembrei de você', 'pensei em você'],
+    ['faz sentido', 'te interessa'],
+    ['quer', 'deseja'],
+    ['muito', 'bastante'],
+    ['porque', 'pois'],
+    ['então', 'aí'],
+  ];
+  const semAcento = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const LETRA = 'A-Za-zÀ-ÖØ-öø-ÿ';
+  function mesmaCaixa(modelo, palavra) {
+    if (modelo === modelo.toUpperCase() && modelo.length > 1) return palavra.toUpperCase();
+    if (modelo[0] === modelo[0].toUpperCase()) return palavra[0].toUpperCase() + palavra.slice(1);
+    return palavra;
+  }
+  /** Transforma o texto em spintax: "Oi, separei uma oportunidade" → "{Oi|Olá|Oii}, {separei|selecionei} uma {oportunidade|opção}". */
+  function gerarSpintax(texto) {
+    // protege o que já é variação {a|b} e as variáveis {{nome}}
+    const guardados = [];
+    const guardar = m => `\u0001${guardados.push(m) - 1}\u0001`;
+    let t = String(texto || '').replace(/\{\{[^{}]*\}\}/g, guardar);
+    for (let i = 0; i < 5; i++) t = t.replace(/\{[^{}]*\}/g, guardar);
+    // expressões mais longas primeiro, para "tudo bem" não virar só "tudo"
+    const itens = [];
+    SINONIMOS.forEach(g => g.forEach(p => itens.push({ p, g })));
+    itens.sort((a, b) => b.p.length - a.p.length);
+    for (const { p, g } of itens) {
+      const re = new RegExp(`(^|[^${LETRA}\u0001])(${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(?=$|[^${LETRA}\u0001])`, 'gi');
+      t = t.replace(re, (_, antes, achado) => {
+        const ops = [achado, ...g.filter(x => semAcento(x) !== semAcento(achado)).map(x => mesmaCaixa(achado, x))];
+        return antes + guardar(`{${ops.join('|')}}`);
+      });
+    }
+    return t.replace(/\u0001(\d+)\u0001/g, (_, i) => guardados[+i]).replace(/\u0001(\d+)\u0001/g, (_, i) => guardados[+i]);
+  }
+  /** Toques finais sorteados em cada envio: pontuação e um emoji discreto de vez em quando. */
+  function variarDetalhes(texto) {
+    const partes = texto.split(/(^\s*===\s*$)/m);
+    return partes.map((p, i) => {
+      if (/^\s*===\s*$/.test(p)) return p;
+      let x = p;
+      // "!" às vezes vira "." ou "!!"
+      x = x.replace(/!(?=\s|$)/g, () => { const r = Math.random(); return r < 0.2 ? '.' : r < 0.32 ? '!!' : '!'; });
+      // emoji leve no fim da 1ª mensagem (1 em cada 3)
+      if (i === 0 && Math.random() < 0.33 && !/\p{Extended_Pictographic}\s*$/u.test(x.trimEnd())) {
+        const e = ['🙂', '😊', '👋', '😉', '🏡'][Math.floor(Math.random() * 5)];
+        x = x.replace(/\s*$/, m => ` ${e}${m}`);
+      }
+      return x;
+    }).join('');
+  }
+
   function combinacoes(texto) {
     let total = 1;
     const t = String(texto || '').replace(/\{\{[^{}]*\}\}/g, '');
@@ -105,9 +204,11 @@ window.IS.Disparo = (() => {
     while ((m = re.exec(t))) total *= Math.max(1, m[1].split('|').length);
     return total;
   }
-  function montarTexto(modelo, contato) {
+  function montarTexto(modelo, contato, auto = false) {
     const nome = primeiroNome(contato.nome);
-    return spin(modelo)
+    const base = auto ? gerarSpintax(modelo) : modelo;
+    const sorteado = auto ? variarDetalhes(spin(base)) : spin(base);
+    return sorteado
       .replace(/\{\{\s*nome\s*\}\}/gi, nome)
       .replace(/\{\{\s*nome_completo\s*\}\}/gi, String(contato.nome || '').trim() || nome)
       .replace(/\{\{\s*saudacao\s*\}\}/gi, (m, pos, tudo) => (/^\s*$|[.!?\n]\s*$/.test(tudo.slice(0, pos)) ? saudacao() : saudacao().toLowerCase()))
@@ -300,7 +401,7 @@ window.IS.Disparo = (() => {
 
   function enviarUm(contato) {
     const partes = String(st.campanha.mensagem || '');
-    const texto = montarTexto(partes, contato);
+    const texto = montarTexto(partes, contato, !!st.campanha.cfg?.autoVariar);
     const nPartes = texto.split(/^\s*===\s*$/m).length;
     const anexos = (st.anexos || []).map(a => ({
       id: a.id,
@@ -337,10 +438,13 @@ window.IS.Disparo = (() => {
         if (!item) { c.status = 'concluido'; break; }
         if (!dentroDoHorario(cfg)) { await esperar(60000, `Fora do horário (${cfg.horaIni} às ${cfg.horaFim}). Continua sozinho no horário.`); continue; }
         if ((await contadorHoje()) >= cfg.limiteDia) { await esperar(5 * 60000, `Limite de ${cfg.limiteDia} envios por dia atingido. Continua amanhã.`); continue; }
-        if (cfg.lote > 0 && (c.noLote || 0) >= cfg.lote) {
-          await esperar(cfg.pausaLote * 60000, `Pausa de segurança de ${cfg.pausaLote} min (a cada ${cfg.lote} envios).`);
+        const loteAlvo = cfg.tempoAuto ? (c.loteAlvo ||= sorteio(TEMPO_AUTO.loteMin, TEMPO_AUTO.loteMax)) : cfg.lote;
+        if (loteAlvo > 0 && (c.noLote || 0) >= loteAlvo) {
+          const min = cfg.tempoAuto ? sorteio(TEMPO_AUTO.pausaMin, TEMPO_AUTO.pausaMax) : cfg.pausaLote;
+          await esperar(min * 60000, `Pausa de segurança de ${min} min (depois de ${loteAlvo} envios).`);
           if (c.status !== 'rodando') break;
           c.noLote = 0;
+          c.loteAlvo = 0;
           await salvarCampanha();
           continue;
         }
@@ -373,7 +477,7 @@ window.IS.Disparo = (() => {
         await salvarCampanha();
         render();
         if (c.status === 'rodando' && c.contatos.some(x => x.status === 'pendente')) {
-          await esperar(sorteio(cfg.intervaloMin, cfg.intervaloMax) * 1000, 'Próximo envio em');
+          await esperar(proximoIntervalo(cfg) * 1000, 'Próximo envio em');
         }
       }
       if (st.campanha && st.campanha.status === 'concluido') {
@@ -387,6 +491,14 @@ window.IS.Disparo = (() => {
       rodandoLoop = false;
       render();
     }
+  }
+
+  // segundos até o próximo envio
+  function proximoIntervalo(cfg) {
+    if (!cfg.tempoAuto) return sorteio(cfg.intervaloMin, cfg.intervaloMax);
+    let s = sorteio(TEMPO_AUTO.min, TEMPO_AUTO.max);
+    if (Math.random() < 0.12) s += sorteio(60, 240); // de vez em quando "se distrai" um pouco mais
+    return s;
   }
 
   async function iniciar() {
@@ -425,6 +537,8 @@ window.IS.Disparo = (() => {
       horaIni: /^\d{2}:\d{2}$/.test(c.horaIni) ? c.horaIni : CFG_PADRAO.horaIni,
       horaFim: /^\d{2}:\d{2}$/.test(c.horaFim) ? c.horaFim : CFG_PADRAO.horaFim,
       evitarDias: n(c.evitarDias, 0, 90, CFG_PADRAO.evitarDias),
+      autoVariar: c.autoVariar !== false,
+      tempoAuto: c.tempoAuto !== false,
     };
     if (out.intervaloMax < out.intervaloMin) out.intervaloMax = out.intervaloMin;
     return out;
@@ -579,8 +693,12 @@ window.IS.Disparo = (() => {
     const cfg = st.cfg;
     const comb = combinacoes(st.mensagem);
     const partes = st.mensagem.trim() ? st.mensagem.split(/^\s*===\s*$/m).length : 0;
-    const tempoMedio = ((cfg.intervaloMin + cfg.intervaloMax) / 2) * Math.max(0, st.contatos.length - 1);
-    const pausas = cfg.lote > 0 ? Math.floor(Math.max(0, st.contatos.length - 1) / cfg.lote) * cfg.pausaLote * 60 : 0;
+    const auto = cfg.tempoAuto !== false;
+    const medioSeg = auto ? (TEMPO_AUTO.min + TEMPO_AUTO.max) / 2 + 0.12 * 150 : (cfg.intervaloMin + cfg.intervaloMax) / 2;
+    const loteMedio = auto ? (TEMPO_AUTO.loteMin + TEMPO_AUTO.loteMax) / 2 : cfg.lote;
+    const pausaMedia = auto ? (TEMPO_AUTO.pausaMin + TEMPO_AUTO.pausaMax) / 2 : cfg.pausaLote;
+    const tempoMedio = medioSeg * Math.max(0, st.contatos.length - 1);
+    const pausas = loteMedio > 0 ? Math.floor(Math.max(0, st.contatos.length - 1) / loteMedio) * pausaMedia * 60 : 0;
     const etiquetas = st.etiquetas === undefined
       ? '<div class="dsp-mini">Carregando etiquetas…</div>'
       : st.etiquetas === null
@@ -613,8 +731,15 @@ window.IS.Disparo = (() => {
         <div class="dsp-tit"><span class="dsp-num">2</span> Mensagem</div>
         <textarea id="dsp-msg" rows="6" placeholder="{Oi|Olá|Oii} {{nome}}, {{saudacao}}! Tudo bem?&#10;===&#10;Separei uma oportunidade que combina com você…">${esc(st.mensagem)}</textarea>
         <div class="dsp-mini">{{nome}} = primeiro nome · {{saudacao}} = Bom dia/Boa tarde/Boa noite · {Oi|Olá} = cada um recebe uma opção · uma linha só com === separa em várias mensagens</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <button type="button" class="dsp-btn dsp-sec2" data-gerar-spin title="Coloca opções {a|b|c} nas palavras que têm sinônimo">✨ Gerar variações (spintax)</button>
+          ${st.textoAntesSpin != null ? '<button type="button" class="dsp-btn dsp-sec2" data-desfazer-spin>↩ Desfazer</button>' : ''}
+        </div>
+        <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit"><input type="checkbox" data-cfg-bool="autoVariar" ${cfg.autoVariar !== false ? 'checked' : ''} style="width:auto"> <span><b>Variar automaticamente cada envio</b> — troca palavras por sinônimos, muda a pontuação e às vezes põe um emoji, para ninguém receber o texto igual</span></label>
         ${st.mensagem.trim()
-          ? comb > 1
+          ? cfg.autoVariar !== false && comb <= 1
+            ? `<div class="dsp-ok">✓ Variação automática ligada: ${combinacoes(gerarSpintax(st.mensagem)).toLocaleString('pt-BR')} combinações de palavras, mais pontuação e emoji</div>`
+            : comb > 1
             ? `<div class="dsp-ok">✓ Variação ativa: ${comb.toLocaleString('pt-BR')} combinações${partes > 1 ? ` · ${partes} mensagens` : ''}</div>`
             : '<div class="dsp-alerta">Sem variação: todos recebem o mesmo texto, o que aumenta o risco de bloqueio. Use {Oi|Olá|Oii}.</div>'
           : ''}
@@ -632,17 +757,19 @@ window.IS.Disparo = (() => {
 
       <div class="dsp-sec">
         <div class="dsp-tit"><span class="dsp-num">4</span> Proteção contra bloqueio</div>
+        <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit;margin-bottom:6px"><input type="checkbox" data-cfg-bool="tempoAuto" ${auto ? 'checked' : ''} style="width:auto"> <span><b>⏱️ Tempo automático (recomendado)</b> — o sistema sorteia sozinho o tempo entre envios, quantos manda antes de pausar e o tamanho da pausa</span></label>
+        ${auto ? `<div class="dsp-ok">Entre ${TEMPO_AUTO.min / 60} e ${Math.round(TEMPO_AUTO.max / 60 * 10) / 10} min entre um envio e outro (às vezes um pouco mais) · pausa de ${TEMPO_AUTO.pausaMin} a ${TEMPO_AUTO.pausaMax} min a cada ${TEMPO_AUTO.loteMin}–${TEMPO_AUTO.loteMax} envios. Nunca repete o mesmo ritmo.</div>` : ''}
         <div class="dsp-grade">
-          <label>Intervalo mínimo (segundos)<input type="number" min="20" data-cfg="intervaloMin" value="${cfg.intervaloMin}"></label>
+          ${auto ? '' : `<label>Intervalo mínimo (segundos)<input type="number" min="20" data-cfg="intervaloMin" value="${cfg.intervaloMin}"></label>
           <label>Intervalo máximo (segundos)<input type="number" min="20" data-cfg="intervaloMax" value="${cfg.intervaloMax}"></label>
           <label>Pausar a cada (envios)<input type="number" min="0" data-cfg="lote" value="${cfg.lote}"></label>
-          <label>Pausa de (minutos)<input type="number" min="1" data-cfg="pausaLote" value="${cfg.pausaLote}"></label>
+          <label>Pausa de (minutos)<input type="number" min="1" data-cfg="pausaLote" value="${cfg.pausaLote}"></label>`}
           <label>Limite por dia<input type="number" min="1" data-cfg="limiteDia" value="${cfg.limiteDia}"></label>
           <label>Não repetir por (dias)<input type="number" min="0" data-cfg="evitarDias" value="${cfg.evitarDias}"></label>
           <label>Enviar a partir de<input type="time" data-cfg="horaIni" value="${esc(cfg.horaIni)}"></label>
           <label>Até<input type="time" data-cfg="horaFim" value="${esc(cfg.horaFim)}"></label>
         </div>
-        ${cfg.intervaloMin < 60 ? '<div class="dsp-alerta">Intervalo abaixo de 1 minuto aumenta muito o risco de bloqueio.</div>' : ''}
+        ${!auto && cfg.intervaloMin < 60 ? '<div class="dsp-alerta">Intervalo abaixo de 1 minuto aumenta muito o risco de bloqueio.</div>' : ''}
         ${st.contatos.length ? `<div class="dsp-mini">Tempo estimado: <b>${mmss((tempoMedio + pausas) * 1000)}</b> para ${st.contatos.length} contato(s)${st.contatos.length > cfg.limiteDia ? `, em ${Math.ceil(st.contatos.length / cfg.limiteDia)} dias (limite de ${cfg.limiteDia}/dia)` : ''}.</div>` : ''}
       </div>`;
   }
@@ -751,13 +878,18 @@ window.IS.Disparo = (() => {
 
   function aoDigitar(ev) {
     const el = ev.target;
-    if (el.id === 'dsp-msg') { st.mensagem = el.value; st.previa = ''; }
+    if (el.id === 'dsp-msg') { st.mensagem = el.value; st.previa = ''; st.textoAntesSpin = null; }
     else if (el.id === 'dsp-planilha') st.textoPlanilha = el.value;
     else if (el.dataset.cfg) st.cfg[el.dataset.cfg] = el.type === 'time' ? el.value : Number(el.value);
   }
   function aoMudar(ev) {
     const el = ev.target;
     if (el.dataset.et) { st.marcadas[el.dataset.et] = el.checked; return; }
+    if (el.dataset.cfgBool) {
+      st.cfg[el.dataset.cfgBool] = el.checked;
+      chrome.storage.local.set({ [CHAVE_CFG]: normalizarCfg(st.cfg) }).catch(() => {});
+      return redesenhar();
+    }
     if (el.dataset.legenda) {
       const a = st.anexos.find(x => x.id === el.dataset.legenda);
       if (a) a.legenda = el.checked;
@@ -779,9 +911,25 @@ window.IS.Disparo = (() => {
     if ('csv' in d) return lerCsv();
     if ('anexar' in d) return escolherAnexos();
     if (d.tirarAnexo) { st.anexos = st.anexos.filter(a => a.id !== d.tirarAnexo); return redesenhar(); }
+    if ('gerarSpin' in d) {
+      if (!st.mensagem.trim()) { st.erro = 'Escreva a mensagem primeiro.'; return redesenhar(); }
+      const novo = gerarSpintax(st.mensagem);
+      if (novo === st.mensagem) { st.aviso = 'Não achei palavras com sinônimo para variar. Você pode escrever {opção 1|opção 2} à mão.'; return redesenhar(); }
+      st.textoAntesSpin = st.mensagem;
+      st.mensagem = novo;
+      st.previa = '';
+      st.aviso = `Pronto: ${combinacoes(novo).toLocaleString('pt-BR')} combinações. Confira e ajuste o que quiser.`;
+      return redesenhar();
+    }
+    if ('desfazerSpin' in d) {
+      if (st.textoAntesSpin != null) st.mensagem = st.textoAntesSpin;
+      st.textoAntesSpin = null;
+      st.previa = '';
+      return redesenhar();
+    }
     if ('previa' in d) {
       const exemplo = st.contatos[0] || { nome: 'Maria Silva' };
-      st.previa = st.mensagem.trim() ? montarTexto(st.mensagem, exemplo).replace(/^\s*===\s*$/gm, '— — —') : '';
+      st.previa = st.mensagem.trim() ? montarTexto(st.mensagem, exemplo, st.cfg.autoVariar !== false).replace(/^\s*===\s*$/gm, '— — —') : '';
       if (!st.previa) st.erro = 'Escreva a mensagem primeiro.';
       return redesenhar();
     }
