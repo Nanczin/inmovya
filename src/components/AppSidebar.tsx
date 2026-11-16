@@ -57,12 +57,6 @@ const grupos: { titulo: string; itens: Item[] }[] = [
     ],
   },
   {
-    titulo: "Conteúdo",
-    itens: [
-      { id: "templates", label: "Templates", icon: LayoutTemplate },
-    ],
-  },
-  {
     titulo: "Resultados",
     itens: [{ id: "relatorios", label: "Relatórios", icon: BarChart3 }],
   },

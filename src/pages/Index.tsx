@@ -11,7 +11,6 @@ import { LeadsModule } from "@/components/LeadsModule";
 import { GmailSystemModule } from "@/components/GmailSystemModule";
 import { MailingModule } from "@/components/MailingModule";
 import { LigacoesModule } from "@/components/LigacoesModule";
-import { TemplatesModule } from "@/components/TemplatesModule";
 import { RelatoriosModule } from "@/components/RelatoriosModule";
 import { ConfiguracoesModule } from "@/components/ConfiguracoesModule";
 import { AgendaModule } from "@/components/AgendaModule";
@@ -109,8 +108,6 @@ const Index = () => {
         return <MailingModule onModuleChange={setActiveModule} />;
       case "ligacoes":
         return <LigacoesModule />;
-      case "templates":
-        return <TemplatesModule />;
       case "funil": // o funil agora fica dentro de Relatórios
       case "relatorios":
         return <RelatoriosModule />;
