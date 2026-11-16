@@ -38,7 +38,16 @@ const NOMES: Record<string, string> = {
   mensagem_templates: "Templates",
   notifications: "Notificações",
   profiles: "Perfis",
+  "cron.job_run_details": "Histórico de tarefas automáticas",
+  "net._http_response": "Respostas de chamadas automáticas",
+  "storage.objects": "Lista de arquivos",
+  "auth.audit_log_entries": "Registro de logins",
+  "auth.refresh_tokens": "Sessões de login",
 };
+
+// limpeza do que realmente enche o banco (supabase/liberar_espaco.sql)
+const SQL_LIMPEZA = "-- LIBERAR ESPAÇO DO BANCO (aba Configurações do Inmovya → \"Liberar espaço\")\n-- O que enche o banco não são os seus dados (leads, ligações etc. somam poucos MB):\n-- é o histórico das tarefas automáticas (cron), que registra uma linha por minuto desde 2025.\n-- PASSO 1: cole tudo no Supabase → SQL Editor → Run.\n\ndo $$\nbegin\n  -- histórico das tarefas automáticas: guarda só os últimos 2 dias\n  begin\n    delete from cron.job_run_details where end_time < now() - interval '2 days';\n  exception when others then raise notice 'cron: %', sqlerrm;\n  end;\n  -- respostas antigas das chamadas automáticas\n  begin\n    delete from net._http_response where created < now() - interval '1 day';\n  exception when others then raise notice 'net: %', sqlerrm;\n  end;\n  -- daqui para frente, limpa sozinho todo dia às 3h17\n  begin\n    perform cron.unschedule('limpar-historico-cron');\n  exception when others then null;\n  end;\n  begin\n    perform cron.schedule('limpar-historico-cron', '17 3 * * *',\n      $c$delete from cron.job_run_details where end_time < now() - interval '2 days'$c$);\n  exception when others then raise notice 'agendar limpeza: %', sqlerrm;\n  end;\nend $$;\n\n-- a medição da aba Configurações passa a mostrar também essas áreas do sistema\ncreate or replace function public.uso_banco()\nreturns json\nlanguage sql\nsecurity definer\nset search_path = public\nas $$\n  select json_build_object(\n    'banco_bytes', pg_database_size(current_database()),\n    'tabelas', (\n      select coalesce(json_agg(t), '[]'::json)\n      from (\n        select case when n.nspname = 'public' then c.relname else n.nspname || '.' || c.relname end as nome,\n               pg_total_relation_size(c.oid) as bytes,\n               greatest(c.reltuples, 0)::bigint as linhas\n        from pg_class c\n        join pg_namespace n on n.oid = c.relnamespace\n        where n.nspname not in ('pg_catalog', 'information_schema', 'pg_toast') and c.relkind in ('r', 'm')\n        order by pg_total_relation_size(c.oid) desc\n        limit 12\n      ) t\n    ),\n    'storage_bytes', (\n      select coalesce(sum((o.metadata->>'size')::bigint), 0)\n      from storage.objects o\n    ),\n    'medido_em', now()\n  );\n$$;\n\nrevoke all on function public.uso_banco() from public, anon;\ngrant execute on function public.uso_banco() to authenticated;\nnotify pgrst, 'reload schema';\n";
+const SQL_VACUUM = "VACUUM FULL cron.job_run_details;";
 
 export const formatarBytes = (b: number) => {
   if (!b) return "0 MB";
@@ -100,7 +109,16 @@ export function ConfiguracoesModule() {
   const [uso, setUso] = useState<Uso | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [copiado, setCopiado] = useState(false);
+  const [copiado, setCopiado] = useState<string | null>(null);
+  const copiar = async (qual: string, texto: string) => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(qual);
+      setTimeout(() => setCopiado(null), 2000);
+    } catch {
+      /* sem permissão de copiar */
+    }
+  };
   const [plano, setPlanoState] = useState<Plano>(() => {
     try {
       return (localStorage.getItem(CHAVE_PLANO) as Plano) || "free";
@@ -194,36 +212,37 @@ export function ConfiguracoesModule() {
             <Medidor usado={uso.banco_bytes} limite={limites.banco} partes={tabelas} />
             {uso.banco_bytes / limites.banco >= 0.8 && (
               <p className="mt-4 text-sm text-warning font-medium">
-                O banco está perto do limite do plano. Apague históricos antigos ou mude de plano no Supabase.
+                O banco está perto do limite do plano. Use a limpeza abaixo (Liberar espaço).
               </p>
             )}
             <div className="mt-4 rounded-xl border bg-muted/40 p-4 text-sm space-y-2">
-              <p className="font-semibold">Apagou dados e o número não baixou?</p>
+              <p className="font-semibold">Liberar espaço</p>
               <p className="text-muted-foreground">
-                O banco não devolve o espaço sozinho na hora: o que foi apagado fica reservado até uma limpeza. Para liberar de verdade, abra o Supabase →{" "}
-                <b className="text-foreground">SQL Editor</b>, cole o comando abaixo, clique em <b className="text-foreground">Run</b> e depois toque em medir de novo (o
-                botão de atualizar aqui em cima). Pode levar alguns minutos e, enquanto roda, o Inmovya pode ficar lento.
+                Seus dados (leads, ligações, agenda…) ocupam só alguns MB. O que enche o banco é o <b className="text-foreground">histórico das tarefas automáticas</b>, que
+                guarda uma linha por minuto. A limpeza abaixo apaga esse histórico antigo (não mexe em nenhum lead, ligação ou dado seu) e deixa uma limpeza diária automática.
               </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <code className="rounded-md bg-background border px-3 py-1.5 font-mono text-foreground">VACUUM FULL ANALYZE;</code>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText("VACUUM FULL ANALYZE;");
-                      setCopiado(true);
-                      setTimeout(() => setCopiado(false), 2000);
-                    } catch {
-                      /* sem permissão de copiar: o comando está escrito ao lado */
-                    }
-                  }}
-                >
-                  {copiado ? <Check className="w-4 h-4 mr-1" /> : null}
-                  {copiado ? "Copiado" : "Copiar comando"}
-                </Button>
-              </div>
+              <ol className="list-decimal pl-5 space-y-2 text-muted-foreground">
+                <li>
+                  Abra o Supabase → <b className="text-foreground">SQL Editor</b>, cole o <b className="text-foreground">passo 1</b> e clique em <b className="text-foreground">Run</b>.
+                  <div className="mt-1.5">
+                    <Button variant="outline" size="sm" className="h-8" onClick={() => copiar("p1", SQL_LIMPEZA)}>
+                      {copiado === "p1" ? <Check className="w-4 h-4 mr-1" /> : null}
+                      {copiado === "p1" ? "Copiado" : "Copiar passo 1"}
+                    </Button>
+                  </div>
+                </li>
+                <li>
+                  Apague o texto do editor, cole o <b className="text-foreground">passo 2</b> e clique em <b className="text-foreground">Run</b> de novo. É ele que devolve o espaço (pode levar alguns minutos).
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <code className="rounded-md bg-background border px-3 py-1.5 font-mono text-foreground text-xs">{SQL_VACUUM}</code>
+                    <Button variant="outline" size="sm" className="h-8" onClick={() => copiar("p2", SQL_VACUUM)}>
+                      {copiado === "p2" ? <Check className="w-4 h-4 mr-1" /> : null}
+                      {copiado === "p2" ? "Copiado" : "Copiar passo 2"}
+                    </Button>
+                  </div>
+                </li>
+                <li>Volte aqui e toque em atualizar (o botão lá em cima) para medir de novo.</li>
+              </ol>
             </div>
             <div className="mt-6 grid sm:grid-cols-2 gap-x-8">
               {tabelas.slice(0, 10).map((t) => (
