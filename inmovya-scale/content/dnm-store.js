@@ -200,6 +200,15 @@
     if (!chat) return null;
     return { chatId: idTexto(chat), etiquetas: nomesDasEtiquetas(chat) };
   }
+  // telefone da conversa aberta agora (para o Disparo conferir que abriu a pessoa certa)
+  function conversaAtiva() {
+    const col = colecoes().Chat;
+    let chat = null;
+    try { chat = col && typeof col.getActive === 'function' ? col.getActive() : null; } catch (_) { chat = null; }
+    if (!chat) chat = lista(col).find(c => pegar(c, 'active'));
+    if (!chat) return null;
+    return { chatId: idTexto(chat), telefone: telefoneDoChat(chat) || '' };
+  }
   async function adicionarEtiqueta(chatId, nome) {
     const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);
     if (!chat) return { ok: false, erro: 'conversa não encontrada' };
@@ -230,6 +239,7 @@
       else if (op === 'contatos') resposta = { ok: true, dados: contatosDaEtiqueta(args.labelId) };
       else if (op === 'abrir') resposta = { ok: true, dados: await abrirConversa(args.chatId) };
       else if (op === 'mensagens') resposta = { ok: true, dados: mensagens(args.chatId) };
+      else if (op === 'ativa') resposta = { ok: true, dados: conversaAtiva() };
       else if (op === 'acharConversa') resposta = { ok: true, dados: acharConversa(args.telefone) };
       else if (op === 'adicionarEtiqueta') resposta = { ok: true, dados: await adicionarEtiqueta(args.chatId, args.nome) };
       else if (op === 'garantirEtiqueta') resposta = { ok: true, dados: await garantirEtiqueta(args.nome, args.limite) };

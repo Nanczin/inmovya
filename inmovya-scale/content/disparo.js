@@ -394,7 +394,7 @@ window.IS.Disparo = (() => {
     st.proximoEm = 0;
   }
 
-  function enviarUm(contato) {
+  function montarEnvio(contato) {
     const partes = String(st.campanha.mensagem || '');
     const texto = montarTexto(partes, contato, !!st.campanha.cfg?.autoVariar);
     const nPartes = texto.split(/^\s*===\s*$/m).length;
@@ -409,6 +409,73 @@ window.IS.Disparo = (() => {
       caption: String(a.legendaTexto || '').trim() ? montarTexto(a.legendaTexto, contato, !!st.campanha.cfg?.autoVariar) : '',
       useCaption: !String(a.legendaTexto || '').trim() && !!a.legenda && (a.type || '').startsWith('image/'),
     }));
+    return { texto, anexos };
+  }
+
+  // aviso do WhatsApp de número inválido / sem WhatsApp
+  function numeroInvalidoNaTela() {
+    return Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
+      .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|not on whatsapp/i.test(el.innerText || ''));
+  }
+  function fecharDialogo() {
+    const d = document.querySelector('[role="dialog"], [data-animate-modal-popup="true"]');
+    const b = d && Array.from(d.querySelectorAll('button')).find(x => /ok|fechar|entendi/i.test(x.innerText || ''));
+    if (b) b.click();
+    else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  }
+  // espera a conversa certa (mesmo telefone) ficar aberta e pronta nesta aba
+  async function conferirAberta(telefone, ms) {
+    const alvo = digitos(telefone).slice(-8);
+    const fim = Date.now() + ms;
+    while (Date.now() < fim) {
+      if (numeroInvalidoNaTela()) return 'invalido';
+      const r = await loja('ativa', {}, 3000);
+      const t = r?.dados?.telefone;
+      if (t && digitos(t).slice(-8) === alvo && window.IS?.WhatsAppDOM?.findMessageInput?.()) return true;
+      await dormir(400);
+    }
+    return false;
+  }
+  // abre a conversa AQUI, sem recarregar o WhatsApp: true | 'invalido' | false (não deu)
+  async function abrirAqui(contato) {
+    const achado = await loja('acharConversa', { telefone: contato.telefone }, 5000);
+    if (achado?.dados?.chatId) {
+      const ab = await loja('abrir', { chatId: achado.dados.chatId }, 8000);
+      if (ab?.dados && (await conferirAberta(contato.telefone, 10000)) === true) return true;
+    }
+    // número que ainda não tem conversa: tenta o link do próprio WhatsApp, sem sair da página
+    const a = document.createElement('a');
+    a.href = `https://wa.me/${digitos(contato.telefone)}`;
+    a.dataset.isDisparo = '1';
+    a.style.display = 'none';
+    const segurar = ev => { if (ev.target === a) ev.preventDefault(); };
+    window.addEventListener('click', segurar); // nunca deixa a página navegar
+    document.body.appendChild(a);
+    try { a.click(); } finally { a.remove(); window.removeEventListener('click', segurar); }
+    const r = await conferirAberta(contato.telefone, 12000);
+    if (r === 'invalido') { fecharDialogo(); return 'invalido'; }
+    return r === true;
+  }
+
+  async function enviarUm(contato) {
+    const { texto, anexos } = montarEnvio(contato);
+    const pedido = { text: texto, attachments: anexos, envioId: contato.envioId, gapMinMs: 1500, gapMaxMs: 4000 };
+    // 1º jeito: aqui mesmo, na aba que você está usando (sem reiniciar o WhatsApp).
+    // Com a aba escondida o Chrome deixa a página lenta; aí usa a janelinha de reserva.
+    if (typeof window.IS?.enviarCampanhaNaAba === 'function' && !document.hidden) {
+      let anterior = null;
+      try { anterior = (await loja('ativa', {}, 3000))?.dados?.chatId || null; } catch (_) { anterior = null; }
+      const aberto = await abrirAqui(contato);
+      if (aberto === 'invalido') return { ok: false, error: 'número sem WhatsApp' };
+      if (aberto === true) {
+        let r;
+        try { r = await window.IS.enviarCampanhaNaAba(pedido); } catch (e) { r = { ok: false, error: e.message }; }
+        // volta para a conversa que você estava antes
+        if (anterior && anterior !== (await loja('ativa', {}, 3000))?.dados?.chatId) loja('abrir', { chatId: anterior }, 8000);
+        return r || { ok: false, error: 'sem resposta' };
+      }
+    }
+    // reserva: janelinha de envio (só quando não deu para abrir a conversa aqui)
     return new Promise(resolve => {
       try {
         chrome.runtime.sendMessage(
@@ -750,6 +817,7 @@ window.IS.Disparo = (() => {
           <div style="display:flex;align-items:center;gap:6px"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(a.type || '').startsWith('image/') ? '🖼️' : (a.type || '').includes('pdf') ? '📄' : '📎'} ${esc(a.name)}</span>
           <button type="button" class="dsp-btn dsp-sec2" data-tirar-anexo="${esc(a.id)}" title="Tirar">✕</button></div>
           <textarea rows="2" data-legenda-texto="${esc(a.id)}" placeholder="Legenda deste anexo (opcional). Ex.: {Segue|Te mando} o book, {{nome}}!">${esc(a.legendaTexto || '')}</textarea>
+          ${String(a.legendaTexto || '').trim() ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button type="button" class="dsp-btn dsp-sec2" data-gerar-spin-legenda="${esc(a.id)}">✨ Gerar variações</button><span class="dsp-mini">${(() => { const n = combinacoes(cfg.autoVariar !== false ? gerarSpintax(a.legendaTexto) : a.legendaTexto); return n > 1 ? `${n.toLocaleString('pt-BR')} combinações` : 'sem variação'; })()}</span></div>` : ''}
           ${(a.type || '').startsWith('image/') && !String(a.legendaTexto || '').trim() ? `<label class="dsp-mini" style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-legenda="${esc(a.id)}" ${a.legenda ? 'checked' : ''} style="width:auto"> ou usar o texto da mensagem como legenda</label>` : ''}
         </div>`).join('')}
         ${st.anexos.length ? '<div class="dsp-mini">A legenda aceita {{nome}}, {{saudacao}} e variações {a|b}, e também varia sozinha em cada envio.</div>' : ''}
@@ -928,6 +996,17 @@ window.IS.Disparo = (() => {
       st.mensagem = novo;
       st.previa = '';
       st.aviso = `Pronto: ${combinacoes(novo).toLocaleString('pt-BR')} combinações. Confira e ajuste o que quiser.`;
+      return redesenhar();
+    }
+    if (d.gerarSpinLegenda) {
+      const a = st.anexos.find(x => x.id === d.gerarSpinLegenda);
+      if (a && String(a.legendaTexto || '').trim()) {
+        const novo = gerarSpintax(a.legendaTexto);
+        if (novo === a.legendaTexto) st.aviso = 'Não achei palavras com sinônimo na legenda. Você pode escrever {opção 1|opção 2} à mão.';
+        else { a.legendaTexto = novo; st.aviso = `Legenda com ${combinacoes(novo).toLocaleString('pt-BR')} combinações.`; }
+        chrome.storage.local.set({ [CHAVE_ANEXOS]: st.anexos }).catch(() => {});
+        st.previa = '';
+      }
       return redesenhar();
     }
     if ('desfazerSpin' in d) {
