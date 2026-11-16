@@ -24,7 +24,7 @@ window.IS.Disparo = (() => {
     horaIni: '08:00',
     horaFim: '20:00',
     evitarDias: 7, // não manda para quem recebeu disparo nos últimos N dias (0 = desliga)
-    autoVariar: true, // cada envio sai diferente: sinônimos, pontuação e emoji sorteados
+    autoVariar: true, // cada envio sai diferente: sinônimos e pontuação sorteados
     tempoAuto: true, // tempo "humano": intervalo, tamanho do lote e pausas sorteados sozinhos
   };
 
@@ -179,19 +179,14 @@ window.IS.Disparo = (() => {
     }
     return t.replace(/\u0001(\d+)\u0001/g, (_, i) => guardados[+i]).replace(/\u0001(\d+)\u0001/g, (_, i) => guardados[+i]);
   }
-  /** Toques finais sorteados em cada envio: pontuação e um emoji discreto de vez em quando. */
+  /** Toques finais sorteados em cada envio: pontuação. */
   function variarDetalhes(texto) {
     const partes = texto.split(/(^\s*===\s*$)/m);
-    return partes.map((p, i) => {
+    return partes.map(p => {
       if (/^\s*===\s*$/.test(p)) return p;
       let x = p;
       // "!" às vezes vira "." ou "!!"
       x = x.replace(/!(?=\s|$)/g, () => { const r = Math.random(); return r < 0.2 ? '.' : r < 0.32 ? '!!' : '!'; });
-      // emoji leve no fim da 1ª mensagem (1 em cada 3)
-      if (i === 0 && Math.random() < 0.33 && !/\p{Extended_Pictographic}\s*$/u.test(x.trimEnd())) {
-        const e = ['🙂', '😊', '👋', '😉', '🏡'][Math.floor(Math.random() * 5)];
-        x = x.replace(/\s*$/, m => ` ${e}${m}`);
-      }
       return x;
     }).join('');
   }
@@ -735,10 +730,10 @@ window.IS.Disparo = (() => {
           <button type="button" class="dsp-btn dsp-sec2" data-gerar-spin title="Coloca opções {a|b|c} nas palavras que têm sinônimo">✨ Gerar variações (spintax)</button>
           ${st.textoAntesSpin != null ? '<button type="button" class="dsp-btn dsp-sec2" data-desfazer-spin>↩ Desfazer</button>' : ''}
         </div>
-        <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit"><input type="checkbox" data-cfg-bool="autoVariar" ${cfg.autoVariar !== false ? 'checked' : ''} style="width:auto"> <span><b>Variar automaticamente cada envio</b> — troca palavras por sinônimos, muda a pontuação e às vezes põe um emoji, para ninguém receber o texto igual</span></label>
+        <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit"><input type="checkbox" data-cfg-bool="autoVariar" ${cfg.autoVariar !== false ? 'checked' : ''} style="width:auto"> <span><b>Variar automaticamente cada envio</b> — troca palavras por sinônimos, muda a pontuação, para ninguém receber o texto igual</span></label>
         ${st.mensagem.trim()
           ? cfg.autoVariar !== false && comb <= 1
-            ? `<div class="dsp-ok">✓ Variação automática ligada: ${combinacoes(gerarSpintax(st.mensagem)).toLocaleString('pt-BR')} combinações de palavras, mais pontuação e emoji</div>`
+            ? `<div class="dsp-ok">✓ Variação automática ligada: ${combinacoes(gerarSpintax(st.mensagem)).toLocaleString('pt-BR')} combinações de palavras, mais pontuação</div>`
             : comb > 1
             ? `<div class="dsp-ok">✓ Variação ativa: ${comb.toLocaleString('pt-BR')} combinações${partes > 1 ? ` · ${partes} mensagens` : ''}</div>`
             : '<div class="dsp-alerta">Sem variação: todos recebem o mesmo texto, o que aumenta o risco de bloqueio. Use {Oi|Olá|Oii}.</div>'
