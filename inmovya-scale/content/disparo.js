@@ -405,7 +405,9 @@ window.IS.Disparo = (() => {
       size: a.size,
       data: a.data,
       messageIndex: nPartes - 1, // depois da última mensagem
-      useCaption: !!a.legenda && (a.type || '').startsWith('image/'),
+      // legenda própria do anexo (aceita {{nome}} e variações); senão, opção de usar o texto da mensagem
+      caption: String(a.legendaTexto || '').trim() ? montarTexto(a.legendaTexto, contato, !!st.campanha.cfg?.autoVariar) : '',
+      useCaption: !String(a.legendaTexto || '').trim() && !!a.legenda && (a.type || '').startsWith('image/'),
     }));
     return new Promise(resolve => {
       try {
@@ -744,9 +746,13 @@ window.IS.Disparo = (() => {
 
       <div class="dsp-sec">
         <div class="dsp-tit"><span class="dsp-num">3</span> Anexos <span class="dsp-mini" style="font-weight:400">(opcional · vão depois da mensagem)</span></div>
-        ${st.anexos.map(a => `<div class="dsp-anexo"><span>${(a.type || '').startsWith('image/') ? '🖼️' : (a.type || '').includes('pdf') ? '📄' : '📎'} ${esc(a.name)}</span>
-          ${(a.type || '').startsWith('image/') ? `<label class="dsp-mini" style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-legenda="${esc(a.id)}" ${a.legenda ? 'checked' : ''} style="width:auto"> texto como legenda</label>` : ''}
-          <button type="button" class="dsp-btn dsp-sec2" data-tirar-anexo="${esc(a.id)}" title="Tirar">✕</button></div>`).join('')}
+        ${st.anexos.map(a => `<div class="dsp-anexo" style="flex-direction:column;align-items:stretch;gap:6px">
+          <div style="display:flex;align-items:center;gap:6px"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(a.type || '').startsWith('image/') ? '🖼️' : (a.type || '').includes('pdf') ? '📄' : '📎'} ${esc(a.name)}</span>
+          <button type="button" class="dsp-btn dsp-sec2" data-tirar-anexo="${esc(a.id)}" title="Tirar">✕</button></div>
+          <textarea rows="2" data-legenda-texto="${esc(a.id)}" placeholder="Legenda deste anexo (opcional). Ex.: {Segue|Te mando} o book, {{nome}}!">${esc(a.legendaTexto || '')}</textarea>
+          ${(a.type || '').startsWith('image/') && !String(a.legendaTexto || '').trim() ? `<label class="dsp-mini" style="display:flex;align-items:center;gap:4px"><input type="checkbox" data-legenda="${esc(a.id)}" ${a.legenda ? 'checked' : ''} style="width:auto"> ou usar o texto da mensagem como legenda</label>` : ''}
+        </div>`).join('')}
+        ${st.anexos.length ? '<div class="dsp-mini">A legenda aceita {{nome}}, {{saudacao}} e variações {a|b}, e também varia sozinha em cada envio.</div>' : ''}
         <button type="button" class="dsp-btn dsp-sec2" data-anexar>📎 Anexar PDF ou imagem</button>
       </div>
 
@@ -877,6 +883,11 @@ window.IS.Disparo = (() => {
     const el = ev.target;
     if (el.id === 'dsp-msg') { st.mensagem = el.value; st.previa = ''; st.textoAntesSpin = null; }
     else if (el.id === 'dsp-planilha') st.textoPlanilha = el.value;
+    else if (el.dataset.legendaTexto) {
+      const a = st.anexos.find(x => x.id === el.dataset.legendaTexto);
+      if (a) a.legendaTexto = el.value;
+      st.previa = '';
+    }
     else if (el.dataset.cfg) st.cfg[el.dataset.cfg] = el.type === 'time' ? el.value : Number(el.value);
   }
   function aoMudar(ev) {
@@ -892,7 +903,8 @@ window.IS.Disparo = (() => {
       if (a) a.legenda = el.checked;
       return;
     }
-    if (el.dataset.cfg || el.id === 'dsp-msg') redesenhar(); // atualiza avisos e estimativa ao sair do campo
+    if (el.dataset.legendaTexto) chrome.storage.local.set({ [CHAVE_ANEXOS]: st.anexos }).catch(() => {});
+    if (el.dataset.cfg || el.id === 'dsp-msg' || el.dataset.legendaTexto) redesenhar(); // atualiza avisos e estimativa ao sair do campo
   }
 
   async function aoClicar(ev) {
@@ -926,8 +938,14 @@ window.IS.Disparo = (() => {
     }
     if ('previa' in d) {
       const exemplo = st.contatos[0] || { nome: 'Maria Silva' };
-      st.previa = st.mensagem.trim() ? montarTexto(st.mensagem, exemplo, st.cfg.autoVariar !== false).replace(/^\s*===\s*$/gm, '— — —') : '';
-      if (!st.previa) st.erro = 'Escreva a mensagem primeiro.';
+      const auto = st.cfg.autoVariar !== false;
+      const texto = st.mensagem.trim() ? montarTexto(st.mensagem, exemplo, auto).replace(/^\s*===\s*$/gm, '— — —') : '';
+      const anexos = st.anexos.map(x => {
+        const leg = String(x.legendaTexto || '').trim() ? montarTexto(x.legendaTexto, exemplo, auto) : x.legenda && (x.type || '').startsWith('image/') ? '(texto da mensagem acima)' : '';
+        return `📎 ${x.name}${leg ? `\n   Legenda: ${leg}` : ''}`;
+      });
+      st.previa = [texto, ...anexos].filter(Boolean).join('\n— — —\n');
+      if (!st.previa) st.erro = 'Escreva a mensagem ou anexe um arquivo.';
       return redesenhar();
     }
     if ('iniciar' in d) return iniciar();
