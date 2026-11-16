@@ -49,6 +49,8 @@ window.IS.Disparo = (() => {
     aviso: '',
     erro: '',
     espera: '', // texto do que está esperando (intervalo, pausa, horário…)
+    hist: {}, // telefone -> quando recebeu o último disparo (últimos 120 dias)
+    repetir: null, // quem já recebeu disparo: null (ainda não escolheu) | 'pular' | 'enviar'
     proximoEm: 0,
   };
   let rodandoLoop = false;
@@ -236,8 +238,9 @@ window.IS.Disparo = (() => {
   const salvarCampanha = () => chrome.storage.local.set({ [CHAVE]: st.campanha }).catch(() => {});
   async function carregar() {
     try {
-      const r = await chrome.storage.local.get([CHAVE, CHAVE_ANEXOS, CHAVE_CFG]);
+      const r = await chrome.storage.local.get([CHAVE, CHAVE_ANEXOS, CHAVE_CFG, CHAVE_HIST]);
       st.campanha = r[CHAVE] || null;
+      st.hist = r[CHAVE_HIST] || {};
       if (r[CHAVE_CFG]) st.cfg = { ...CFG_PADRAO, ...r[CHAVE_CFG] };
       if (st.campanha) {
         st.anexos = r[CHAVE_ANEXOS] || [];
@@ -262,10 +265,27 @@ window.IS.Disparo = (() => {
   async function marcarHistorico(tel) {
     const h = await historico();
     h[tel] = Date.now();
+    st.hist = h;
     // guarda só os últimos 120 dias
     const corte = Date.now() - 120 * 864e5;
     for (const k of Object.keys(h)) if (h[k] < corte) delete h[k];
     await chrome.storage.local.set({ [CHAVE_HIST]: h }).catch(() => {});
+  }
+
+  const quandoFoi = ts => {
+    const d = new Date(ts);
+    const hoje = new Date();
+    const ontem = new Date(Date.now() - 864e5);
+    const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (d.toDateString() === hoje.toDateString()) return `hoje às ${hora}`;
+    if (d.toDateString() === ontem.toDateString()) return `ontem às ${hora}`;
+    return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às ${hora}`;
+  };
+  // quem desta lista já recebeu disparo antes
+  const jaReceberam = () => st.contatos.filter(c => st.hist[c.telefone]).map(c => ({ ...c, quando: st.hist[c.telefone] }));
+  async function novaLista() {
+    st.hist = await historico();
+    st.repetir = null;
   }
 
   // ---------- montar a lista ----------
@@ -301,6 +321,7 @@ window.IS.Disparo = (() => {
       }
       const { contatos, semNumero } = deduplicar(todos);
       st.contatos = contatos;
+      await novaLista();
       const nomes = (st.etiquetas || []).filter(e => st.marcadas[e.id]).map(e => e.nome).join(', ');
       st.aviso = `${contatos.length} contato(s) de ${nomes}.${semNumero ? ` ${semNumero} sem número visível ficaram de fora.` : ''}`;
     } catch (e) {
@@ -325,10 +346,11 @@ window.IS.Disparo = (() => {
     }
     return lista;
   }
-  function carregarDaPlanilha() {
+  async function carregarDaPlanilha() {
     const bruto = lerPlanilha(st.textoPlanilha);
     const { contatos, semNumero } = deduplicar(bruto);
     st.contatos = contatos;
+    await novaLista();
     st.erro = contatos.length ? '' : 'Não achei nenhum telefone. Use uma pessoa por linha: Nome;Telefone (ou só o telefone).';
     st.aviso = contatos.length ? `${contatos.length} contato(s) da planilha.${semNumero ? ` ${semNumero} número(s) inválido(s) ficaram de fora.` : ''}` : '';
     render();
@@ -529,7 +551,19 @@ window.IS.Disparo = (() => {
           await salvarCampanha();
           continue;
         }
-        if (cfg.evitarDias > 0) {
+        if (c.repetir) {
+          // a escolha foi feita antes de começar; confere de novo na hora (pode ter recebido por outro disparo)
+          const h = await historico();
+          const quando = h[item.telefone] || item.jaRecebeu || 0;
+          if (quando && c.repetir === 'pular') {
+            item.status = 'pulado';
+            item.erro = `já tinha recebido disparo ${quandoFoi(quando)}`;
+            await salvarCampanha();
+            render();
+            continue;
+          }
+          if (quando) item.repetido = quando;
+        } else if (cfg.evitarDias > 0) {
           const h = await historico();
           if (h[item.telefone] && Date.now() - h[item.telefone] < cfg.evitarDias * 864e5) {
             item.status = 'pulado';
@@ -585,6 +619,9 @@ window.IS.Disparo = (() => {
   async function iniciar() {
     if (!st.contatos.length) { st.erro = 'Monte a lista primeiro (etiqueta ou planilha).'; return render(); }
     if (!st.mensagem.trim() && !st.anexos.length) { st.erro = 'Escreva a mensagem ou anexe um arquivo.'; return render(); }
+    st.hist = await historico();
+    const repetidos = jaReceberam();
+    if (repetidos.length && !st.repetir) { st.erro = `${repetidos.length} pessoa(s) da lista já receberam disparo. Escolha lá em cima se quer enviar de novo ou pular.`; return render(); }
     const cfg = normalizarCfg(st.cfg);
     st.cfg = cfg;
     await chrome.storage.local.set({ [CHAVE_CFG]: cfg, [CHAVE_ANEXOS]: st.anexos }).catch(() => {});
@@ -596,7 +633,8 @@ window.IS.Disparo = (() => {
       cfg,
       noLote: 0,
       status: 'pausado',
-      contatos: st.contatos.map(c => ({ ...c, status: 'pendente', erro: '', envioId: uuid() })),
+      repetir: st.repetir || 'pular',
+      contatos: st.contatos.map(c => ({ ...c, status: 'pendente', erro: '', envioId: uuid(), jaRecebeu: st.hist[c.telefone] || 0 })),
     };
     st.tela = 'rodando';
     st.erro = ''; st.aviso = '';
@@ -813,6 +851,18 @@ window.IS.Disparo = (() => {
           <div class="dsp-mini">Do Excel/Google Planilhas: copie as colunas Nome e Telefone e cole aqui, ou salve como CSV.</div>
         `}
         ${st.contatos.length ? `<div class="dsp-mini"><b>${st.contatos.length}</b> na lista: ${st.contatos.slice(0, 4).map(c => esc(c.nome || telBonito(c.telefone))).join(', ')}${st.contatos.length > 4 ? '…' : ''}</div>` : ''}
+        ${(() => {
+          const rep = jaReceberam();
+          if (!rep.length) return '';
+          const nomes = rep.slice(0, 5).map(c => `<b>${esc(c.nome || telBonito(c.telefone))}</b> (${quandoFoi(c.quando)})`).join(', ');
+          return `<div class="dsp-alerta">⚠️ <b>${rep.length} pessoa(s) desta lista já receberam disparo:</b> ${nomes}${rep.length > 5 ? ` e mais ${rep.length - 5}` : ''}.
+            <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+              <label style="display:flex;gap:6px;align-items:center"><input type="radio" name="dsp-rep" data-repetir="pular" ${st.repetir === 'pular' ? 'checked' : ''} style="width:auto"> Pular quem já recebeu</label>
+              <label style="display:flex;gap:6px;align-items:center"><input type="radio" name="dsp-rep" data-repetir="enviar" ${st.repetir === 'enviar' ? 'checked' : ''} style="width:auto"> Enviar de novo para elas</label>
+            </div>
+            ${st.repetir === 'enviar' ? '<div style="margin-top:6px">Atenção: mandar de novo para a mesma pessoa em pouco tempo aumenta a chance de ela bloquear ou denunciar o seu número. Prefira uma mensagem diferente da anterior.</div>' : ''}
+          </div>`;
+        })()}
         <label style="display:flex;align-items:center;gap:8px;font-size:13px">Enviar para no máximo <input type="number" min="0" data-cfg="maxPessoas" value="${cfg.maxPessoas || ''}" placeholder="todas" style="width:90px"> pessoas</label>
         ${cfg.maxPessoas > 0 && st.contatos.length > cfg.maxPessoas ? `<div class="dsp-mini">Vai enviar para <b>${cfg.maxPessoas}</b> de ${st.contatos.length} (na ordem da lista). Os outros ficam de fora.</div>` : ''}
       </div>
@@ -854,14 +904,13 @@ window.IS.Disparo = (() => {
         <div class="dsp-tit"><span class="dsp-num">4</span> Proteção contra bloqueio</div>
         <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit;margin-bottom:6px"><input type="checkbox" data-cfg-bool="tempoAuto" ${auto ? 'checked' : ''} style="width:auto"> <span><b>⏱️ Tempo automático (recomendado)</b> — o sistema sorteia sozinho o tempo entre envios, quantos manda antes de pausar e o tamanho da pausa</span></label>
         ${auto ? `<div class="dsp-ok">Entre ${TEMPO_AUTO.min / 60} e ${Math.round(TEMPO_AUTO.max / 60 * 10) / 10} min entre um envio e outro (às vezes um pouco mais) · pausa de ${TEMPO_AUTO.pausaMin} a ${TEMPO_AUTO.pausaMax} min a cada ${TEMPO_AUTO.loteMin}–${TEMPO_AUTO.loteMax} envios. Nunca repete o mesmo ritmo.</div>` : ''}
-        ${auto ? `<div class="dsp-mini">Também respeita: até ${cfg.limiteDia} envios por dia · das ${esc(cfg.horaIni)} às ${esc(cfg.horaFim)} · não repete quem recebeu nos últimos ${cfg.evitarDias} dia(s). Para mudar, desmarque o tempo automático.</div>` : `
+        ${auto ? `<div class="dsp-mini">Também respeita: até ${cfg.limiteDia} envios por dia · das ${esc(cfg.horaIni)} às ${esc(cfg.horaFim)}. Para mudar, desmarque o tempo automático.</div>` : `
         <div class="dsp-grade">
           <label>Intervalo mínimo (segundos)<input type="number" min="20" data-cfg="intervaloMin" value="${cfg.intervaloMin}"></label>
           <label>Intervalo máximo (segundos)<input type="number" min="20" data-cfg="intervaloMax" value="${cfg.intervaloMax}"></label>
           <label>Pausar a cada (envios)<input type="number" min="0" data-cfg="lote" value="${cfg.lote}"></label>
           <label>Pausa de (minutos)<input type="number" min="1" data-cfg="pausaLote" value="${cfg.pausaLote}"></label>
           <label>Limite por dia<input type="number" min="1" data-cfg="limiteDia" value="${cfg.limiteDia}"></label>
-          <label>Não repetir por (dias)<input type="number" min="0" data-cfg="evitarDias" value="${cfg.evitarDias}"></label>
           <label>Enviar a partir de<input type="time" data-cfg="horaIni" value="${esc(cfg.horaIni)}"></label>
           <label>Até<input type="time" data-cfg="horaFim" value="${esc(cfg.horaFim)}"></label>
         </div>
@@ -889,7 +938,7 @@ window.IS.Disparo = (() => {
       <div class="dsp-barra"><i style="width:${pct}%"></i></div>
       ${c.status === 'rodando'
         ? st.atual
-          ? `<div class="dsp-ok">⏳ Enviando para <b>${esc(st.atual.nome || telBonito(st.atual.telefone))}</b>…</div>`
+          ? `<div class="dsp-ok">⏳ Enviando para <b>${esc(st.atual.nome || telBonito(st.atual.telefone))}</b>…${st.atual.repetido ? ` <span style="color:#7a4b00">🔁 já tinha recebido disparo ${esc(quandoFoi(st.atual.repetido))}</span>` : ''}</div>`
           : st.espera
             ? `<div class="dsp-sec"><div class="dsp-mini" style="text-align:center">${esc(st.espera)}</div>${st.proximoEm ? `<div class="dsp-contagem" id="dsp-contagem">${mmss(st.proximoEm - Date.now())}</div>` : ''}</div>`
             : '<div class="dsp-mini">Preparando…</div>'
@@ -901,7 +950,7 @@ window.IS.Disparo = (() => {
   function linhaLog(x) {
     const marca = { enviado: '✅', erro: '⚠️', pulado: '⏭️', enviando: '⏳' };
     const info = esc(x.status === 'enviado' ? (x.em ? new Date(x.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '') : x.erro || '');
-    const cab = `<span>${marca[x.status] || ''}</span><b>${esc(x.nome || telBonito(x.telefone))}</b><span class="dsp-mini">${info}</span>`;
+    const cab = `<span>${marca[x.status] || ''}</span><b>${esc(x.nome || telBonito(x.telefone))}</b>${x.repetido && x.status === 'enviado' ? `<span class="dsp-mini" title="Já tinha recebido disparo ${esc(quandoFoi(x.repetido))}">🔁 de novo</span>` : ''}<span class="dsp-mini">${info}</span>`;
     if (x.status === 'enviado' && x.textoEnviado) {
       return `<details class="dsp-enviado"><summary>${cab}</summary><div class="dsp-previa">${marcasHtml(x.textoEnviado.replace(/^\s*===\s*$/gm, '— — —'))}</div></details>`;
     }
@@ -998,6 +1047,7 @@ window.IS.Disparo = (() => {
   function aoMudar(ev) {
     const el = ev.target;
     if (el.dataset.et) { st.marcadas[el.dataset.et] = el.checked; return; }
+    if (el.dataset.repetir) { st.repetir = el.dataset.repetir; st.erro = ''; return redesenhar(); }
     if (el.dataset.cfgBool) {
       st.cfg[el.dataset.cfgBool] = el.checked;
       chrome.storage.local.set({ [CHAVE_CFG]: normalizarCfg(st.cfg) }).catch(() => {});
