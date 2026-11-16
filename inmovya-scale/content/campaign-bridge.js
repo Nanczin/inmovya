@@ -50,6 +50,18 @@
     });
   });
 
+  // Ferramentas do WhatsApp (Dinheiro na Mesa, Disparo): ligar/desligar pelo Inmovya
+  window.addEventListener('INMOVYA_FERRAMENTAS', event => {
+    const detail = event.detail || {};
+    const msg = detail.ferramentas ? { action: 'ferramentas_set', ferramentas: detail.ferramentas } : { action: 'ferramentas_get' };
+    chrome.runtime.sendMessage(msg, response => {
+      const error = chrome.runtime.lastError?.message;
+      window.dispatchEvent(new CustomEvent('INMOVYA_FERRAMENTAS_RESULT', {
+        detail: { token: detail.token, ok: !!response?.ok && !error, ferramentas: response?.ferramentas || null, error: error || '' }
+      }));
+    });
+  });
+
   // Respostas dos leads (WhatsApp → Inmovya): o lead sai da esteira na hora
   const entregarRespostasNaPagina = itens => {
     if (Array.isArray(itens) && itens.length) window.dispatchEvent(new CustomEvent('INMOVYA_RESPOSTAS', { detail: { itens } }));

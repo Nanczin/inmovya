@@ -475,7 +475,21 @@ window.IS.DinheiroNaMesa = (() => {
     document.head.appendChild(css);
   }
 
+  // aparece só se estiver ligado em Configurações do Inmovya
+  let ligado = false;
+  async function lerLigado() {
+    try {
+      const d = await chrome.storage.local.get('ferramentasWA');
+      ligado = !!(d.ferramentasWA && d.ferramentasWA.dnm);
+    } catch (_) { ligado = false; }
+    if (!ligado) {
+      document.getElementById('is-dnm-botao')?.remove();
+      if (st.aberto) fechar();
+    } else botao();
+  }
+
   function botao() {
+    if (!ligado) return;
     if (document.getElementById('is-dnm-botao')) return;
     const b = document.createElement('button');
     b.id = 'is-dnm-botao';
@@ -699,7 +713,10 @@ window.IS.DinheiroNaMesa = (() => {
 
   function iniciar() {
     estilos();
-    botao();
+    lerLigado();
+    try {
+      chrome.storage.onChanged.addListener((mud, area) => { if (area === 'local' && mud.ferramentasWA) lerLigado(); });
+    } catch (_) { /* extensão recarregada */ }
     // o WhatsApp às vezes refaz o <body>: garante o botão
     setInterval(botao, 5000);
   }

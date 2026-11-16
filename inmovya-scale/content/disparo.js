@@ -532,8 +532,23 @@ window.IS.Disparo = (() => {
     document.head.appendChild(css);
   }
 
+  // aparece só se estiver ligado em Configurações do Inmovya (ou com um disparo rodando)
+  let ligado = false;
+  async function lerLigado() {
+    try {
+      const d = await chrome.storage.local.get('ferramentasWA');
+      ligado = !!(d.ferramentasWA && d.ferramentasWA.disparo);
+    } catch (_) { ligado = false; }
+    if (!ligado && !(st.campanha && st.campanha.status === 'rodando') && st.aberto) fechar();
+    botao();
+  }
+
   function botao() {
     let b = document.getElementById('is-dsp-botao');
+    if (!ligado && !(st.campanha && st.campanha.status === 'rodando')) {
+      b?.remove();
+      return;
+    }
     if (!b) {
       b = document.createElement('button');
       b.id = 'is-dsp-botao';
@@ -794,7 +809,10 @@ window.IS.Disparo = (() => {
 
   function iniciarModulo() {
     estilos();
-    carregar().then(() => botao());
+    carregar().then(() => lerLigado());
+    try {
+      chrome.storage.onChanged.addListener((mud, area) => { if (area === 'local' && mud.ferramentasWA) lerLigado(); });
+    } catch (_) { /* extensão recarregada */ }
     setInterval(botao, 5000); // o WhatsApp às vezes refaz o <body>
   }
 

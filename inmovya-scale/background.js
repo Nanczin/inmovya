@@ -526,6 +526,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true;
   }
+  // Ferramentas que aparecem no WhatsApp Web (ligadas em Configurações do Inmovya)
+  if (request?.action === 'ferramentas_get') {
+    chrome.storage.local.get('ferramentasWA').then(d => sendResponse({ ok: true, ferramentas: { dnm: false, disparo: false, ...(d.ferramentasWA || {}) } }));
+    return true;
+  }
+  if (request?.action === 'ferramentas_set') {
+    chrome.storage.local.get('ferramentasWA').then(async d => {
+      const f = { dnm: false, disparo: false, ...(d.ferramentasWA || {}), ...(request.ferramentas || {}) };
+      await chrome.storage.local.set({ ferramentasWA: { dnm: !!f.dnm, disparo: !!f.disparo } });
+      sendResponse({ ok: true, ferramentas: { dnm: !!f.dnm, disparo: !!f.disparo } });
+    });
+    return true;
+  }
   if (request?.action === 'prioridade_status') {
     chrome.storage.local.get(['agentePendentes', 'agenteProximoEnvio']).then(d => {
       sendResponse({ ok: true, emAtendimento: prioridadeAtiva > 0, naFila: filaWAAlta.length, pendentes: d.agentePendentes || 0, proximoEnvio: d.agenteProximoEnvio || 0 });

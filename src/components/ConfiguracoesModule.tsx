@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "next-themes";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { FerramentasWhatsApp } from "@/components/configuracoes/FerramentasWhatsApp";
 import { Database, HardDrive, Moon, Sun, Monitor, RefreshCw, AlertTriangle, Check } from "lucide-react";
 
 type Uso = {
@@ -142,6 +143,8 @@ export function ConfiguracoesModule() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <FerramentasWhatsApp />
+
       <section className="rounded-2xl border bg-card p-5 sm:p-6 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
           <div className="flex items-center gap-3">
