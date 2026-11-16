@@ -65,7 +65,7 @@ export function TemplatesModule() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
     const [formData, setFormData] = useState<Partial<Template>>({
-        tipo: 'whatsapp',
+        tipo: 'email',
         nome: '',
         conteudo: '',
         assunto: '',
@@ -134,7 +134,7 @@ export function TemplatesModule() {
 
     const resetForm = () => {
         setFormData({
-            tipo: 'whatsapp',
+            tipo: 'email',
             nome: '',
             conteudo: '',
             assunto: '',
@@ -289,7 +289,8 @@ export function TemplatesModule() {
     const filteredTemplates = templates.filter(t => {
         const matchSearch = t.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
             t.conteudo.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchType = activeTab === 'todos' ? true : t.tipo === activeTab;
+        // WhatsApp agora fica no Inmovya Scale (Respostas); aqui só e-mail
+        const matchType = t.tipo === 'email';
         return matchSearch && matchType;
     });
 
@@ -391,7 +392,7 @@ export function TemplatesModule() {
                         Templates de Mensagens
                     </h1>
                     <p className="text-muted-foreground mt-1">
-                        Gerencie modelos prontos para WhatsApp e Email para padronizar sua comunicação.
+                        Modelos de e-mail. Os de WhatsApp agora ficam nas Respostas do Inmovya Scale (no WhatsApp Web).
                     </p>
                 </div>
                 <Button onClick={() => handleOpenDialog()} className="shadow-lg hover:shadow-xl transition-all">
@@ -411,17 +412,6 @@ export function TemplatesModule() {
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
-                        <Tabs defaultValue="todos" value={activeTab} onValueChange={setActiveTab} className="w-full md:w-auto">
-                            <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 md:w-[400px] h-auto">
-                                <TabsTrigger value="todos" className="py-2 sm:py-1.5">Todos</TabsTrigger>
-                                <TabsTrigger value="whatsapp" className="flex items-center gap-2 py-2 sm:py-1.5">
-                                    <MessageSquare className="h-4 w-4" /> WhatsApp
-                                </TabsTrigger>
-                                <TabsTrigger value="email" className="flex items-center gap-2 py-2 sm:py-1.5">
-                                    <Mail className="h-4 w-4" /> Email
-                                </TabsTrigger>
-                            </TabsList>
-                        </Tabs>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -518,7 +508,6 @@ export function TemplatesModule() {
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                         <SelectItem value="email">Email</SelectItem>
                                     </SelectContent>
                                 </Select>
@@ -635,7 +624,7 @@ export function TemplatesModule() {
                             {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Abrindo...</> : <><Upload className="mr-2 h-4 w-4" /> {anexosDoTemplate(formData).length ? "Adicionar mais arquivos" : "Selecionar arquivos do computador (imagem, PDF, vídeo, áudio, documentos)"}</>}
                         </Button>
                         <p className="text-xs text-muted-foreground">
-                            Os arquivos <strong>ficam no seu computador</strong> (não ocupam espaço no Inmovya) e são lidos na hora do envio — não mova nem apague da pasta. No disparo automático vão <strong>como arquivo</strong> no WhatsApp, depois do texto. Também dá para <strong>arrastar</strong> da pasta para cá.
+                            Os arquivos <strong>ficam no seu computador</strong> (não ocupam espaço no Inmovya) e são lidos na hora do envio — não mova nem apague da pasta. Também dá para <strong>arrastar</strong> da pasta para cá.
                         </p>
                     </div>
 

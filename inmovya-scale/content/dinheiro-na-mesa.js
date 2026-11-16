@@ -5,7 +5,7 @@
 //   classificação: Interessado (→ 20%) / Disparo (→ Lead e Nutrição) / Caixa Postal (fica) / Deny List (sai da etiqueta) + notas
 //   SALVAR E PRÓXIMO → mostra o próximo. Quem não atendeu volta no fim da fila (até 3 tentativas).
 // TEMPORÁRIO: nada vai para o banco do Inmovya. O progresso fica só neste Chrome e some quando você conclui a etiqueta.
-// Não manda mensagem nenhuma. Só mexe na etiqueta do contato que você classificar (menos Caixa Postal).
+// Só manda mensagem quando você clica em Enviar template (Respostas do Inmovya Scale). Mexe na etiqueta do contato que você classificar (menos Caixa Postal).
 window.IS = window.IS || {};
 
 window.IS.DinheiroNaMesa = (() => {
@@ -76,6 +76,80 @@ window.IS.DinheiroNaMesa = (() => {
     await chrome.storage.local.set({ [CHAVE_FINALIZADOS]: st.finalizados }).catch(() => {});
   }
   const salvarSessoes = () => chrome.storage.local.set({ [CHAVE]: st.sessoes }).catch(() => {});
+
+  // ---------- template (Respostas do Inmovya Scale) para mandar ao contato da vez ----------
+  const CHAVE_TPL = 'dnmTemplateId';
+  const tpl = { lista: [], categorias: [], id: '', enviando: false };
+  async function carregarRespostas() {
+    try {
+      tpl.lista = await window.IS.Storage.getReplies();
+      tpl.categorias = await window.IS.Storage.getCategories();
+      tpl.id = (await chrome.storage.local.get(CHAVE_TPL))[CHAVE_TPL] || '';
+      if (tpl.id && !tpl.lista.some(r => r.id === tpl.id)) tpl.id = '';
+    } catch (_) { /* extensão recarregada */ }
+  }
+  // {Oi|Olá} → sorteia uma opção; {{variáveis}} ficam como estão
+  function spin(texto) {
+    const vars = [];
+    let t = String(texto || '').replace(/\{\{[^{}]*\}\}/g, m => `\u0000${vars.push(m) - 1}\u0000`);
+    for (let i = 0; i < 20; i++) {
+      const antes = t;
+      t = t.replace(/\{([^{}]*)\}/g, (_, dentro) => { const op = dentro.split('|'); return op[Math.floor(Math.random() * op.length)]; });
+      if (t === antes) break;
+    }
+    return t.replace(/\u0000(\d+)\u0000/g, (_, i) => vars[+i]);
+  }
+  function htmlTemplate(item) {
+    if (!tpl.lista.length) {
+      return `<div><div style="font-weight:700;margin-bottom:6px">💬 Template</div><div class="dnm-mini">Você ainda não tem Respostas no Inmovya Scale. Crie em Inmovya Scale → Configurações → Respostas e elas aparecem aqui.</div></div>`;
+    }
+    const nomeCat = id => (tpl.categorias.find(c => c.id === id) || {}).name || 'Sem categoria';
+    const ordenadas = [...tpl.lista].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0) || nomeCat(a.categoryId).localeCompare(nomeCat(b.categoryId)) || String(a.title).localeCompare(String(b.title)));
+    const grupos = {};
+    ordenadas.forEach(r => { const g = r.favorite ? '⭐ Favoritos' : nomeCat(r.categoryId); (grupos[g] = grupos[g] || []).push(r); });
+    const r = tpl.lista.find(x => x.id === tpl.id);
+    const previa = r ? String(r.message || '').replace(/\n\n===\n\n|===/g, ' ⤶ ') : '';
+    return `<div>
+      <div style="font-weight:700;margin-bottom:6px">💬 Template</div>
+      <select id="dnm-tpl">
+        <option value="">Escolha uma resposta…</option>
+        ${Object.entries(grupos).map(([g, rs]) => `<optgroup label="${esc(g)}">${rs.map(x => `<option value="${esc(x.id)}" ${x.id === tpl.id ? 'selected' : ''}>${esc(x.title)}</option>`).join('')}</optgroup>`).join('')}
+      </select>
+      ${r ? `<div class="dnm-mini" style="margin-top:4px">${esc(previa.slice(0, 160))}${previa.length > 160 ? '…' : ''}${(r.attachments || []).length ? ` · 📎 ${r.attachments.length} anexo(s)` : ''}${r.pasteOnly ? ' · só cola o texto (você envia)' : ''}</div>` : ''}
+      <button type="button" class="dnm-btn dnm-sec" data-enviar-tpl style="margin-top:6px;width:100%" ${!r || tpl.enviando ? 'disabled' : ''}>${tpl.enviando ? 'Enviando…' : r?.pasteOnly ? `📝 Colar na conversa de ${esc(String(item.nome).split(' ')[0])}` : `📨 Enviar para ${esc(String(item.nome).split(' ')[0])}`}</button>
+    </div>`;
+  }
+  async function enviarTemplate(item) {
+    const r = tpl.lista.find(x => x.id === tpl.id);
+    if (!r || tpl.enviando) return;
+    tpl.enviando = true; st.erro = ''; st.aviso = ''; render();
+    try {
+      const aberta = await abrirConversa(item, true);
+      if (!aberta) throw new Error(`não consegui abrir a conversa de ${item.nome}`);
+      await new Promise(res => setTimeout(res, 900));
+      if (window.IS.Scraper?.isCurrentContact && !window.IS.Scraper.isCurrentContact({ name: item.nome, chatId: item.chatId })) {
+        await new Promise(res => setTimeout(res, 1500));
+        if (!window.IS.Scraper.isCurrentContact({ name: item.nome, chatId: item.chatId })) throw new Error(`a conversa aberta não é a de ${item.nome}. Abra a conversa dele e tente de novo`);
+      }
+      const texto = await window.IS.Variables.parseMessage(spin(r.message), item.nome);
+      const dom = window.IS.WhatsAppDOM;
+      const ok = r.pasteOnly
+        ? await dom.insertMessage(String(texto || '').replace(/\n\n===\n\n/g, '\n\n').replace(/===/g, '\n\n'))
+        : await dom.insertSequenceAndAttachments(texto, r.attachments, { sendSingleText: true });
+      if (!ok) throw new Error(dom.ultimoErro || 'o WhatsApp não confirmou o envio');
+      r.usageCount = (r.usageCount || 0) + 1;
+      r.lastUsedAt = new Date().toISOString();
+      await window.IS.Storage.saveReplies(tpl.lista).catch(() => {});
+      item.templateEnviado = r.title;
+      salvarSessoes();
+      st.aviso = r.pasteOnly ? `Texto colado na conversa de ${item.nome}. Revise e envie.` : `“${r.title}” enviado para ${item.nome}.`;
+    } catch (err) {
+      st.erro = `Template não enviado: ${err.message || err}`;
+    } finally {
+      tpl.enviando = false;
+      render();
+    }
+  }
 
   // ---------- memória do WhatsApp (dnm-store.js, no MAIN world) ----------
   let seq = 0;
@@ -502,6 +576,7 @@ window.IS.DinheiroNaMesa = (() => {
 
   async function abrir() {
     st.aberto = true;
+    carregarRespostas().then(() => render());
     await carregarSessoes();
     if (st.tela !== 'sessao' || !sessao()) st.tela = 'inicio';
     render();
@@ -604,7 +679,9 @@ window.IS.DinheiroNaMesa = (() => {
       <div>
         <div style="font-weight:700;margin-bottom:6px">Notas</div>
         <textarea id="dnm-nota" rows="3" maxlength="500" placeholder="O que o cliente falou, melhor horário, interesse…">${esc(st.nota)}</textarea>
-      </div>`;
+      </div>
+      ${item.templateEnviado ? `<div class="dnm-mini">✅ Já recebeu: <b>${esc(item.templateEnviado)}</b></div>` : ''}
+      ${htmlTemplate(item)}`;
   }
 
   function htmlFim() {
@@ -635,6 +712,13 @@ window.IS.DinheiroNaMesa = (() => {
       raiz.addEventListener('click', aoClicar);
       raiz.addEventListener('input', ev => {
         if (ev.target.id === 'dnm-nota') st.nota = ev.target.value;
+      });
+      raiz.addEventListener('change', ev => {
+        if (ev.target.id === 'dnm-tpl') {
+          tpl.id = ev.target.value;
+          chrome.storage.local.set({ [CHAVE_TPL]: tpl.id }).catch(() => {});
+          render();
+        }
       });
             raiz.addEventListener('keydown', ev => ev.stopPropagation()); // não deixa o WhatsApp roubar o teclado
     }
@@ -706,6 +790,7 @@ window.IS.DinheiroNaMesa = (() => {
     if ('ligar' in d) return ligar(item);
     if ('copiar' in d) return copiar(item);
     if ('abrir' in d) return abrirConversa(item);
+    if ('enviarTpl' in d) return enviarTemplate(item);
     if (d.classificar) { st.classificacao = st.classificacao === d.classificar ? '' : d.classificar; if (st.classificacao !== 'Cliente Interessado') st.etapa = ''; return render(); }
     if ('pular' in d) return pular();
     if ('salvar' in d) return salvarEProximo();
@@ -715,7 +800,11 @@ window.IS.DinheiroNaMesa = (() => {
     estilos();
     lerLigado();
     try {
-      chrome.storage.onChanged.addListener((mud, area) => { if (area === 'local' && mud.ferramentasWA) lerLigado(); });
+      chrome.storage.onChanged.addListener((mud, area) => {
+        if (area !== 'local') return;
+        if (mud.ferramentasWA) lerLigado();
+        if ((mud.replies || mud.categories) && st.aberto && !tpl.enviando) carregarRespostas().then(() => render());
+      });
     } catch (_) { /* extensão recarregada */ }
     // o WhatsApp às vezes refaz o <body>: garante o botão
     setInterval(botao, 5000);
