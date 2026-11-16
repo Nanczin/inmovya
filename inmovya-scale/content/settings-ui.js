@@ -37,6 +37,7 @@ window.IS.SettingsUI = {
   <div style="display:flex; flex-wrap:wrap; background:var(--inmovya-surface); border-bottom:1px solid var(--inmovya-border);">
     <button class="is-set-tab active" data-tab="is-tab-replies">Respostas</button>
     <button class="is-set-tab" data-tab="is-tab-categories">Categorias</button>
+    <button class="is-set-tab" data-tab="is-tab-ferramentas">Ferramentas</button>
   </div>
 
   <div id="is-settings-body" style="padding:15px; flex:1;">
@@ -67,6 +68,19 @@ window.IS.SettingsUI = {
           <button type="button" id="is-btn-restore-auto" style="background:transparent; border:1px solid var(--inmovya-border); color:var(--inmovya-text); padding:9px; border-radius:5px; cursor:pointer;">Restaurar última cópia automática</button>
         </div>
       </details>
+    </div>
+
+    <!-- TAB: FERRAMENTAS — liga/desliga o que aparece na tela do WhatsApp (o mesmo que em Configurações do Inmovya) -->
+    <div id="is-tab-ferramentas" class="is-tab-content" style="display:none;">
+      <div style="font-size:12px; color:var(--inmovya-text-secondary); margin-bottom:12px; line-height:1.4;">Só aparece na tela do WhatsApp o que estiver ligado aqui. Vale também em Configurações do Inmovya.</div>
+      <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; border:1px solid var(--inmovya-border); border-radius:8px; background:var(--inmovya-surface); cursor:pointer; margin-bottom:10px;">
+        <span><b style="display:block; font-size:13px;">💰 Dinheiro na Mesa</b><span style="font-size:11px; color:var(--inmovya-text-secondary);">Oferta ativa em cima de uma etiqueta.</span></span>
+        <input type="checkbox" id="is-ferr-dnm" style="width:20px; height:20px; cursor:pointer; accent-color:var(--inmovya-primary);">
+      </label>
+      <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px; border:1px solid var(--inmovya-border); border-radius:8px; background:var(--inmovya-surface); cursor:pointer;">
+        <span><b style="display:block; font-size:13px;">📣 Disparo</b><span style="font-size:11px; color:var(--inmovya-text-secondary);">Envio para uma etiqueta ou planilha, com proteção contra bloqueio.</span></span>
+        <input type="checkbox" id="is-ferr-disparo" style="width:20px; height:20px; cursor:pointer; accent-color:var(--inmovya-primary);">
+      </label>
     </div>
 
     <!-- TAB: CRM — removida da tela (o Inmovya é o CRM); fica escondida só para o código antigo não quebrar -->
@@ -160,6 +174,28 @@ window.IS.SettingsUI = {
     `;
   },
 
+  bindFerramentas() {
+    const caixas = { dnm: document.getElementById('is-ferr-dnm'), disparo: document.getElementById('is-ferr-disparo') };
+    if (!caixas.dnm || !caixas.disparo) return;
+    const mostrar = f => {
+      caixas.dnm.checked = !!f?.dnm;
+      caixas.disparo.checked = !!f?.disparo;
+    };
+    chrome.storage.local.get('ferramentasWA').then(d => mostrar(d.ferramentasWA)).catch(() => {});
+    chrome.storage.onChanged.addListener((mud, area) => {
+      if (area === 'local' && mud.ferramentasWA) mostrar(mud.ferramentasWA.newValue);
+    });
+    const salvar = async () => {
+      const ferramentas = { dnm: caixas.dnm.checked, disparo: caixas.disparo.checked };
+      try {
+        await chrome.storage.local.set({ ferramentasWA: ferramentas });
+        this.showToast?.('Salvo');
+      } catch (_) { /* extensão recarregada: precisa F5 */ }
+    };
+    caixas.dnm.addEventListener('change', salvar);
+    caixas.disparo.addEventListener('change', salvar);
+  },
+
   async init() {
     if (this.initialized) return;
     this.initialized = true;
@@ -178,6 +214,9 @@ window.IS.SettingsUI = {
         }
       });
     });
+
+    // Ferramentas na tela (Dinheiro na Mesa / Disparo)
+    this.bindFerramentas();
 
     // Close settings view
     document.getElementById('is-settings-close-btn').addEventListener('click', async () => {

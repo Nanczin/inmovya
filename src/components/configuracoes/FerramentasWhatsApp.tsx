@@ -72,7 +72,7 @@ export function FerramentasWhatsApp() {
       </div>
       {semExtensao ? (
         <p className="text-sm text-amber-600 dark:text-amber-400">
-          Não achei o Inmovya Scale neste navegador. Abra o Inmovya no Chrome com a extensão (versão 1.14.0 ou mais nova) e clique em conferir de novo.
+          Não achei o Inmovya Scale neste navegador. Abra o Inmovya no Chrome com a extensão (versão 1.14.1 ou mais nova) e clique em conferir de novo.
         </p>
       ) : (
         <div className="divide-y">
