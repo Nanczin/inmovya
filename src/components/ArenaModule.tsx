@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as EventoMouse } from "react";
+import { reais, vendasProporcionais, vgvDoMes, vgvPorDiaDe } from "@/lib/vgv";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,13 @@ export interface Metas {
   mesNegociacoes: number;
   mesDocumentacoes: number;
   mesVendas: number;
+  /** meta de VGV do mês (R$). 0 = meta de vendas por quantidade */
+  mesVgv: number;
+  /** VGV vendido por dia ("AAAA-MM-DD" → R$) */
+  vgvPorDia?: Record<string, number>;
 }
+/** campos numéricos das metas (tudo menos o VGV por dia) */
+export type MetaNumerica = Exclude<keyof Metas, "vgvPorDia">;
 export const METAS_PADRAO: Metas = {
   diaLigacoes: 200,
   diaInteressados: 5,
@@ -60,6 +67,7 @@ export const METAS_PADRAO: Metas = {
   mesNegociacoes: 8,
   mesDocumentacoes: 3,
   mesVendas: 2,
+  mesVgv: 0,
 };
 
 const NIVEIS = [
@@ -100,7 +108,7 @@ export function normalizarMetas(m: Partial<Metas> | null | undefined, base = new
   const o: any = m || {};
   const r = { ...METAS_PADRAO, ...o } as Metas;
   const dias = diasUteisDoMes(base);
-  const pares: [keyof Metas, keyof Metas][] = [
+  const pares: [MetaNumerica, MetaNumerica][] = [
     ["mesLigacoes", "diaLigacoes"],
     ["mesInteressados", "diaInteressados"],
     ["mesInteracoes", "diaInteracoes"],
@@ -598,19 +606,21 @@ export function ArenaModule() {
         </h3>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {metasMes.map(({ m, alvo }) => {
-            const v = mes[m];
+            // vendas com meta de VGV: conta proporcional ao valor vendido
+            const vgvMesAtual = m === "vendas" ? vgvDoMes(vgvPorDiaDe(metas), kHoje.slice(0, 7)) : 0;
+            const porVgv = m === "vendas" ? vendasProporcionais(vgvMesAtual, metas) : null;
+            const v = porVgv !== null ? porVgv : mes[m];
             const pct = Math.min(100, (v / Math.max(1, alvo)) * 100);
             const falta = Math.max(0, alvo - v);
-            const projecao = diasUteisPassados > 0 ? Math.round((v / diasUteisPassados) * (diasUteisPassados + diasRestantes)) : v;
+            const projecaoBruta = diasUteisPassados > 0 ? (v / diasUteisPassados) * (diasUteisPassados + diasRestantes) : v;
+            const projecao = porVgv !== null ? Math.round(projecaoBruta * 10) / 10 : Math.round(projecaoBruta);
             const noRitmo = projecao >= alvo || v >= alvo;
             return (
               <div key={m} className="arena-card rounded-xl border p-3 bg-card">
                 <div className="flex items-baseline justify-between">
                   <span className="font-semibold text-sm">{NOMES[m]}</span>
                   <span className="tabular-nums">
-                    <b className="text-lg">
-                      <Contador valor={v} />
-                    </b>
+                    <b className="text-lg">{porVgv !== null ? v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : <Contador valor={v} />}</b>
                     <span className="text-muted-foreground">/{alvo}</span>
                   </span>
                 </div>
@@ -618,7 +628,15 @@ export function ArenaModule() {
                   <Barra pct={pct} className={v >= alvo ? "bg-success" : noRitmo ? "bg-primary" : "bg-warning"} />
                 </div>
                 <div className="text-xs mt-1.5 text-muted-foreground">
-                  Meta diária: <b className="text-foreground">{metaPorDia(alvo)}</b> · hoje: {dHoje[m]}
+                  {porVgv !== null ? (
+                    <>
+                      VGV: <b className="text-foreground">{reais(vgvMesAtual)}</b> de {reais(metas.mesVgv)}
+                    </>
+                  ) : (
+                    <>
+                      Meta diária: <b className="text-foreground">{metaPorDia(alvo)}</b> · hoje: {dHoje[m]}
+                    </>
+                  )}
                 </div>
                 <div className={`text-xs mt-0.5 ${v >= alvo ? "text-success font-semibold" : noRitmo ? "text-muted-foreground" : "text-warning font-semibold"}`}>
                   {v >= alvo

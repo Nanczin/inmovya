@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { reais, vendasProporcionais, vgvDoMes, vgvPorDiaDe } from "@/lib/vgv";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
@@ -82,11 +83,14 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
       for (let d = new Date(inicioDia); d <= fim; d.setDate(d.getDate() + 1)) if (ehDiaUtil(d)) restam++;
       restam = Math.max(1, restam);
       const porDia = (feito: number, alvo: number) => {
-        const falta = Math.max(0, alvo - feito);
+        const falta = Math.max(0, Math.round((alvo - feito) * 10) / 10);
         if (!falta) return "meta do mês batida ✓";
         const n = falta / restam;
-        return `faltam ${falta} no mês · ${n < 1 ? `1 a cada ${Math.round(1 / n)} dias` : `${n.toFixed(1).replace(".", ",")} por dia`}`;
+        return `faltam ${falta.toLocaleString("pt-BR")} no mês · ${n < 1 ? `1 a cada ${Math.round(1 / n)} dias` : `${n.toFixed(1).replace(".", ",")} por dia`}`;
       };
+      // vendas: com meta de VGV, contam proporcional ao valor vendido
+      const vgvMes = vgvDoMes(vgvPorDiaDe(metas), kHoje.slice(0, 7));
+      const vendasVgv = vendasProporcionais(vgvMes, metas);
 
       if (!vivo) return;
       setLinhas([
@@ -98,7 +102,9 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
         { icone: "🤝", nome: "Negociações", feito: soma.negociacoes, alvo: metas.mesNegociacoes, obs: porDia(soma.negociacoes, metas.mesNegociacoes) },
         { icone: "🏠", nome: "Visitas", feito: soma.visitas, alvo: metas.mesVisitas, obs: porDia(soma.visitas, metas.mesVisitas) },
         { icone: "📄", nome: "Documentos", feito: soma.documentacoes, alvo: metas.mesDocumentacoes, obs: porDia(soma.documentacoes, metas.mesDocumentacoes) },
-        { icone: "🏆", nome: "Vendas", feito: soma.vendas, alvo: metas.mesVendas, obs: porDia(soma.vendas, metas.mesVendas) },
+        vendasVgv !== null
+          ? { icone: "🏆", nome: "Vendas", feito: vendasVgv, alvo: metas.mesVendas, obs: `VGV ${reais(vgvMes)} de ${reais(metas.mesVgv)} · ${porDia(vendasVgv, metas.mesVendas)}` }
+          : { icone: "🏆", nome: "Vendas", feito: soma.vendas, alvo: metas.mesVendas, obs: porDia(soma.vendas, metas.mesVendas) },
       ]);
       window.setTimeout(() => vivo && setAberto(true), 600);
     };
@@ -173,7 +179,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
                       {l.icone} {l.nome}
                     </span>
                     <span className="tabular-nums text-sm shrink-0">
-                      <b className="text-[hsl(var(--primary-glow))]">{l.feito}</b>
+                      <b className="text-[hsl(var(--primary-glow))]">{Number(l.feito).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</b>
                       <span className="text-white/50">/{l.alvo}</span>
                     </span>
                   </div>

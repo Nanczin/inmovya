@@ -4,12 +4,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { diasUteisDoMes, lerMetasLocal, metaPorDia, normalizarMetas, type Metas } from "@/components/ArenaModule";
+import { diasUteisDoMes, lerMetasLocal, metaPorDia, normalizarMetas, type Metas, type MetaNumerica } from "@/components/ArenaModule";
+import { lerReais, reais } from "@/lib/vgv";
 
 // "Definir metas" — o mesmo nas telas Arena e Ligações (as metas são uma só).
 // Tudo é definido por MÊS. Ligações, leads e interações aparecem por dia (mês ÷ dias úteis);
 // negociações, visitas, documentos e vendas aparecem no mês.
-export const CAMPOS_METAS: [keyof Metas, string, "dia" | "mes"][] = [
+export const CAMPOS_METAS: [MetaNumerica, string, "dia" | "mes"][] = [
   ["mesLigacoes", "📞 Ligações", "dia"],
   ["mesInteressados", "🎯 Leads", "dia"],
   ["mesInteracoes", "💬 Interações", "dia"],
@@ -46,7 +47,13 @@ export async function salvarMetas(entrada: Metas) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (user) await supabase.from("arena_metas" as any).upsert({ user_id: user.id, metas: m, updated_at: new Date().toISOString() } as any, { onConflict: "user_id" });
+  if (user) {
+    // o VGV vendido (vgvPorDia) é gravado em Relatórios: aqui só preserva o que já está no banco
+    const { data: atual } = await supabase.from("arena_metas" as any).select("metas").eq("user_id", user.id).maybeSingle();
+    const vgvBanco = (atual as any)?.metas?.vgvPorDia;
+    if (vgvBanco) (m as any).vgvPorDia = vgvBanco;
+    await supabase.from("arena_metas" as any).upsert({ user_id: user.id, metas: m, updated_at: new Date().toISOString() } as any, { onConflict: "user_id" });
+  }
   window.dispatchEvent(new CustomEvent("inmovya-metas-salvas", { detail: m }));
 }
 
@@ -111,6 +118,30 @@ export function DefinirMetasDialog({ open, onOpenChange, onSalvo }: { open: bool
                 />
               </label>
             ))}
+            <label className="flex items-center gap-3 rounded-lg border px-3 py-2 border-primary/40 bg-primary/[0.04]">
+              <span className="flex-1 text-sm font-semibold">
+                💰 VGV <span className="font-normal text-muted-foreground">no mês (R$)</span>
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {m.mesVgv > 0 && m.mesVendas > 0 ? (
+                    <>
+                      a meta de vendas anda pelo VGV: cada <b className="text-foreground">{reais(m.mesVgv / m.mesVendas)}</b> vendidos = 1 venda
+                    </>
+                  ) : (
+                    "deixe 0 para contar vendas por quantidade"
+                  )}
+                </span>
+              </span>
+              <Input
+                inputMode="decimal"
+                className="w-32 text-right"
+                placeholder="ex.: 3 mi"
+                defaultValue={m.mesVgv ? m.mesVgv.toLocaleString("pt-BR") : ""}
+                key={`vgv-${open}`}
+                onBlur={(e) => setM({ ...m, mesVgv: lerReais(e.target.value) })}
+                onChange={(e) => setM({ ...m, mesVgv: lerReais(e.target.value) })}
+                aria-label="Meta de VGV do mês em reais"
+              />
+            </label>
           </div>
         )}
         <DialogFooter>

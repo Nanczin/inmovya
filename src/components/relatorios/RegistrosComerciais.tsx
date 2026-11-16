@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Minus, Plus, PenLine, ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { carregarMetas } from "@/components/arena/DefinirMetasDialog";
+import type { Metas } from "@/components/ArenaModule";
+import { lerReais, reais, salvarVgvDoDia, somarVgv, vendasProporcionais, vgvDoMes, vgvPorDiaDe, type VgvPorDia } from "@/lib/vgv";
 
 // Registros feitos à mão no dia a dia (ficam na tabela powerbi_funnel_metrics, uma linha por dia: "dia:AAAA-MM-DD")
 type Campo = "interacoes" | "negociacoes" | "visitas" | "documentacoes" | "vendas";
@@ -37,6 +40,9 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   const [dia, setDia] = useState(chave(new Date()));
   const [form, setForm] = useState<Valores>(vazio());
   const [salvando, setSalvando] = useState(false);
+  const [vgvPorDia, setVgvPorDia] = useState<VgvPorDia>({});
+  const [metas, setMetas] = useState<Metas | null>(null);
+  const [vgvTexto, setVgvTexto] = useState("");
 
   const carregar = useCallback(async () => {
     const {
@@ -57,6 +63,9 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
     });
     setPorDia(m);
     setLinhaDoDia(linhas);
+    const mt = await carregarMetas();
+    setMetas(mt);
+    setVgvPorDia(vgvPorDiaDe(mt));
   }, []);
 
   useEffect(() => {
@@ -75,6 +84,12 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   };
   const atual = useMemo(() => somar(inicio, fim), [porDia, inicio, fim]);
   const anterior = useMemo(() => somar(inicioAnt, fimAnt), [porDia, inicioAnt, fimAnt]);
+  const vgvAtual = useMemo(() => somarVgv(vgvPorDia, chave(inicio), chave(new Date(fim.getTime() - 1))), [vgvPorDia, inicio, fim]);
+  const vgvAnterior = useMemo(() => somarVgv(vgvPorDia, chave(inicioAnt), chave(new Date(fimAnt.getTime() - 1))), [vgvPorDia, inicioAnt, fimAnt]);
+  // meta do mês corrente, proporcional ao VGV
+  const mesAtual = chave(new Date()).slice(0, 7);
+  const vgvMes = vgvDoMes(vgvPorDia, mesAtual);
+  const vendasPorVgv = metas ? vendasProporcionais(vgvMes, metas) : null;
 
   const abrir = () => {
     const hoje = chave(new Date());
@@ -87,6 +102,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
     const v = vazio();
     if (row) CAMPOS.forEach((c) => (v[c.id] = Number(row[c.coluna]) || 0));
     setForm(v);
+    setVgvTexto(vgvPorDia[k] ? vgvPorDia[k].toLocaleString("pt-BR") : "");
   };
 
   const salvar = async () => {
@@ -112,7 +128,12 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
         { onConflict: "user_id, period" }
       );
       if (error) throw error;
-      toast({ title: "Registro salvo", description: `Dia ${dia.split("-").reverse().join("/")}` });
+      const vgv = lerReais(vgvTexto);
+      if (vgv !== (vgvPorDia[dia] || 0)) await salvarVgvDoDia(dia, form.vendas > 0 ? vgv : 0);
+      toast({
+        title: "Registro salvo",
+        description: `Dia ${dia.split("-").reverse().join("/")}${form.vendas > 0 && vgv > 0 ? ` · VGV ${reais(vgv)}` : ""}`,
+      });
       setAberto(false);
       await carregar();
     } catch (e: any) {
@@ -162,6 +183,43 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
             </div>
           );
         })}
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border p-3">
+          <div className="text-xs font-semibold text-muted-foreground">VGV vendido no período</div>
+          <div className="flex items-baseline gap-2 mt-0.5">
+            <b className="text-xl tabular-nums">{reais(vgvAtual)}</b>
+            {vgvAnterior > 0 && vgvAtual !== vgvAnterior && (
+              <span className={`inline-flex items-center text-xs font-bold ${vgvAtual > vgvAnterior ? "text-success" : "text-destructive"}`} title={`Período anterior: ${reais(vgvAnterior)}`}>
+                {vgvAtual > vgvAnterior ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
+                {Math.abs(Math.round(((vgvAtual - vgvAnterior) / vgvAnterior) * 100))}%
+              </span>
+            )}
+          </div>
+          {atual.vendas > 0 && <div className="text-xs text-muted-foreground mt-0.5">ticket médio {reais(vgvAtual / atual.vendas)}</div>}
+        </div>
+        <div className="rounded-xl border p-3">
+          <div className="text-xs font-semibold text-muted-foreground">Meta de vendas do mês {vendasPorVgv !== null ? "(pelo VGV)" : ""}</div>
+          {metas && vendasPorVgv !== null ? (
+            <>
+              <div className="flex items-baseline gap-1 mt-0.5">
+                <b className="text-xl tabular-nums">{vendasPorVgv.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</b>
+                <span className="text-muted-foreground">/ {metas.mesVendas} vendas</span>
+              </div>
+              <div className="h-2 mt-1.5 rounded-full bg-muted overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (vgvMes / Math.max(1, metas.mesVgv)) * 100)}%`, background: corVerde }} />
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {reais(vgvMes)} de {reais(metas.mesVgv)} · cada {reais(metas.mesVgv / Math.max(1, metas.mesVendas))} = 1 venda
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground mt-1">
+              Defina a meta de <b className="text-foreground">VGV do mês</b> em “Definir metas” (Arena ou Ligações) para a meta de vendas andar pelo valor vendido.
+            </div>
+          )}
+        </div>
       </div>
 
       <Dialog open={aberto} onOpenChange={setAberto}>
@@ -220,6 +278,21 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
               </div>
             ))}
           </div>
+          <label className="grid gap-1.5">
+            <span className="text-sm font-semibold">VGV das vendas deste dia (R$)</span>
+            <Input
+              inputMode="decimal"
+              placeholder={form.vendas > 0 ? "ex.: 850.000 ou 1,2 mi" : "registre a venda acima para informar o VGV"}
+              disabled={form.vendas === 0}
+              value={vgvTexto}
+              onChange={(e) => setVgvTexto(e.target.value)}
+            />
+            <span className="text-xs text-muted-foreground">
+              {form.vendas > 0 && lerReais(vgvTexto) > 0
+                ? `= ${reais(lerReais(vgvTexto))}${metas && metas.mesVgv > 0 ? ` · conta ${(vendasProporcionais(lerReais(vgvTexto), metas) || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} na meta de vendas` : ""}`
+                : "Soma de todas as vendas do dia."}
+            </span>
+          </label>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAberto(false)}>
               Cancelar
