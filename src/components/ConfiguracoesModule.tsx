@@ -99,6 +99,7 @@ export function ConfiguracoesModule() {
   const [uso, setUso] = useState<Uso | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [copiado, setCopiado] = useState(false);
   const [plano, setPlanoState] = useState<Plano>(() => {
     try {
       return (localStorage.getItem(CHAVE_PLANO) as Plano) || "free";
@@ -193,6 +194,34 @@ export function ConfiguracoesModule() {
                 O banco está perto do limite do plano. Apague históricos antigos ou mude de plano no Supabase.
               </p>
             )}
+            <div className="mt-4 rounded-xl border bg-muted/40 p-4 text-sm space-y-2">
+              <p className="font-semibold">Apagou dados e o número não baixou?</p>
+              <p className="text-muted-foreground">
+                O banco não devolve o espaço sozinho na hora: o que foi apagado fica reservado até uma limpeza. Para liberar de verdade, abra o Supabase →{" "}
+                <b className="text-foreground">SQL Editor</b>, cole o comando abaixo, clique em <b className="text-foreground">Run</b> e depois toque em medir de novo (o
+                botão de atualizar aqui em cima). Pode levar alguns minutos e, enquanto roda, o Inmovya pode ficar lento.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="rounded-md bg-background border px-3 py-1.5 font-mono text-foreground">VACUUM FULL ANALYZE;</code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText("VACUUM FULL ANALYZE;");
+                      setCopiado(true);
+                      setTimeout(() => setCopiado(false), 2000);
+                    } catch {
+                      /* sem permissão de copiar: o comando está escrito ao lado */
+                    }
+                  }}
+                >
+                  {copiado ? <Check className="w-4 h-4 mr-1" /> : null}
+                  {copiado ? "Copiado" : "Copiar comando"}
+                </Button>
+              </div>
+            </div>
             <div className="mt-6 grid sm:grid-cols-2 gap-x-8">
               {tabelas.slice(0, 10).map((t) => (
                 <div key={t.nome} className="flex items-center justify-between gap-3 py-2 border-b last:border-0 sm:[&:nth-last-child(2)]:border-0 text-sm">
