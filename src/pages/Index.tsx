@@ -21,7 +21,6 @@ import { NegociosModule } from "@/components/NegociosModule";
 import { EsteirasModule } from "@/components/EsteirasModule";
 import { EsteiraEmAndamento } from "@/components/esteiras/EsteiraEmAndamento";
 import { RespostasWhatsApp } from "@/components/esteiras/RespostasWhatsApp";
-import { WhatsappModule } from "@/components/WhatsappModule";
 import { ArenaModule } from "@/components/ArenaModule";
 import { MetasDoDia } from "@/components/arena/MetasDoDia";
 import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
@@ -120,8 +119,6 @@ const Index = () => {
         return <FunilModule />;
       case "relatorios":
         return <RelatoriosModule />;
-      case "whatsapp":
-        return <WhatsappModule />;
       case "arena":
         return <ArenaModule />;
       case "settings":

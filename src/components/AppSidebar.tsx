@@ -22,7 +22,6 @@ import {
   AtSign,
   Filter,
   Calendar as CalendarIcon,
-  MessageCircle,
   Briefcase,
   Workflow,
   LayoutTemplate,
@@ -53,7 +52,6 @@ const grupos: { titulo: string; itens: Item[] }[] = [
     titulo: "Prospecção",
     itens: [
       { id: "ligacoes", label: "Ligações", icon: Phone },
-      { id: "whatsapp", label: "WhatsApp", icon: MessageCircle },
       { id: "mailing", label: "Mailing", icon: Mail },
       { id: "email-marketing", label: "Email Marketing", icon: AtSign },
     ],
