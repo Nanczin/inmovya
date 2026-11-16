@@ -1533,7 +1533,7 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground">
                   Confere todos os leads com projeto de origem e põe no WhatsApp a etiqueta de projeto que estiver faltando (só adiciona; não mexe em
-                  20%, 50%, Lead, Bitrix…). Não manda mensagem. As regras ficam em Configurações → Etiquetas de projeto.
+                  20%, 50%, Lead, Bitrix…). Não manda mensagem.
                 </p>
                 <SincronizarEtiquetasProjeto />
               </DialogContent>
