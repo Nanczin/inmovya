@@ -116,6 +116,7 @@ import {
   AlertTriangle,
   Loader2,
   Zap,
+  X,
   ExternalLink,
   Clock,
   Workflow,
@@ -1015,6 +1016,33 @@ export function EsteirasModule() {
     setParada(null);
     await carregar();
     await refreshLeads();
+  };
+
+  // Limpar a lista: tira todos os leads desta esteira (não apaga os leads, só tira da esteira)
+  const limparEsteira = async () => {
+    if (!rascunho) return;
+    const ids = leadsEmEsteira.filter((l) => l.esteira_id === rascunho.esteira.id).map((l) => l.id);
+    if (!ids.length) return toast({ title: "A esteira já está vazia" });
+    if (
+      !(await confirmar(
+        `Tirar os ${ids.length} lead(s) da esteira "${rascunho.esteira.nome}"?`,
+        "Eles param de receber as mensagens desta esteira e ficam na etapa em que estão. Os leads não são apagados do Inmovya.",
+        "Tirar todos",
+        true
+      ))
+    )
+      return;
+    let erro = "";
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase
+        .from("leads")
+        .update({ esteira_id: null, esteira_passo: 0, esteira_proximo: null })
+        .in("id", ids.slice(i, i + 200));
+      if (error) erro = error.message;
+    }
+    await refreshLeads();
+    if (erro) toast({ title: "Alguns leads não saíram", description: erro, variant: "destructive" });
+    else toast({ title: "Lista da esteira limpa", description: `${ids.length} lead(s) saíram de ${rascunho.esteira.nome}.` });
   };
 
   const mudarPasso = (idx: number, campo: keyof EsteiraPasso, valor: any) =>
@@ -2257,13 +2285,23 @@ export function EsteirasModule() {
                   <Button onClick={salvarEsteira} disabled={salvando}>
                     <Save className="w-4 h-4 mr-1" /> {salvando ? "Salvando..." : "Salvar esteira"}
                   </Button>
+                  <Button variant="outline" onClick={limparEsteira} disabled={!leadsDaEsteiraSel.length}>
+                    <X className="w-4 h-4 mr-1" /> Limpar lista de leads ({leadsDaEsteiraSel.length})
+                  </Button>
                   <Button variant="outline" className="text-red-600" onClick={excluirEsteira}>
                     <Trash2 className="w-4 h-4 mr-1" /> Excluir esteira
                   </Button>
                 </div>
 
                 <div className="rounded-2xl border bg-card p-4">
-                  <h3 className="text-sm font-semibold mb-2">Leads nesta esteira ({leadsDaEsteiraSel.length})</h3>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h3 className="text-sm font-semibold">Leads nesta esteira ({leadsDaEsteiraSel.length})</h3>
+                    {leadsDaEsteiraSel.length > 0 && (
+                      <Button variant="ghost" size="sm" className="h-8 text-muted-foreground hover:text-destructive" onClick={limparEsteira}>
+                        <X className="w-4 h-4 mr-1" /> Limpar lista
+                      </Button>
+                    )}
+                  </div>
                   <div className="mb-3">
                     <Input
                       value={buscaLead}
