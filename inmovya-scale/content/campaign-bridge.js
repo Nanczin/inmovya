@@ -76,6 +76,15 @@
       entregarRespostasNaPagina(r?.itens);
     });
   window.addEventListener('INMOVYA_RESPOSTAS_BUSCAR', buscarRespostas);
+  window.addEventListener('INMOVYA_RECARREGAR_EXTENSAO', () => {
+    chrome.runtime.sendMessage({ action: 'recarregar_extensao' }, () => void chrome.runtime.lastError);
+  });
+  window.addEventListener('INMOVYA_TESTE_ABRIR', event => {
+    const detail = event.detail || {};
+    chrome.runtime.sendMessage({ action: 'teste_abrir', phone: detail.phone }, r => {
+      window.dispatchEvent(new CustomEvent('INMOVYA_TESTE_ABRIR_RESULT', { detail: { token: detail.token, r: chrome.runtime.lastError ? { erro: chrome.runtime.lastError.message } : r } }));
+    });
+  });
   // Varredura: quem da esteira já respondeu (o WhatsApp Web aberto confere)
   window.addEventListener('INMOVYA_VARRER_RESPOSTAS', event => {
     const detail = event.detail || {};

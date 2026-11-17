@@ -527,6 +527,35 @@ window.IS.Disparo = (() => {
     return true;
   });
 
+  // Teste sem enviar nada: abre a conversa aqui (mesmo com a aba escondida), diz o que viu e volta.
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.action !== 'teste_abrir_aba') return;
+    (async () => {
+      const tel = String(msg.phone || '').replace(/\D/g, '');
+      const info = { escondida: document.hidden, ocupadoAqui, disparoRodando: st.campanha?.status === 'rodando', temAtual: !!st.atual };
+      try { info.anterior = (await loja('ativa', {}, 3000))?.dados || null; } catch (_) { info.anterior = null; }
+      const achado = await loja('acharConversa', { telefone: tel }, 5000);
+      info.achou = achado?.dados || achado?.erro || null;
+      if (achado?.dados?.chatId) {
+        const ab = await loja('abrir', { chatId: achado.dados.chatId }, 8000);
+        info.abriu = ab?.dados ?? ab?.erro ?? null;
+        const t0 = Date.now();
+        for (let i = 0; i < 25; i++) {
+          const at = await loja('ativa', {}, 3000);
+          info.ativa = at?.dados || null;
+          info.temCaixaDeTexto = !!window.IS?.WhatsAppDOM?.findMessageInput?.();
+          if (info.temCaixaDeTexto && info.ativa?.telefone && String(info.ativa.telefone).replace(/\D/g, '').slice(-8) === tel.slice(-8)) break;
+          await dormir(400);
+        }
+        info.ms = Date.now() - t0;
+        info.conferiu = (await conferirAberta(tel, 3000)) === true;
+        if (info.anterior?.chatId && info.anterior.chatId !== achado.dados.chatId) await loja('abrir', { chatId: info.anterior.chatId }, 8000);
+      }
+      return info;
+    })().then(sendResponse).catch(e => sendResponse({ erro: e.message }));
+    return true;
+  });
+
   async function enviarUm(contato) {
     const { texto, anexos, registro } = montarEnvio(contato);
     contato.textoEnviado = registro;

@@ -576,6 +576,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })().then(sendResponse);
     return true;
   }
+  // o Inmovya pede para a extensão se recarregar (depois de uma atualização dos arquivos)
+  if (request?.action === 'recarregar_extensao') {
+    sendResponse({ ok: true, versao: chrome.runtime.getManifest().version });
+    setTimeout(() => chrome.runtime.reload(), 300);
+    return false;
+  }
+  if (request?.action === 'teste_abrir') {
+    (async () => {
+      const abas = (await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' })).filter(a => !String(a.url || '').includes('inmovya_auto'));
+      if (!abas.length) return { erro: 'WhatsApp Web não está aberto' };
+      const r = await new Promise(res => chrome.tabs.sendMessage(abas[0].id, { action: 'teste_abrir_aba', phone: request.phone }, x => res(chrome.runtime.lastError ? { erro: chrome.runtime.lastError.message } : x)));
+      return { abas: abas.length, ativaNaJanela: abas[0].active, ...r };
+    })().then(sendResponse);
+    return true;
+  }
   if (request?.action === 'respostas_pendentes') {
     chrome.storage.local.get('respostasPendentes').then(d => sendResponse({ ok: true, itens: d.respostasPendentes || [] }));
     return true;

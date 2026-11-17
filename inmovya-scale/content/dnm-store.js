@@ -114,7 +114,8 @@
       try {
         const r = tentar();
         if (r === undefined) continue;
-        await r;
+        // com a aba escondida o WhatsApp pode não "terminar" a animação de abrir: não espera para sempre
+        await Promise.race([Promise.resolve(r), new Promise(ok => setTimeout(ok, 1500))]);
         return true;
       } catch (_) { /* tenta o próximo jeito */ }
     }
