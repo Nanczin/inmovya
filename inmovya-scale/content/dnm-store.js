@@ -209,6 +209,39 @@
     if (!chat) return null;
     return { chatId: idTexto(chat), telefone: telefoneDoChat(chat) || '' };
   }
+  // Varredura de respostas: quem destes telefones mandou mensagem depois de "desde" (ms)?
+  // Usa as mensagens que o WhatsApp já tem carregadas (a última de cada conversa sempre está).
+  const TIPOS_SISTEMA = new Set(['e2e_notification', 'notification', 'notification_template', 'gp2', 'call_log', 'protocol', 'revoked', 'ciphertext_failed', 'broadcast_notification']);
+  function respondeuDesde(itens) {
+    const chats = lista(colecoes().Chat).filter(ehPessoa);
+    if (!chats.length) throw new Error('as conversas do WhatsApp ainda não carregaram');
+    const porTel = new Map();
+    for (const c of chats) {
+      const k = ultimos8(telefoneDoChat(c));
+      if (k.length === 8 && !porTel.has(k)) porTel.set(k, c);
+    }
+    const res = [];
+    for (const it of itens || []) {
+      const chat = porTel.get(ultimos8(it.telefone));
+      if (!chat) continue;
+      const desde = Number(it.desde) || 0;
+      let quando = 0;
+      for (const m of lista(pegar(chat, 'msgs'))) {
+        const id = pegar(m, 'id');
+        const meu = !!(id && (id.fromMe || pegar(id, 'fromMe')));
+        if (meu || TIPOS_SISTEMA.has(String(pegar(m, 'type') || ''))) continue;
+        const t = Number(pegar(m, 't') || 0) * 1000;
+        if (t > desde && t > quando) quando = t;
+      }
+      // sem mensagens carregadas: conversa com novidade não lida depois do envio
+      if (!quando && Number(pegar(chat, 'unreadCount') || 0) > 0) {
+        const t = Number(pegar(chat, 't') || 0) * 1000;
+        if (t > desde) quando = t;
+      }
+      if (quando) res.push({ telefone: it.telefone, quando });
+    }
+    return res;
+  }
   async function adicionarEtiqueta(chatId, nome) {
     const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);
     if (!chat) return { ok: false, erro: 'conversa não encontrada' };
@@ -239,6 +272,7 @@
       else if (op === 'contatos') resposta = { ok: true, dados: contatosDaEtiqueta(args.labelId) };
       else if (op === 'abrir') resposta = { ok: true, dados: await abrirConversa(args.chatId) };
       else if (op === 'mensagens') resposta = { ok: true, dados: mensagens(args.chatId) };
+      else if (op === 'respondeuDesde') resposta = { ok: true, dados: respondeuDesde(args.itens) };
       else if (op === 'ativa') resposta = { ok: true, dados: conversaAtiva() };
       else if (op === 'acharConversa') resposta = { ok: true, dados: acharConversa(args.telefone) };
       else if (op === 'adicionarEtiqueta') resposta = { ok: true, dados: await adicionarEtiqueta(args.chatId, args.nome) };

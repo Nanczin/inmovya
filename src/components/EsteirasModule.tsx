@@ -1,4 +1,5 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
+import { varrerRespostas } from "@/lib/varrerRespostas";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -157,6 +158,22 @@ const sementeSpin = (leadId: string, passoId: string) => `${leadId}:${passoId}:$
 export function EsteirasModule() {
   const { leads, refreshLeads } = useLeads();
   const { toast } = useToast();
+  const [conferindoRespostas, setConferindoRespostas] = useState(false);
+  const conferirRespostas = async () => {
+    setConferindoRespostas(true);
+    const r = await varrerRespostas();
+    setConferindoRespostas(false);
+    if (!r.ok) {
+      toast({ title: "Não consegui conferir as respostas", description: r.erro, variant: "destructive" });
+      return;
+    }
+    if (r.sairam.length) {
+      toast({ title: `${r.sairam.length} lead(s) tinham respondido e saíram da esteira`, description: r.sairam.join(", ") });
+      await refreshLeads();
+    } else {
+      toast({ title: "Ninguém respondeu", description: `Conferi ${r.conferidos} lead(s) em esteira no WhatsApp.` });
+    }
+  };
   // Confirmação dentro do Inmovya (em vez da janela do navegador)
   const [confirmacao, setConfirmacao] = useState<{
     titulo: string;
@@ -1385,6 +1402,15 @@ export function EsteirasModule() {
                     </p>
                   </div>
                 )}
+                <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
+                  <span className="flex-1 min-w-[200px]">
+                    Quem responder no WhatsApp sai da esteira sozinho e vai para Respondeu (na hora, e uma conferência geral a cada 10 min com o WhatsApp Web aberto).
+                  </span>
+                  <Button variant="outline" size="sm" className="h-8" disabled={conferindoRespostas} onClick={conferirRespostas}>
+                    {conferindoRespostas ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                    Conferir respostas agora
+                  </Button>
+                </div>
                 {respondidosHoje.length > 0 && (
                   <div className="text-xs rounded-lg bg-primary/10 text-foreground px-3 py-2">
                     <b>Responderam e saíram da esteira:</b> {respondidosHoje.join(", ")}

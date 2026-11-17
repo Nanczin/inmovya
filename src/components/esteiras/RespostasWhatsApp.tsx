@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useLeads } from "@/context/LeadsContext";
 import { useToast } from "@/hooks/use-toast";
 import { avisar } from "@/lib/pilotoAutomatico";
+import { varrerRespostas } from "@/lib/varrerRespostas";
 
 type Resposta = { telefone: string; t: number };
 
@@ -70,10 +71,25 @@ export function RespostasWhatsApp() {
     const buscar = () => window.dispatchEvent(new CustomEvent("INMOVYA_RESPOSTAS_BUSCAR"));
     const t0 = window.setTimeout(buscar, 2500);
     const t = window.setInterval(buscar, 60000);
+    // varredura: confere no WhatsApp Web todos os leads em esteira (pega respostas que chegaram
+    // com o WhatsApp Web fechado). Ao abrir e a cada 10 minutos.
+    const varrer = async () => {
+      const r = await varrerRespostas();
+      if (r.ok && r.sairam.length) {
+        const nomes = r.sairam.join(", ");
+        toastRef.current({ title: `${r.sairam.length} lead(s) já tinham respondido: saíram da esteira`, description: `${nomes} foram para Respondeu.` });
+        avisar("Leads responderam", `${nomes} saíram da esteira.`);
+        refreshRef.current();
+      }
+    };
+    const v0 = window.setTimeout(varrer, 15000);
+    const v = window.setInterval(varrer, 10 * 60000);
     return () => {
       window.removeEventListener("INMOVYA_RESPOSTAS", onRespostas);
       window.clearTimeout(t0);
       window.clearInterval(t);
+      window.clearTimeout(v0);
+      window.clearInterval(v);
     };
   }, []);
 

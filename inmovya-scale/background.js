@@ -514,6 +514,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     respostaRecebida(request.telefone, request.t).then(() => sendResponse({ ok: true }));
     return true;
   }
+  // Varredura: o Inmovya manda os leads da esteira e o WhatsApp Web aberto diz quem respondeu
+  if (request?.action === 'varrer_respostas') {
+    (async () => {
+      const abas = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+      if (!abas.length) return { ok: false, error: 'O WhatsApp Web não está aberto' };
+      let ultimoErro = '';
+      for (const aba of abas) {
+        const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'varrer_respostas_aba', itens: request.itens || [] }, x => res(chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : x)));
+        if (r?.ok) return r;
+        ultimoErro = r?.error || ultimoErro;
+      }
+      return { ok: false, error: ultimoErro || 'não consegui ler o WhatsApp' };
+    })().then(sendResponse);
+    return true;
+  }
   if (request?.action === 'respostas_pendentes') {
     chrome.storage.local.get('respostasPendentes').then(d => sendResponse({ ok: true, itens: d.respostasPendentes || [] }));
     return true;
