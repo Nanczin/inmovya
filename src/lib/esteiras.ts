@@ -536,7 +536,9 @@ export const enviarAgora = (
       if (event.detail?.token !== token) return;
       window.clearTimeout(timeout);
       window.removeEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
-      event.detail?.ok ? resolve() : reject(new Error(event.detail?.error || "O envio não foi confirmado."));
+      event.detail?.ok
+        ? resolve()
+        : reject(Object.assign(new Error(event.detail?.error || "O envio não foi confirmado."), { semWhatsapp: !!event.detail?.semWhatsapp }));
     };
     window.addEventListener("INMOVYA_WHATSAPP_RESULT", onResult as EventListener);
     window.dispatchEvent(new CustomEvent("INMOVYA_OPEN_WHATSAPP", {
@@ -962,3 +964,39 @@ export const enviadoHoje = (iso?: string | null) => {
   const hoje = new Date();
   return d.getFullYear() === hoje.getFullYear() && d.getMonth() === hoje.getMonth() && d.getDate() === hoje.getDate();
 };
+
+
+// ---------- Número que não existe no WhatsApp: sai do CRM ----------
+const CHAVE_SEM_WHATS = "inmovya_excluidos_sem_whatsapp";
+export type ExcluidoSemWhats = { nome: string; telefone: string; em: string; como: "excluido" | "desativado" };
+export const lerExcluidosSemWhats = (): ExcluidoSemWhats[] => {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_SEM_WHATS) || "[]");
+  } catch {
+    return [];
+  }
+};
+export const ehSemWhatsapp = (err: any) => !!err?.semWhatsapp || /não tem WhatsApp|sem WhatsApp/i.test(String(err?.message || ""));
+
+/** O WhatsApp disse que o número não existe: apaga o lead do CRM (e com isso sai da esteira).
+ *  Se o banco não deixar apagar (algo ligado a ele), tira da esteira e manda para Deny List. */
+export async function excluirSemWhatsapp(lead: { id: string; nome?: string | null; telefone?: string | null }) {
+  let como: ExcluidoSemWhats["como"] = "excluido";
+  await supabase.from("lead_timeline").delete().eq("lead_id", lead.id);
+  const { error } = await supabase.from("leads").delete().eq("id", lead.id);
+  if (error) {
+    como = "desativado";
+    await supabase
+      .from("leads")
+      .update({ esteira_id: null, esteira_passo: 0, esteira_proximo: null, status: "Deny List" })
+      .eq("id", lead.id);
+  }
+  try {
+    const lista = lerExcluidosSemWhats();
+    lista.unshift({ nome: lead.nome || "", telefone: lead.telefone || "", em: new Date().toISOString(), como });
+    localStorage.setItem(CHAVE_SEM_WHATS, JSON.stringify(lista.slice(0, 200)));
+  } catch {
+    /* ignore */
+  }
+  return como;
+}

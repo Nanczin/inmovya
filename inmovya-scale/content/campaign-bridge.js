@@ -21,7 +21,8 @@
         detail: {
           token: detail.token,
           ok: !!response?.ok && !error,
-          error: error || response?.error || ''
+          error: error || response?.error || '',
+          semWhatsapp: !!response?.semWhatsapp
         }
       }));
     });

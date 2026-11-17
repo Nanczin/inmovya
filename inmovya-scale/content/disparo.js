@@ -504,7 +504,7 @@ window.IS.Disparo = (() => {
         let anterior = null;
         try { anterior = (await loja('ativa', {}, 3000))?.dados?.chatId || null; } catch (_) { anterior = null; }
         const aberto = await abrirAqui({ telefone: String(msg.phone || '').replace(/\D/g, '') });
-        if (aberto === 'invalido') return { ok: false, error: 'número sem WhatsApp' };
+        if (aberto === 'invalido') return { ok: false, error: 'Este número não tem WhatsApp.', semWhatsapp: true };
         if (aberto !== true) return { naoTentou: true };
         let r;
         try {

@@ -202,8 +202,11 @@ async function sendCampaignMessage(request, returnTabId = null) {
         });
         if (response?.ok) return response;
         if (enviosJaFeitos.has(envioId)) return { ok: true, jaEnviado: true };
+        // número que não existe no WhatsApp: não adianta tentar de novo
+        if (response?.semWhatsapp) throw Object.assign(new Error(response.error || 'Este número não tem WhatsApp.'), { semWhatsapp: true });
         lastError = new Error(response?.error || 'Envio não confirmado.');
       } catch (error) {
+        if (error?.semWhatsapp) throw error;
         lastError = error;
         if (enviosJaFeitos.has(envioId)) return { ok: true, jaEnviado: true };
       }
@@ -520,19 +523,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.envioId = request.envioId || request.token || crypto.randomUUID();
       const aqui = await enviarNaAbaDoWhatsApp(request);
       if (aqui?.ok) return aqui;
-      if (aqui && !aqui.naoTentou) throw new Error(aqui.error || 'Envio não confirmado.');
+      if (aqui && !aqui.naoTentou) throw Object.assign(new Error(aqui.error || 'Envio não confirmado.'), { semWhatsapp: !!aqui.semWhatsapp });
       try {
         return await sendCampaignMessage(request, sender.tab?.id || null);
       } catch (err) {
         // a aba escondida não conseguiu (o WhatsApp às vezes não termina de abrir escondido): tenta na janelinha
-        if (request.background && !request.janela && !enviosJaFeitos.has(request.envioId)) {
+        if (!err?.semWhatsapp && request.background && !request.janela && !enviosJaFeitos.has(request.envioId)) {
           return sendCampaignMessage({ ...request, janela: true }, sender.tab?.id || null);
         }
         throw err;
       }
     })
       .then(result => sendResponse({ ok: true, ...result }))
-      .catch(error => sendResponse({ ok: false, error: error.message }));
+      .catch(error => sendResponse({ ok: false, error: error.message, semWhatsapp: !!error?.semWhatsapp || /não tem WhatsApp/.test(error?.message || '') }));
     return true;
   }
   if (request?.action === 'paste_batch') {

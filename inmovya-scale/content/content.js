@@ -35,7 +35,16 @@ window.IS.enviarCampanhaNaAba = async (request) => {
       let saidasAntes = null;
       try {
         window.IS.WhatsAppDOM.ultimoErro = '';
-        let input = await window.IS.WhatsAppDOM.waitForMessageInput(30000);
+        // espera a conversa — ou o aviso do WhatsApp de que o número não existe
+        let input = null;
+        for (let i = 0; i < 60 && !input; i++) {
+          input = window.IS.WhatsAppDOM.findMessageInput();
+          if (input) break;
+          const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
+            .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|not on whatsapp/i.test(el.innerText || ''));
+          if (invalido) throw new Error('Este número não tem WhatsApp.');
+          await window.IS.WhatsAppDOM.delay(500);
+        }
         if (!input) throw new Error('A conversa do WhatsApp não ficou pronta.');
         input.focus();
         await window.IS.WhatsAppDOM.delay(1200);
@@ -103,7 +112,7 @@ window.IS.enviarCampanhaNaAba = async (request) => {
       } catch (error) {
         window.IS.error('Falha no disparo da campanha', error);
         if (jaFoi()) { return { ok: true, jaEnviado: true, aviso: error.message }; }
-        return { ok: false, error: error.message };
+        return { ok: false, error: error.message, semWhatsapp: /não tem WhatsApp/.test(error.message || '') };
       }
 };
 

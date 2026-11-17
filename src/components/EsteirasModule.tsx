@@ -1,6 +1,7 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
 import { respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
 import { intervaloHumano, novoLote, pausaDeLoteMin, variarAutomatico } from "@/lib/variacao";
+import { ehSemWhatsapp, excluirSemWhatsapp } from "@/lib/esteiras";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -179,6 +180,7 @@ export function EsteirasModule() {
     }
   };
   const [jaRodouHoje, setJaRodouHoje] = useState(false);
+  const [semWhatsHoje, setSemWhatsHoje] = useState<string[]>([]);
   const conferirRespostas = async () => {
     setConferindoRespostas(true);
     const r = await varrerRespostas();
@@ -609,6 +611,17 @@ export function EsteirasModule() {
         setEditados((m) => { const n = { ...m }; delete n[item.lead.id]; return n; });
       } catch (err: any) {
         console.error("Falha no envio da esteira:", err);
+        if (ehSemWhatsapp(err)) {
+          // número não existe no WhatsApp: sai do CRM (e da esteira) na hora
+          const como = await excluirSemWhatsapp(item.lead).catch(() => null);
+          setEstado((s) => ({
+            ...s,
+            [item.lead.id]: { s: "pulado", erro: como === "excluido" ? "número sem WhatsApp: excluído do CRM" : "número sem WhatsApp: saiu da esteira (Deny List)" },
+          }));
+          setSemWhatsHoje((r) => (r.includes(item.lead.nome) ? r : [...r, item.lead.nome]));
+          avisar("Número sem WhatsApp", `${item.lead.nome} (${item.lead.telefone || "sem número"}) não tem WhatsApp e foi excluído do Inmovya.`);
+          continue; // nada foi enviado: sem intervalo
+        }
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha" } }));
       }
       if (i < lista.length - 1 && !pararRef.current) {
@@ -1537,6 +1550,11 @@ export function EsteirasModule() {
                     Conferir respostas agora
                   </Button>
                 </div>
+                {semWhatsHoje.length > 0 && (
+                  <div className="text-xs rounded-lg bg-destructive/10 text-foreground px-3 py-2">
+                    <b>Números sem WhatsApp, excluídos do Inmovya:</b> {semWhatsHoje.join(", ")}
+                  </div>
+                )}
                 {respondidosHoje.length > 0 && (
                   <div className="text-xs rounded-lg bg-primary/10 text-foreground px-3 py-2">
                     <b>Responderam e saíram da esteira:</b> {respondidosHoje.join(", ")}
