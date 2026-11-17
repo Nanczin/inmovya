@@ -446,9 +446,12 @@ window.IS.Disparo = (() => {
   }
 
   // aviso do WhatsApp de número inválido / sem WhatsApp
+  // aviso do WhatsApp de número inexistente: só a frase exata e só em janela visível
+  // (o texto solto "inválido" aparece em outras janelas do WhatsApp)
+  const RX_SEM_WHATS = /(compartilhad[oa][^.]{0,60}inv[aá]lid|shared via url is invalid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|is not on whatsapp)/i;
+  const dialogosVisiveis = () => Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]')).filter(el => el.getClientRects().length > 0);
   function numeroInvalidoNaTela() {
-    return Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
-      .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|not on whatsapp/i.test(el.innerText || ''));
+    return dialogosVisiveis().some(el => RX_SEM_WHATS.test(el.innerText || el.textContent || ''));
   }
   function fecharDialogo() {
     const d = document.querySelector('[role="dialog"], [data-animate-modal-popup="true"]');
@@ -548,7 +551,9 @@ window.IS.Disparo = (() => {
           await dormir(400);
         }
         info.ms = Date.now() - t0;
-        info.conferiu = (await conferirAberta(tel, 3000)) === true;
+        info.dialogos = dialogosVisiveis().map(el => String(el.innerText || el.textContent || '').slice(0, 120));
+        info.invalidoNaTela = numeroInvalidoNaTela();
+        info.conferiu = await conferirAberta(tel, 3000);
         if (info.anterior?.chatId && info.anterior.chatId !== achado.dados.chatId) await loja('abrir', { chatId: info.anterior.chatId }, 8000);
       }
       return info;

@@ -1,5 +1,11 @@
 // background.js
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(details => {
+  // extensão atualizada/recarregada: recarrega as abas do WhatsApp Web e do Inmovya (o "F5" que você fazia)
+  if (details?.reason === 'update') {
+    chrome.tabs.query({ url: ['https://web.whatsapp.com/*', 'https://inmovya-main.vercel.app/*'] })
+      .then(abas => abas.filter(a => !String(a.url || '').includes('inmovya_auto')).forEach(a => chrome.tabs.reload(a.id).catch(() => {})))
+      .catch(() => {});
+  }
   chrome.action.disable();
   chrome.declarativeContent.onPageChanged.removeRules(undefined, () => {
     chrome.declarativeContent.onPageChanged.addRules([

@@ -40,8 +40,8 @@ window.IS.enviarCampanhaNaAba = async (request) => {
         for (let i = 0; i < 60 && !input; i++) {
           input = window.IS.WhatsAppDOM.findMessageInput();
           if (input) break;
-          const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
-            .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|not on whatsapp/i.test(el.innerText || ''));
+          const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]')).filter(el => el.getClientRects().length > 0)
+            .some(el => /(compartilhad[oa][^.]{0,60}inv[aá]lid|shared via url is invalid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|is not on whatsapp)/i.test(el.innerText || ''));
           if (invalido) throw new Error('Este número não tem WhatsApp.');
           await window.IS.WhatsAppDOM.delay(500);
         }
@@ -182,8 +182,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           // aberto pelo link do número: espera a conversa (ou o aviso de número sem WhatsApp)
           for (let i = 0; i < 80 && !aberto; i++) {
             if (dom.findMessageInput()) { aberto = true; break; }
-            const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
-              .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp/i.test(el.innerText || ''));
+            const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]')).filter(el => el.getClientRects().length > 0)
+              .some(el => /(compartilhad[oa][^.]{0,60}inv[aá]lid|shared via url is invalid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|is not on whatsapp)/i.test(el.innerText || ''));
             if (invalido) throw new Error('Este número não tem WhatsApp.');
             await dom.delay(500);
           }
@@ -247,8 +247,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const fim = Date.now() + 45000;
       while (Date.now() < fim) {
         if (dom.findMessageInput()) { sendResponse({ ok: true, temWhatsapp: true }); return; }
-        const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]'))
-          .some(el => /inv[aá]lid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|not on whatsapp/i.test(el.innerText || ''));
+        const invalido = Array.from(document.querySelectorAll('[role="dialog"], [data-animate-modal-popup="true"]')).filter(el => el.getClientRects().length > 0)
+          .some(el => /(compartilhad[oa][^.]{0,60}inv[aá]lid|shared via url is invalid|n[aã]o est[aá] no whatsapp|isn.t on whatsapp|is not on whatsapp)/i.test(el.innerText || ''));
         if (invalido) { sendResponse({ ok: true, temWhatsapp: false }); return; }
         await dom.delay(500);
       }
