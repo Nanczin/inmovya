@@ -11,7 +11,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useLeads, Lead } from "@/context/LeadsContext";
 import { NEGOCIO_STAGES, getStageForStatus } from "@/lib/negociosStages";
 import { empreendimentoDoLead, tirarDaEsteira } from "@/lib/esteiras";
-import { EtiquetaProjetoBadges } from "@/components/etiquetas/EtiquetaProjetoBadges";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { LeadTimeline } from "@/components/LeadTimeline";
 
@@ -163,9 +162,6 @@ export function LeadPainel({ leadId, onClose, onAbrirFicha }: Props) {
                   Building2,
                   <>
                     <span className="text-muted-foreground">Projeto de origem:</span> <b>{empreendimento}</b>
-                    <span className="ml-2">
-                      <EtiquetaProjetoBadges lead={lead} />
-                    </span>
                   </>
                 )}
               {lead.created_at && linha(CalendarClock, <>Chegou em {format(parseISO(lead.created_at), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}</>)}

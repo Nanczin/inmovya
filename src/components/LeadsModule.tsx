@@ -14,8 +14,6 @@ import { useToast } from "@/hooks/use-toast";
 import { LeadTimeline } from "@/components/LeadTimeline";
 import { EmailComposer } from "@/components/EmailComposer";
 import { LeadFilters } from "@/components/LeadFilters";
-import { EtiquetaProjetoBadges } from "@/components/etiquetas/EtiquetaProjetoBadges";
-import { SincronizarEtiquetasProjeto } from "@/components/etiquetas/SincronizarEtiquetasProjeto";
 import { TaskDialog } from "@/components/dialogs/TaskDialog";
 import { useLeads } from "@/context/LeadsContext";
 import { ProjetoOrigemInput, grafiaCadastrada } from "@/components/leads/ProjetoOrigemInput";
@@ -1508,22 +1506,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" className="col-span-2 sm:col-span-1 w-full sm:w-auto" onClick={() => setEtiquetasProjetoAberto(true)}>
-              <Tag className="w-4 h-4 mr-2" />
-              Etiquetas de projeto
-            </Button>
-            <Dialog open={etiquetasProjetoAberto} onOpenChange={setEtiquetasProjetoAberto}>
-              <DialogContent className="w-[95vw] max-w-[640px] max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Sincronizar etiquetas de projeto</DialogTitle>
-                </DialogHeader>
-                <p className="text-sm text-muted-foreground">
-                  Confere todos os leads com projeto de origem e põe no WhatsApp a etiqueta de projeto que estiver faltando (só adiciona; não mexe em
-                  20%, 50%, Lead, Bitrix…). Não manda mensagem.
-                </p>
-                <SincronizarEtiquetasProjeto />
-              </DialogContent>
-            </Dialog>
             <Button variant="outline" className="col-span-2 sm:col-span-1 w-full sm:w-auto" onClick={() => setVerDuplicados(true)}>
               <Users className="w-4 h-4 mr-2" />
               Duplicados{gruposDuplicados.length ? ` (${gruposDuplicados.length})` : ""}
@@ -1702,7 +1684,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                         {(lead as any).projeto_origem && (
                           <div className="sm:col-span-2 flex flex-wrap items-center gap-1.5" title={(lead as any).projeto_origem}>
                             <span className="font-medium">Projeto:</span> <span className="truncate">{(lead as any).projeto_origem}</span>
-                            <EtiquetaProjetoBadges lead={lead} />
                           </div>
                         )}
                         <div>
@@ -1801,7 +1782,6 @@ export function LeadsModule({ initialLeadId }: { initialLeadId?: string }) {
                         {(lead as any).projeto_origem && (
                           <div className="mt-1 text-xs text-muted-foreground max-w-[220px]" title={`Projeto de origem: ${(lead as any).projeto_origem}`}>
                             <div className="truncate">Projeto: {(lead as any).projeto_origem}</div>
-                            <EtiquetaProjetoBadges lead={lead} />
                           </div>
                         )}
                       </td>

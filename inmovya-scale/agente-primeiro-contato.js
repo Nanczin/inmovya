@@ -409,8 +409,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // em 6 h). Etiqueta que não existe no WhatsApp: não cria; usa a reserva ("Outros projetos") e avisa.
 // Entre uma conversa e outra espera alguns segundos (aleatório) para não forçar o WhatsApp.
 const ETQ_PROJETO_ALARME = 'inmovya-etiquetas-projeto';
-chrome.alarms.create(ETQ_PROJETO_ALARME, { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener(a => { if (a.name === ETQ_PROJETO_ALARME) etqProjetoRodada(); });
+// DESLIGADO a pedido: a sincronização automática de etiquetas de projeto saiu do Inmovya.
+// (o 1º contato continua etiquetando o lead novo como sempre)
+chrome.alarms.clear(ETQ_PROJETO_ALARME).catch?.(() => {});
 let etqProjetoEmCurso = false;
 const etqEspera = (min, max) => new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
 
