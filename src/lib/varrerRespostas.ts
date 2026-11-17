@@ -25,6 +25,18 @@ const perguntarAoWhatsApp = (itens: { telefone: string; desde: number }[], timeo
 
 const digitos = (t?: string | null) => String(t || "").replace(/\D/g, "");
 
+/** Um lead só, pelo WhatsApp Web já aberto (sem abrir janela): true/false; null = não deu para saber. */
+export async function respondeuNoWhatsAppAberto(telefone: string, desdeMs: number): Promise<boolean | null> {
+  const tel = digitos(telefone);
+  if (tel.length < 10) return null;
+  try {
+    const r = await perguntarAoWhatsApp([{ telefone: tel, desde: desdeMs || 0 }], 15000);
+    return r.some((x) => digitos(x.telefone).slice(-8) === tel.slice(-8));
+  } catch {
+    return null;
+  }
+}
+
 let rodando = false;
 
 export async function varrerRespostas(): Promise<ResultadoVarredura> {

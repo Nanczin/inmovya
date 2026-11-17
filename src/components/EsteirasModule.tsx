@@ -1,5 +1,5 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
-import { varrerRespostas } from "@/lib/varrerRespostas";
+import { respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
 import { intervaloHumano, novoLote, pausaDeLoteMin, variarAutomatico } from "@/lib/variacao";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
@@ -575,7 +575,10 @@ export function EsteirasModule() {
       // respondeu? sai da esteira e vai para Respondeu (não recebe follow-up)
       if (piloto.checarResposta && item.telefone) {
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
-        const respondeu = await leadRespondeu(item.telefone);
+        // 1º pelo WhatsApp Web já aberto (sem abrir janela); se não der para saber, lê a conversa como antes
+        const desde = new Date((item.lead as any).esteira_ultimo_envio || (item.lead as any).created_at || 0).getTime();
+        const noAberto = await respondeuNoWhatsAppAberto(item.telefone, desde);
+        const respondeu = noAberto ?? (await leadRespondeu(item.telefone));
         if (respondeu) {
           try {
             await marcarRespondeu(item.lead.id);
@@ -1378,7 +1381,7 @@ export function EsteirasModule() {
                       <CalendarClock className="w-3.5 h-3.5" /> {proximosDias} agendado{proximosDias === 1 ? "" : "s"} para os próximos dias
                       <ChevronDown className={`w-3.5 h-3.5 transition-transform ${verAgendados ? "rotate-180" : ""}`} />
                     </button>
-                    <label className="inline-flex items-center gap-1.5 cursor-pointer select-none" title="O WhatsApp abre numa janelinha no canto, sem tirar sua tela. Pode trocar de aba, só não feche o Inmovya.">
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer select-none" title="Envia pelo WhatsApp Web que já está aberto, nesta mesma janela, sem tirar você da tela em que está. Se o WhatsApp Web não estiver aberto, abre uma aba escondida nesta janela e fecha sozinho. Só não feche o Inmovya.">
                       <Switch
                         className="scale-75 -mx-1"
                         disabled={rodando}

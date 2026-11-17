@@ -496,7 +496,8 @@ window.IS.Disparo = (() => {
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.action !== 'campaign_send_aba') return;
     (async () => {
-      if (ocupadoAqui || document.hidden || typeof window.IS?.enviarCampanhaNaAba !== 'function') return { naoTentou: true };
+      // aba escondida só quando a esteira pediu "em segundo plano" (os timers seguem em dia pelo timer-oculto.js)
+      if (ocupadoAqui || (document.hidden && !msg.permitirOculta) || typeof window.IS?.enviarCampanhaNaAba !== 'function') return { naoTentou: true };
       if (st.campanha?.status === 'rodando' && st.atual) return { naoTentou: true }; // o Disparo está enviando agora
       ocupadoAqui = true;
       try {

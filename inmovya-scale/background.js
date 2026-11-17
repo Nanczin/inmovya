@@ -130,8 +130,13 @@ async function abrirJanelaDeEnvio(url) {
 
 // envios que o WhatsApp já mandou (marcados pela aba): nunca repetir
 const enviosJaFeitos = new Set();
-chrome.runtime.onMessage.addListener(request => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request?.action === 'campaign_sent_mark' && request.envioId) enviosJaFeitos.add(request.envioId);
+  // timer da aba escondida do WhatsApp (timer-oculto.js): acorda depois de "ms" sem o atraso do Chrome
+  if (request?.action === 'acordar') {
+    setTimeout(() => { try { sendResponse(true); } catch (_) { /* aba fechou */ } }, Math.min(Math.max(0, Number(request.ms) || 0), 10 * 60000));
+    return true;
+  }
 });
 
 async function enviarNaAbaDoWhatsApp(request) {
@@ -142,7 +147,7 @@ async function enviarNaAbaDoWhatsApp(request) {
   for (const aba of normais) {
     const r = await new Promise(res => {
       try {
-        chrome.tabs.sendMessage(aba.id, { ...request, action: 'campaign_send_aba' }, x => res(chrome.runtime.lastError ? { naoTentou: true } : x || { naoTentou: true }));
+        chrome.tabs.sendMessage(aba.id, { ...request, action: 'campaign_send_aba', permitirOculta: !!request.background }, x => res(chrome.runtime.lastError ? { naoTentou: true } : x || { naoTentou: true }));
       } catch (_) { res({ naoTentou: true }); }
     });
     if (r?.ok || (r && !r.naoTentou)) return r;
@@ -158,7 +163,14 @@ async function sendCampaignMessage(request, returnTabId = null) {
   const segundoPlano = !!request.background;
   let tab;
   let sendWindowId = null;
-  if (segundoPlano) {
+  let abaEscondida = false;
+  if (segundoPlano && !request.janela) {
+    // em segundo plano: aba escondida NA MESMA JANELA que você está usando (sem abrir janela nova)
+    let windowId;
+    try { windowId = returnTabId ? (await chrome.tabs.get(returnTabId)).windowId : (await chrome.windows.getLastFocused()).id; } catch (_) { windowId = undefined; }
+    tab = await chrome.tabs.create({ url, active: false, ...(windowId != null ? { windowId } : {}) });
+    abaEscondida = true;
+  } else if (segundoPlano) {
     const aberto = await abrirJanelaDeEnvio(url);
     tab = aberto.tab;
     sendWindowId = aberto.windowId;
@@ -205,7 +217,7 @@ async function sendCampaignMessage(request, returnTabId = null) {
       await chrome.windows.remove(sendWindowId).catch(() => {});
     } else {
       await chrome.tabs.remove(tab.id).catch(() => {});
-      if (returnTabId && returnTabId !== tab.id) {
+      if (!abaEscondida && returnTabId && returnTabId !== tab.id) {
         await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
       }
     }
@@ -505,10 +517,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // 1º jeito (igual ao Disparo): envia no WhatsApp Web que já está aberto, sem abrir janelinha nem recarregar.
     // Se não der para abrir a conversa ali (aba escondida, ocupada…), usa a janelinha de sempre.
     naVezWA(async () => {
+      request.envioId = request.envioId || request.token || crypto.randomUUID();
       const aqui = await enviarNaAbaDoWhatsApp(request);
       if (aqui?.ok) return aqui;
       if (aqui && !aqui.naoTentou) throw new Error(aqui.error || 'Envio não confirmado.');
-      return sendCampaignMessage(request, sender.tab?.id || null);
+      try {
+        return await sendCampaignMessage(request, sender.tab?.id || null);
+      } catch (err) {
+        // a aba escondida não conseguiu (o WhatsApp às vezes não termina de abrir escondido): tenta na janelinha
+        if (request.background && !request.janela && !enviosJaFeitos.has(request.envioId)) {
+          return sendCampaignMessage({ ...request, janela: true }, sender.tab?.id || null);
+        }
+        throw err;
+      }
     })
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
