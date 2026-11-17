@@ -15,6 +15,54 @@ type Regra = { id: string; etiqueta: string; esteira_id: string; comecar_hoje: b
 
 const ETAPAS = ["20%", "50%", "70%"];
 
+const norm = (t?: string | null) =>
+  String(t || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[-_–—]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+// quem nunca entra pela regra
+const FORA = new Set(["respondeu", "fechado", "perdido", "deny list"]);
+
+/** Leads fora de esteira que têm a etiqueta (origem, tags, etiqueta de projeto ou etapa). */
+async function leadsComEtiqueta(etiqueta: string) {
+  const alvo = norm(etiqueta);
+  if (!alvo) return [];
+  const { data, error } = await supabase.from("leads").select("id, nome, status, tags, origem, etiqueta_projeto, esteira_id").is("esteira_id", null).limit(5000);
+  if (error) throw error;
+  return (data || []).filter((l: any) => !FORA.has(norm(l.status)) && [...(l.tags || []), ...(l.etiqueta_projeto || []), l.origem, l.status].some((v) => norm(v) === alvo));
+}
+
+/** Coloca os leads no 1º passo da esteira, começando hoje ou amanhã. */
+async function colocarLeads(ids: string[], esteiraId: string, comecarHoje: boolean) {
+  const inicio = new Date();
+  if (!comecarHoje) {
+    inicio.setDate(inicio.getDate() + 1);
+    inicio.setHours(0, 0, 0, 0);
+  }
+  let erro = "";
+  for (let i = 0; i < ids.length; i += 200) {
+    const { error } = await supabase
+      .from("leads")
+      .update({ esteira_id: esteiraId, esteira_passo: 0, esteira_proximo: inicio.toISOString() })
+      .in("id", ids.slice(i, i + 200))
+      .is("esteira_id", null);
+    if (error) erro = error.message;
+  }
+  return erro;
+}
+
+const contarPorEtapa = (leads: any[]) =>
+  Object.entries(
+    leads.reduce((acc: Record<string, number>, l: any) => {
+      const k = l.status || "Sem etapa";
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {})
+  ).sort((a, b) => (b[1] as number) - (a[1] as number)) as [string, number][];
+
 const SQL_ATIVACAO = "-- ENTRADA AUTOMÁTICA NAS ESTEIRAS (aba Esteiras do Inmovya → \"Entrada automática\")\n-- Regra: \"quem entrar com a etiqueta X entra na esteira Y\".\n-- Vale para lead novo (captura Midrah, Bitrix, Meta Ads, cadastro, importação) e para lead que GANHA a\n-- etiqueta depois. Olha tags, etiqueta de projeto, origem e etapa (ex.: 20%).\n-- Não mexe em quem já está numa esteira nem em quem já respondeu/fechou.\n-- Rode uma vez no Supabase: SQL Editor → colar tudo → Run.\n\ncreate table if not exists public.esteira_regras (\n  id uuid primary key default gen_random_uuid(),\n  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,\n  etiqueta text not null,\n  esteira_id uuid not null references public.esteiras(id) on delete cascade,\n  comecar_hoje boolean not null default false,\n  ativo boolean not null default true,\n  created_at timestamptz not null default now()\n);\nalter table public.esteira_regras enable row level security;\ndrop policy if exists esteira_regras_dono on public.esteira_regras;\ncreate policy esteira_regras_dono on public.esteira_regras\n  for all using (user_id = auth.uid()) with check (user_id = auth.uid());\ncreate index if not exists esteira_regras_user_idx on public.esteira_regras (user_id, ativo);\n\ncreate or replace function public.leads_esteira_automatica()\nreturns trigger\nlanguage plpgsql\nsecurity definer\nset search_path = public\nas $$\ndeclare\n  v_agora text[];\n  v_antes text[] := '{}';\n  v_regra record;\nbegin\n  if new.esteira_id is not null then return new; end if;\n  if coalesce(new.status, '') in ('Respondeu', 'Fechado', 'Perdido', 'Deny List') then return new; end if;\n\n  v_agora := coalesce(new.tags, '{}'::text[]) || coalesce(new.etiqueta_projeto, '{}'::text[])\n             || array[coalesce(new.origem, ''), coalesce(new.status, '')];\n  if tg_op = 'UPDATE' then\n    v_antes := coalesce(old.tags, '{}'::text[]) || coalesce(old.etiqueta_projeto, '{}'::text[])\n               || array[coalesce(old.origem, ''), coalesce(old.status, '')];\n  end if;\n\n  -- a etiqueta precisa ter acabado de chegar (lead novo ou etiqueta nova)\n  select r.esteira_id, r.comecar_hoje into v_regra\n  from public.esteira_regras r\n  join public.esteiras e on e.id = r.esteira_id\n  where r.user_id = new.user_id and r.ativo\n    and exists (select 1 from unnest(v_agora) x where public.projeto_norm(x) <> '' and public.projeto_norm(x) = public.projeto_norm(r.etiqueta))\n    and not exists (select 1 from unnest(v_antes) x where public.projeto_norm(x) <> '' and public.projeto_norm(x) = public.projeto_norm(r.etiqueta))\n  order by r.created_at\n  limit 1;\n\n  if found then\n    new.esteira_id := v_regra.esteira_id;\n    new.esteira_passo := 0;\n    -- padrão: começa no dia seguinte (o 1º contato sai hoje); ou hoje mesmo\n    new.esteira_proximo := case\n      when v_regra.comecar_hoje then now()\n      else (date_trunc('day', now() at time zone 'America/Sao_Paulo') + interval '1 day') at time zone 'America/Sao_Paulo'\n    end;\n  end if;\n  return new;\nend;\n$$;\n\n-- \"zz_\" para rodar depois do gatilho que calcula a etiqueta de projeto\ndrop trigger if exists zz_leads_esteira_automatica on public.leads;\ncreate trigger zz_leads_esteira_automatica\nbefore insert or update of tags, etiqueta_projeto, origem, status, projeto_origem, observacoes on public.leads\nfor each row execute function public.leads_esteira_automatica();\n\nnotify pgrst, 'reload schema';\n";
 
 export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
@@ -72,6 +120,34 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
   const nomeEsteira = useMemo(() => new Map(esteiras.map((e) => [e.id, e.nome])), [esteiras]);
   const ativas = regras.filter((r) => r.ativo && nomeEsteira.has(r.esteira_id));
 
+  // ao criar a regra: quem JÁ tem a etiqueta entra junto, conforme as etapas marcadas
+  const [previa, setPrevia] = useState<{ etiqueta: string; leads: any[]; marcadas: Record<string, boolean>; carregando: boolean } | null>(null);
+  useEffect(() => {
+    const etq = nova.etiqueta.trim();
+    if (!etq || faltaAtivar) {
+      setPrevia(null);
+      return;
+    }
+    let cancelado = false;
+    setPrevia((p) => ({ etiqueta: etq, leads: p?.etiqueta === etq ? p.leads : [], marcadas: p?.etiqueta === etq ? p.marcadas : {}, carregando: true }));
+    const t = window.setTimeout(async () => {
+      try {
+        const leads = await leadsComEtiqueta(etq);
+        if (cancelado) return;
+        const marcadas: Record<string, boolean> = {};
+        leads.forEach((l: any) => (marcadas[l.status || "Sem etapa"] = true));
+        setPrevia({ etiqueta: etq, leads, marcadas, carregando: false });
+      } catch {
+        if (!cancelado) setPrevia(null);
+      }
+    }, 500);
+    return () => {
+      cancelado = true;
+      window.clearTimeout(t);
+    };
+  }, [nova.etiqueta, faltaAtivar]);
+  const previaEscolhidos = previa && !previa.carregando ? previa.leads.filter((l: any) => previa.marcadas[l.status || "Sem etapa"]) : [];
+
   const adicionar = async () => {
     const etiqueta = nova.etiqueta.trim();
     if (!etiqueta || !nova.esteira_id) return;
@@ -86,8 +162,17 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
       toast({ title: "Não consegui salvar a regra", description: error.message, variant: "destructive" });
       return;
     }
+    // quem já tem a etiqueta entra agora, só das etapas marcadas
+    const ids = previa?.etiqueta === etiqueta ? previaEscolhidos.map((l: any) => l.id) : [];
+    let extra = "";
+    if (ids.length) {
+      const erro = await colocarLeads(ids, nova.esteira_id, nova.comecar_hoje);
+      extra = erro ? ` Alguns leads antigos não entraram: ${erro}` : ` ${ids.length} lead(s) que já tinham a etiqueta entraram agora.`;
+      refreshLeads();
+    }
     setNova({ etiqueta: "", esteira_id: nova.esteira_id, comecar_hoje: nova.comecar_hoje });
-    toast({ title: "Regra criada", description: `Quem entrar com “${etiqueta}” vai para ${nomeEsteira.get(nova.esteira_id)}.` });
+    setPrevia(null);
+    toast({ title: "Regra criada", description: `Quem entrar com “${etiqueta}” vai para ${nomeEsteira.get(nova.esteira_id)}.${extra}` });
     carregar();
   };
 
@@ -102,28 +187,16 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
 
   // ---------- puxar quem JÁ tem a etiqueta (a regra sozinha só pega quem chega daqui para frente) ----------
   const [puxar, setPuxar] = useState<{ regra: Regra; leads: any[]; marcadas: Record<string, boolean>; carregando: boolean; colocando: boolean } | null>(null);
-  const norm = (t?: string | null) =>
-    String(t || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[-_–—]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  const FORA = new Set(["respondeu", "fechado", "perdido", "deny list"]);
   const abrirPuxar = async (r: Regra) => {
     setPuxar({ regra: r, leads: [], marcadas: {}, carregando: true, colocando: false });
-    const alvo = norm(r.etiqueta);
-    const { data, error } = await supabase.from("leads").select("id, nome, status, tags, origem, etiqueta_projeto, esteira_id").is("esteira_id", null).limit(5000);
-    if (error) {
-      toast({ title: "Não consegui buscar os leads", description: error.message, variant: "destructive" });
+    let leads: any[] = [];
+    try {
+      leads = await leadsComEtiqueta(r.etiqueta);
+    } catch (e: any) {
+      toast({ title: "Não consegui buscar os leads", description: e?.message, variant: "destructive" });
       setPuxar(null);
       return;
     }
-    const leads = (data || []).filter((l: any) => {
-      if (FORA.has(norm(l.status))) return false;
-      return [...(l.tags || []), ...(l.etiqueta_projeto || []), l.origem, l.status].some((v) => norm(v) === alvo);
-    });
     const marcadas: Record<string, boolean> = {};
     leads.forEach((l: any) => (marcadas[l.status || "Sem etapa"] = true));
     setPuxar({ regra: r, leads, marcadas, carregando: false, colocando: false });
@@ -132,24 +205,8 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
   const colocarEscolhidos = async () => {
     if (!puxar || !escolhidos.length) return;
     setPuxar({ ...puxar, colocando: true });
-    const inicio = puxar.regra.comecar_hoje
-      ? new Date()
-      : (() => {
-          const d = new Date();
-          d.setDate(d.getDate() + 1);
-          d.setHours(0, 0, 0, 0);
-          return d;
-        })();
     const ids = escolhidos.map((l: any) => l.id);
-    let erro = "";
-    for (let i = 0; i < ids.length; i += 200) {
-      const { error } = await supabase
-        .from("leads")
-        .update({ esteira_id: puxar.regra.esteira_id, esteira_passo: 0, esteira_proximo: inicio.toISOString() })
-        .in("id", ids.slice(i, i + 200))
-        .is("esteira_id", null);
-      if (error) erro = error.message;
-    }
+    const erro = await colocarLeads(ids, puxar.regra.esteira_id, puxar.regra.comecar_hoje);
     if (erro) toast({ title: "Alguns leads não entraram", description: erro, variant: "destructive" });
     else toast({ title: `${ids.length} lead(s) entraram na esteira`, description: `${nomeEsteira.get(puxar.regra.esteira_id)} · começa ${puxar.regra.comecar_hoje ? "hoje" : "amanhã"}.` });
     setPuxar(null);
@@ -257,24 +314,16 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
                         Escolha as etapas que entram em <b>{nomeEsteira.get(puxar.regra.esteira_id)}</b>:
                       </p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1">
-                        {Object.entries(
-                          puxar.leads.reduce((acc: Record<string, number>, l: any) => {
-                            const k = l.status || "Sem etapa";
-                            acc[k] = (acc[k] || 0) + 1;
-                            return acc;
-                          }, {})
-                        )
-                          .sort((a, b) => (b[1] as number) - (a[1] as number))
-                          .map(([etapa, n]) => (
-                            <label key={etapa} className="flex items-center gap-1.5 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={!!puxar.marcadas[etapa]}
-                                onChange={(ev) => setPuxar({ ...puxar, marcadas: { ...puxar.marcadas, [etapa]: ev.target.checked } })}
-                              />
-                              {etapa} <span className="text-muted-foreground">({n as number})</span>
-                            </label>
-                          ))}
+                        {contarPorEtapa(puxar.leads).map(([etapa, n]) => (
+                          <label key={etapa} className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!!puxar.marcadas[etapa]}
+                              onChange={(ev) => setPuxar({ ...puxar, marcadas: { ...puxar.marcadas, [etapa]: ev.target.checked } })}
+                            />
+                            {etapa} <span className="text-muted-foreground">({n})</span>
+                          </label>
+                        ))}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Começam {puxar.regra.comecar_hoje ? "hoje" : "amanhã"} pelo 1º passo. O piloto automático manda no ritmo de sempre (2 a 3 min entre mensagens e as pausas da esteira),
@@ -334,10 +383,43 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
                     <option value="hoje">no mesmo dia</option>
                   </select>
                 </label>
-                <Button className="h-9" disabled={!nova.etiqueta.trim() || !nova.esteira_id || salvando} onClick={adicionar}>
-                  {salvando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />} Criar regra
+                <Button className="h-9" disabled={!nova.etiqueta.trim() || !nova.esteira_id || salvando || !!previa?.carregando} onClick={adicionar}>
+                  {salvando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
+                  {previaEscolhidos.length ? `Criar regra e puxar ${previaEscolhidos.length}` : "Criar regra"}
                 </Button>
               </div>
+              {previa && (
+                <div className="rounded-xl border bg-card p-3 text-sm space-y-2">
+                  {previa.carregando ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Procurando quem já tem “{previa.etiqueta}”…
+                    </div>
+                  ) : previa.leads.length === 0 ? (
+                    <p className="text-muted-foreground">Ninguém fora de esteira tem “{previa.etiqueta}” hoje. A regra vale para quem chegar daqui para frente.</p>
+                  ) : (
+                    <>
+                      <p>
+                        <b>{previa.leads.length}</b> lead(s) já têm “{previa.etiqueta}” e estão fora de esteira. Ao criar a regra, entram junto os das etapas marcadas:
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {contarPorEtapa(previa.leads).map(([etapa, n]) => (
+                          <label key={etapa} className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!!previa.marcadas[etapa]}
+                              onChange={(ev) => setPrevia({ ...previa, marcadas: { ...previa.marcadas, [etapa]: ev.target.checked } })}
+                            />
+                            {etapa} <span className="text-muted-foreground">({n})</span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Desmarque as etapas que não devem entrar. Eles começam {nova.comecar_hoje ? "hoje" : "amanhã"} pelo 1º passo, no ritmo do piloto automático.
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 A regra pega lead novo (Midrah, Bitrix, Meta Ads, cadastro, importação) e quem ganhar a etiqueta depois. Para quem já tinha a etiqueta antes da regra, use “Puxar quem já tem”. Confere origem, tags, etiqueta de projeto e etapa
                 (20%, 50%…). Não mexe em quem já está numa esteira nem em quem respondeu ou fechou. “No dia seguinte” deixa o 1º contato sair antes, sem mensagem repetida
