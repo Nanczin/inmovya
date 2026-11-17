@@ -161,6 +161,24 @@ export function EsteirasModule() {
   const { leads, refreshLeads } = useLeads();
   const { toast } = useToast();
   const [conferindoRespostas, setConferindoRespostas] = useState(false);
+  // quantos enviar por vez no envio manual (0 = todos)
+  const [qtdAgora, setQtdAgoraState] = useState<number>(() => {
+    try {
+      return Math.max(0, parseInt(localStorage.getItem("inmovya_esteira_qtd") || "0") || 0);
+    } catch {
+      return 0;
+    }
+  });
+  const setQtdAgora = (n: number) => {
+    const v = Math.max(0, Math.floor(n) || 0);
+    setQtdAgoraState(v);
+    try {
+      localStorage.setItem("inmovya_esteira_qtd", String(v));
+    } catch {
+      /* ignore */
+    }
+  };
+  const [jaRodouHoje, setJaRodouHoje] = useState(false);
   const conferirRespostas = async () => {
     setConferindoRespostas(true);
     const r = await varrerRespostas();
@@ -479,7 +497,8 @@ export function EsteirasModule() {
   const [novoHorario, setNovoHorario] = useState("");
 
   const rodar = async (opts: { auto?: boolean } = {}) => {
-    let selecionadosAgora = [...selecionados];
+    // envio manual com quantidade: manda só os X primeiros; o resto continua na fila para "Continuar"
+    let selecionadosAgora = !opts.auto && qtdAgora > 0 ? selecionados.slice(0, qtdAgora) : [...selecionados];
     // libera a leitura dos arquivos do computador (o Chrome pede logo após o clique)
     const comAnexo = selecionadosAgora.flatMap((i) => i.passo.anexos || []);
     const unicos = Array.from(new Map(comAnexo.map((a) => [a.local_id || a.path || a.name, a])).values());
@@ -1401,8 +1420,29 @@ export function EsteirasModule() {
                   >
                     {colando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ClipboardPaste className="w-4 h-4 mr-1" />} Só colar
                   </Button>
-                  <Button className="h-11 px-5 bg-success hover:bg-success/90 text-success-foreground font-bold" disabled={!selecionados.length} onClick={() => rodar()}>
-                    <Play className="w-4 h-4 mr-1.5" /> Enviar {selecionados.length}
+                  <label className="flex items-center gap-1.5 h-11 px-2 rounded-md border bg-background text-xs font-semibold text-muted-foreground" title="Quantos enviar agora. O resto fica na fila: depois é só clicar em Continuar. Vazio = todos.">
+                    Quantos
+                    <Input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      placeholder="todos"
+                      className="h-8 w-[70px] text-sm text-foreground"
+                      value={qtdAgora || ""}
+                      onChange={(ev) => setQtdAgora(parseInt(ev.target.value))}
+                      aria-label="Quantos enviar agora"
+                    />
+                  </label>
+                  <Button
+                    className="h-11 px-5 bg-success hover:bg-success/90 text-success-foreground font-bold"
+                    disabled={!selecionados.length}
+                    onClick={() => {
+                      setJaRodouHoje(true);
+                      rodar();
+                    }}
+                  >
+                    <Play className="w-4 h-4 mr-1.5" /> {jaRodouHoje && qtdAgora > 0 ? "Continuar" : "Enviar"} {qtdAgora > 0 ? Math.min(qtdAgora, selecionados.length) : selecionados.length}
+                    {qtdAgora > 0 && selecionados.length > qtdAgora && <span className="ml-1 font-normal opacity-80">de {selecionados.length}</span>}
                   </Button>
                   </>
                 )}
