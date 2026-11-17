@@ -121,17 +121,19 @@ async function waitForTabComplete(tabId, timeoutMs = 30000) {
 
 // Segundo plano: cada envio abre numa janela pequena, sem foco, no canto da tela,
 // para você continuar usando o computador (o Inmovya pode ficar em outra aba).
+// Antes abria uma janelinha separada; agora abre uma ABA escondida na mesma janela que você está usando
+// (não troca a aba da frente) e fecha sozinha no fim.
+const abasEscondidas = new Set();
 async function abrirJanelaDeEnvio(url) {
-  let left = 0;
-  let top = 0;
+  let windowId;
   try {
-    const atual = await chrome.windows.getLastFocused();
-    left = Math.max(0, (atual.left || 0) + (atual.width || 1280) - 480);
-    top = Math.max(0, (atual.top || 0) + (atual.height || 800) - 640);
-  } catch (_) { /* usa o canto padrão */ }
-  const win = await chrome.windows.create({ url, focused: false, type: 'normal', width: 470, height: 630, left, top });
-  const tab = win.tabs && win.tabs[0];
-  return { tab, windowId: win.id };
+    const janelas = await chrome.windows.getAll({ windowTypes: ['normal'] });
+    const focada = janelas.find(w => w.focused) || janelas[0];
+    windowId = focada?.id;
+  } catch (_) { windowId = undefined; }
+  const tab = await chrome.tabs.create({ url, active: false, ...(windowId != null ? { windowId } : {}) });
+  abasEscondidas.add(tab.id);
+  return { tab, windowId: null };
 }
 
 // envios que o WhatsApp já mandou (marcados pela aba): nunca repetir
@@ -179,7 +181,7 @@ async function sendCampaignMessage(request, returnTabId = null) {
   } else if (segundoPlano) {
     const aberto = await abrirJanelaDeEnvio(url);
     tab = aberto.tab;
-    sendWindowId = aberto.windowId;
+    abaEscondida = true;
   } else {
     tab = await chrome.tabs.create({ url, active: true });
   }
@@ -326,7 +328,7 @@ async function agenteNaConversa(request, acaoConteudo, returnTabId = null) {
       await chrome.windows.remove(windowId).catch(() => {});
     } else {
       await chrome.tabs.remove(tab.id).catch(() => {});
-      if (returnTabId && returnTabId !== tab.id) await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+      if (returnTabId && returnTabId !== tab.id && !abasEscondidas.has(tab.id)) await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
     }
   }
 }
@@ -365,7 +367,7 @@ async function agenteEmLote(request, returnTabId = null) {
     if (windowId != null) await chrome.windows.remove(windowId).catch(() => {});
     else {
       await chrome.tabs.remove(tab.id).catch(() => {});
-      if (returnTabId && returnTabId !== tab.id) await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
+      if (returnTabId && returnTabId !== tab.id && !abasEscondidas.has(tab.id)) await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
     }
   }
   return { resultados };
@@ -387,7 +389,7 @@ async function readWhatsAppLabels(returnTabId = null) {
     if (!Array.isArray(data)) throw new Error(data.error || 'Não consegui ler as etiquetas.');
     return { labels: data.map(label => ({ name: label.name, contacts: label.contacts || [] })) };
   } finally {
-    if (returnTabId && returnTabId !== tab.id) {
+    if (returnTabId && returnTabId !== tab.id && !abasEscondidas.has(tab.id)) {
       await chrome.tabs.update(returnTabId, { active: true }).catch(() => {});
       const back = await chrome.tabs.get(returnTabId).catch(() => null);
       if (back?.windowId != null) await chrome.windows.update(back.windowId, { focused: true }).catch(() => {});
@@ -574,7 +576,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (!abas.length) return { ok: false, error: 'O WhatsApp Web não está aberto' };
       let ultimoErro = '';
       for (const aba of abas) {
-        const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'varrer_respostas_aba', itens: request.itens || [] }, x => res(chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : x)));
+        const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'varrer_respostas_aba', itens: request.itens || [], tipo: request.tipo || 'resposta' }, x => res(chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : x)));
         if (r?.ok) return r;
         ultimoErro = r?.error || ultimoErro;
       }

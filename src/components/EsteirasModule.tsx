@@ -1,5 +1,5 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
-import { respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
+import { chamadosHojeNoWhatsApp, respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
 import { intervaloHumano, novoLote, pausaDeLoteMin, variarAutomatico } from "@/lib/variacao";
 import { ehSemWhatsapp, excluirSemWhatsapp, excluiAoFim, montarEtiquetasFim } from "@/lib/esteiras";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -493,23 +493,32 @@ export function EsteirasModule() {
       await supabase.from("leads").update({ esteira_proximo: amanha() }).in("id", ids.slice(i, i + 200)).eq("esteira_passo", 0);
     }
   };
+  const ultimaConferenciaWhats = useRef(0);
   useEffect(() => {
     if (empurrandoRef.current || rodando) return;
-    const ids = filaAuto
-      .filter((i) => (Number((i.lead as any).esteira_passo) || 0) === 0 && bloqueios[i.lead.id] && !/mesmo número/.test(bloqueios[i.lead.id]))
-      .map((i) => i.lead.id);
-    if (!ids.length) return;
+    const p1 = filaAuto.filter((i) => (Number((i.lead as any).esteira_passo) || 0) === 0 && !liberados.has(i.lead.id));
+    if (!p1.length) return;
     empurrandoRef.current = true;
-    empurrarP1ParaAmanha(ids)
-      .then(() => {
-        toast({ title: `${ids.length} lead(s) do 1º passo foram para amanhã`, description: "Já tinham recebido contato hoje (1º contato ou esteira)." });
-        return refreshLeads();
-      })
-      .finally(() => {
-        empurrandoRef.current = false;
-      });
+    (async () => {
+      // 1) pelo Inmovya: 1º contato ou esteira hoje
+      const ids = new Set(p1.filter((i) => bloqueios[i.lead.id] && !/mesmo número/.test(bloqueios[i.lead.id])).map((i) => i.lead.id));
+      // 2) pelo WhatsApp: qualquer mensagem sua hoje para o lead (mandada à mão, por outro sistema…), no máx. 1x por minuto
+      if (Date.now() - ultimaConferenciaWhats.current > 60000) {
+        ultimaConferenciaWhats.current = Date.now();
+        const chamados = await chamadosHojeNoWhatsApp(p1.filter((i) => !ids.has(i.lead.id)).map((i) => i.telefone || ""));
+        p1.forEach((i) => {
+          if (i.telefone && chamados.has(String(i.telefone).replace(/\D/g, "").slice(-8))) ids.add(i.lead.id);
+        });
+      }
+      if (!ids.size) return;
+      await empurrarP1ParaAmanha(Array.from(ids));
+      toast({ title: `${ids.size} lead(s) do 1º passo foram para amanhã`, description: "Já tinham recebido contato hoje." });
+      await refreshLeads();
+    })().finally(() => {
+      empurrandoRef.current = false;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bloqueios, rodando]);
+  }, [bloqueios, rodando, filaAuto.length]);
 
   /** Confere no banco, na hora de enviar, se o lead já recebeu hoje (outra aba, outro computador, 1º contato). */
   const jaRecebeuHojeNoBanco = async (item: ItemFila, enviadosAgora: Set<string>) => {

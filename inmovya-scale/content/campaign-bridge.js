@@ -88,7 +88,7 @@
   // Varredura: quem da esteira já respondeu (o WhatsApp Web aberto confere)
   window.addEventListener('INMOVYA_VARRER_RESPOSTAS', event => {
     const detail = event.detail || {};
-    chrome.runtime.sendMessage({ action: 'varrer_respostas', itens: detail.itens || [] }, response => {
+    chrome.runtime.sendMessage({ action: 'varrer_respostas', itens: detail.itens || [], tipo: detail.tipo || 'resposta' }, response => {
       const error = chrome.runtime.lastError?.message || (!response?.ok && response?.error) || '';
       window.dispatchEvent(new CustomEvent('INMOVYA_VARRER_RESPOSTAS_RESULT', {
         detail: { token: detail.token, ok: !!response?.ok && !chrome.runtime.lastError, respondidos: response?.respondidos || [], error }

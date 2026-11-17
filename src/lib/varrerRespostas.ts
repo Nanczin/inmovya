@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type ResultadoVarredura = { ok: boolean; conferidos: number; sairam: string[]; erro?: string };
 
-const perguntarAoWhatsApp = (itens: { telefone: string; desde: number }[], timeoutMs = 40000) =>
+const perguntarAoWhatsApp = (itens: { telefone: string; desde: number }[], timeoutMs = 40000, tipo: "resposta" | "enviado" = "resposta") =>
   new Promise<{ telefone: string; quando: number }[]>((resolve, reject) => {
     const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
     const onResult = (ev: Event) => {
@@ -20,7 +20,7 @@ const perguntarAoWhatsApp = (itens: { telefone: string; desde: number }[], timeo
       reject(new Error("O Inmovya Scale não respondeu (precisa da versão 1.20.0 e do WhatsApp Web aberto)."));
     }, timeoutMs);
     window.addEventListener("INMOVYA_VARRER_RESPOSTAS_RESULT", onResult);
-    window.dispatchEvent(new CustomEvent("INMOVYA_VARRER_RESPOSTAS", { detail: { token, itens } }));
+    window.dispatchEvent(new CustomEvent("INMOVYA_VARRER_RESPOSTAS", { detail: { token, itens, tipo } }));
   });
 
 const digitos = (t?: string | null) => String(t || "").replace(/\D/g, "");
@@ -80,5 +80,21 @@ export async function varrerRespostas(): Promise<ResultadoVarredura> {
     return { ok: false, conferidos: 0, sairam: [], erro: e?.message || String(e) };
   } finally {
     rodando = false;
+  }
+}
+
+
+/** Quem destes telefones já recebeu mensagem SUA hoje no WhatsApp (qualquer mensagem: 1º contato, manual, esteira).
+ *  Devolve os últimos 8 dígitos. Sem WhatsApp aberto: conjunto vazio. */
+export async function chamadosHojeNoWhatsApp(telefones: string[]): Promise<Set<string>> {
+  const tels = Array.from(new Set(telefones.map(digitos).filter((t) => t.length >= 10)));
+  if (!tels.length) return new Set();
+  const inicio = new Date();
+  inicio.setHours(0, 0, 0, 0);
+  try {
+    const r = await perguntarAoWhatsApp(tels.map((t) => ({ telefone: t, desde: inicio.getTime() })), 30000, "enviado");
+    return new Set(r.map((x) => digitos(x.telefone).slice(-8)));
+  } catch {
+    return new Set();
   }
 }

@@ -28,7 +28,7 @@
   });
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.action !== 'varrer_respostas_aba') return;
-    perguntar('respondeuDesde', { itens: msg.itens || [] }).then(r => sendResponse(r.ok ? { ok: true, respondidos: r.dados || [] } : { ok: false, error: r.erro || 'erro' }));
+    perguntar(msg.tipo === 'enviado' ? 'enviouDesde' : 'respondeuDesde', { itens: msg.itens || [] }).then(r => sendResponse(r.ok ? { ok: true, respondidos: r.dados || [] } : { ok: false, error: r.erro || 'erro' }));
     return true;
   });
 })();
