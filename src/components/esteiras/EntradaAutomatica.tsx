@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Check, Loader2, Plus, Trash2, Zap } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Trash2, Zap } from "lucide-react";
 import type { Esteira } from "@/lib/esteiras";
 import { useLeads } from "@/context/LeadsContext";
 
@@ -213,6 +213,29 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
     refreshLeads();
   };
 
+  // editar regra (não mexe em quem já está na esteira)
+  const [editando, setEditando] = useState<{ id: string; etiqueta: string; esteira_id: string; comecar_hoje: boolean; salvando: boolean } | null>(null);
+  const salvarEdicao = async () => {
+    if (!editando) return;
+    const etiqueta = editando.etiqueta.trim();
+    if (!etiqueta || !editando.esteira_id) return;
+    if (regras.some((r) => r.id !== editando.id && r.ativo && r.etiqueta.trim().toLowerCase() === etiqueta.toLowerCase())) {
+      toast({ title: "Já existe outra regra para essa etiqueta", variant: "destructive" });
+      return;
+    }
+    setEditando({ ...editando, salvando: true });
+    const campos = { etiqueta, esteira_id: editando.esteira_id, comecar_hoje: editando.comecar_hoje };
+    const { error } = await (supabase.from as any)("esteira_regras").update(campos).eq("id", editando.id);
+    if (error) {
+      toast({ title: "Não consegui salvar a regra", description: error.message, variant: "destructive" });
+      setEditando({ ...editando, salvando: false });
+      return;
+    }
+    setRegras((lista) => lista.map((x) => (x.id === editando.id ? { ...x, ...campos } : x)));
+    setEditando(null);
+    toast({ title: "Regra atualizada", description: `Quem entrar com “${etiqueta}” vai para ${nomeEsteira.get(campos.esteira_id)}. Quem já estava numa esteira continua onde está.` });
+  };
+
   const apagar = async (r: Regra) => {
     setRegras((lista) => lista.filter((x) => x.id !== r.id));
     const { error } = await (supabase.from as any)("esteira_regras").delete().eq("id", r.id);
@@ -277,7 +300,57 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
             <>
               {regras.length > 0 && (
                 <div className="flex flex-col divide-y rounded-xl border bg-card">
-                  {regras.map((r) => (
+                  {regras.map((r) =>
+                    editando?.id === r.id ? (
+                      <div key={r.id} className="flex flex-wrap items-end gap-2 px-3 py-2 text-sm bg-muted/40">
+                        <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">
+                          Etiqueta
+                          <Input
+                            list="esteira-regra-etiquetas"
+                            className="h-9 w-[170px]"
+                            value={editando.etiqueta}
+                            onChange={(ev) => setEditando({ ...editando, etiqueta: ev.target.value })}
+                            onKeyDown={(ev) => {
+                              if (ev.key === "Enter") salvarEdicao();
+                              if (ev.key === "Escape") setEditando(null);
+                            }}
+                            autoFocus
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">
+                          Esteira
+                          <select
+                            className="h-9 w-[190px] rounded-md border bg-background px-2 text-sm text-foreground"
+                            value={editando.esteira_id}
+                            onChange={(ev) => setEditando({ ...editando, esteira_id: ev.target.value })}
+                          >
+                            {!nomeEsteira.has(editando.esteira_id) && <option value="">Escolha…</option>}
+                            {esteiras.map((e) => (
+                              <option key={e.id} value={e.id}>
+                                {e.nome}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1 text-xs font-semibold text-muted-foreground">
+                          Começa
+                          <select
+                            className="h-9 w-[160px] rounded-md border bg-background px-2 text-sm text-foreground"
+                            value={editando.comecar_hoje ? "hoje" : "amanha"}
+                            onChange={(ev) => setEditando({ ...editando, comecar_hoje: ev.target.value === "hoje" })}
+                          >
+                            <option value="amanha">no dia seguinte</option>
+                            <option value="hoje">no mesmo dia</option>
+                          </select>
+                        </label>
+                        <Button className="h-9" disabled={!editando.etiqueta.trim() || !editando.esteira_id || editando.salvando} onClick={salvarEdicao}>
+                          {editando.salvando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />} Salvar
+                        </Button>
+                        <Button variant="ghost" className="h-9" onClick={() => setEditando(null)}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    ) : (
                     <div key={r.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                       <span className="font-semibold">“{r.etiqueta}”</span>
                       <span className="text-muted-foreground">→</span>
@@ -288,11 +361,22 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
                         Puxar quem já tem
                       </Button>
                       <Switch checked={r.ativo} onCheckedChange={(v) => mudar(r, { ativo: v })} aria-label={`Ligar regra ${r.etiqueta}`} />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => setEditando({ id: r.id, etiqueta: r.etiqueta, esteira_id: nomeEsteira.has(r.esteira_id) ? r.esteira_id : "", comecar_hoje: r.comecar_hoje, salvando: false })}
+                        aria-label={`Editar regra ${r.etiqueta}`}
+                        title="Editar"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => apagar(r)} aria-label={`Apagar regra ${r.etiqueta}`}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
-                  ))}
+                    )
+                  )}
                 </div>
               )}
 
