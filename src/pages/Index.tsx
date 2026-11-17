@@ -24,7 +24,16 @@ import { TaskViewDialog } from "@/components/dialogs/TaskViewDialog";
 import { LembretesPopup } from "@/components/LembretesPopup";
 
 const Index = () => {
-  const [activeModule, setActiveModule] = useState("arena");
+  // envio da esteira interrompido por recarregar a página: abre direto em Esteiras para continuar
+  const [activeModule, setActiveModule] = useState(() => {
+    try {
+      const r = JSON.parse(localStorage.getItem("inmovya_esteira_rodada") || "null");
+      if (r && r.dia === new Date().toLocaleDateString("pt-BR") && Array.isArray(r.ids) && r.ids.length) return "esteiras";
+    } catch {
+      /* ignore */
+    }
+    return "arena";
+  });
   const [navigationParams, setNavigationParams] = useState<any>(null);
   const [globalViewTaskId, setGlobalViewTaskId] = useState<string | null>(null);
   const { user, loading, signOut } = useAuth();

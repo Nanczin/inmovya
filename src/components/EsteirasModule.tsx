@@ -158,6 +158,33 @@ const fmtData = (iso?: string | null) =>
 // mesma variação do spintax para o mesmo lead + passo no mesmo dia (prévia = envio)
 const sementeSpin = (leadId: string, passoId: string) => `${leadId}:${passoId}:${new Date().toDateString()}`;
 
+// Rodada em andamento (para continuar depois de recarregar a página)
+const CHAVE_RODADA = "inmovya_esteira_rodada";
+const hojeTexto = () => new Date().toLocaleDateString("pt-BR");
+const salvarRodada = (ids: string[], auto: boolean) => {
+  try {
+    localStorage.setItem(CHAVE_RODADA, JSON.stringify({ ids, auto, dia: hojeTexto(), em: Date.now() }));
+  } catch {
+    /* ignore */
+  }
+};
+const limparRodada = () => {
+  try {
+    localStorage.removeItem(CHAVE_RODADA);
+  } catch {
+    /* ignore */
+  }
+};
+export const lerRodada = (): { ids: string[]; auto: boolean } | null => {
+  try {
+    const r = JSON.parse(localStorage.getItem(CHAVE_RODADA) || "null");
+    if (!r || r.dia !== hojeTexto() || !Array.isArray(r.ids) || !r.ids.length) return null;
+    return r;
+  } catch {
+    return null;
+  }
+};
+
 export function EsteirasModule() {
   const { leads, refreshLeads } = useLeads();
   const { toast } = useToast();
@@ -498,16 +525,20 @@ export function EsteirasModule() {
   const [verPiloto, setVerPiloto] = useState(false);
   const [novoHorario, setNovoHorario] = useState("");
 
-  const rodar = async (opts: { auto?: boolean } = {}) => {
-    // envio manual com quantidade: manda só os X primeiros; o resto continua na fila para "Continuar"
-    let selecionadosAgora = !opts.auto && qtdAgora > 0 ? selecionados.slice(0, qtdAgora) : [...selecionados];
+  const rodar = async (opts: { auto?: boolean; ids?: string[] } = {}) => {
+    // retomada depois de recarregar: só quem faltava; envio manual com quantidade: só os X primeiros
+    let selecionadosAgora = opts.ids
+      ? filaAuto.filter((i) => opts.ids!.includes(i.lead.id) && i.telefone && !bloqueios[i.lead.id])
+      : !opts.auto && qtdAgora > 0
+        ? selecionados.slice(0, qtdAgora)
+        : [...selecionados];
     // libera a leitura dos arquivos do computador (o Chrome pede logo após o clique)
     const comAnexo = selecionadosAgora.flatMap((i) => i.passo.anexos || []);
     const unicos = Array.from(new Map(comAnexo.map((a) => [a.local_id || a.path || a.name, a])).values());
     if (unicos.length) {
       const faltando = await liberarArquivosLocais(unicos);
       if (faltando.length) {
-        if (!opts.auto) {
+        if (!opts.auto && !opts.ids) {
           toast({
             title: "Arquivo não encontrado neste computador",
             description: `${faltando.join(", ")}. Anexe de novo na aba Esteiras ou desmarque esses leads.`,
@@ -561,6 +592,8 @@ export function EsteirasModule() {
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
+      // guarda quem falta: se a página recarregar, o envio continua daqui
+      salvarRodada(lista.slice(i).map((x) => x.lead.id), !!opts.auto);
       setProgressoEsteira(i, lista.length, item.lead.nome);
       const motivo = await jaRecebeuHojeNoBanco(item, enviadosAgora).catch(() => null);
       if (motivo) {
@@ -643,6 +676,7 @@ export function EsteirasModule() {
         } else await esperar(intervaloHumano());
       }
     }
+    limparRodada(); // terminou ou você clicou em Parar: não retoma
     setRodando(false);
     setWhatsAppOcupado(false);
     pararRef.current = false;
@@ -787,6 +821,32 @@ export function EsteirasModule() {
   // relógio do piloto: a cada 30 s confere se chegou um horário marcado
   const rodarRef = useRef(rodar);
   rodarRef.current = rodar;
+
+  // recarregou a página no meio do envio: continua de onde parou
+  const retomouRef = useRef(false);
+  useEffect(() => {
+    if (retomouRef.current || carregando || rodando) return;
+    const r = lerRodada();
+    if (!r) return;
+    retomouRef.current = true;
+    const restantes = r.ids.filter((id) => fila.some((i) => i.lead.id === id));
+    if (!restantes.length) {
+      limparRodada();
+      return;
+    }
+    setFiltroEsteira("todas");
+    toast({ title: "Continuando o envio", description: `A página recarregou no meio do envio. Retomando de onde parou: ${restantes.length} lead(s).` });
+    window.setTimeout(async () => {
+      const ok = await checarExtensao();
+      setExtensaoOk(ok);
+      if (!ok) {
+        toast({ title: "Não deu para continuar o envio", description: "O Inmovya Scale não respondeu. Confira o WhatsApp Web e clique em Enviar.", variant: "destructive" });
+        return;
+      }
+      rodarRef.current({ ids: restantes, auto: r.auto });
+    }, 4000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregando, rodando, fila]);
   const ocupadoRef = useRef(false);
   ocupadoRef.current = rodando || colando || carregando;
   const [, setTick] = useState(0);
