@@ -32,7 +32,7 @@ declare
   v_regra record;
 begin
   if new.esteira_id is not null then return new; end if;
-  if coalesce(new.status, '') in ('Respondeu', 'Fechado', 'Perdido', 'Deny List') then return new; end if;
+  if coalesce(new.status, '') in ('Respondeu', 'Fechado', 'Perdido', 'Deny List', '20%', '50%', '70%', '75%') then return new; end if;
 
   v_agora := coalesce(new.tags, '{}'::text[]) || coalesce(new.etiqueta_projeto, '{}'::text[])
              || array[coalesce(new.origem, ''), coalesce(new.status, '')];
