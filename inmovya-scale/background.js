@@ -134,6 +134,22 @@ chrome.runtime.onMessage.addListener(request => {
   if (request?.action === 'campaign_sent_mark' && request.envioId) enviosJaFeitos.add(request.envioId);
 });
 
+async function enviarNaAbaDoWhatsApp(request) {
+  if (request.semAba || request.imageLocalId) return { naoTentou: true };
+  const abas = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' }).catch(() => []);
+  // a janelinha de envio também é web.whatsapp.com: só a aba "normal" (sem inmovya_auto)
+  const normais = abas.filter(a => !String(a.url || '').includes('inmovya_auto'));
+  for (const aba of normais) {
+    const r = await new Promise(res => {
+      try {
+        chrome.tabs.sendMessage(aba.id, { ...request, action: 'campaign_send_aba' }, x => res(chrome.runtime.lastError ? { naoTentou: true } : x || { naoTentou: true }));
+      } catch (_) { res({ naoTentou: true }); }
+    });
+    if (r?.ok || (r && !r.naoTentou)) return r;
+  }
+  return { naoTentou: true };
+}
+
 async function sendCampaignMessage(request, returnTabId = null) {
   const envioId = request.envioId || crypto.randomUUID();
   const phone = String(request.phone || '').replace(/\D/g, '');
@@ -486,7 +502,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
   if (request?.action === 'campaign_send') {
-    naVezWA(() => sendCampaignMessage(request, sender.tab?.id || null))
+    // 1º jeito (igual ao Disparo): envia no WhatsApp Web que já está aberto, sem abrir janelinha nem recarregar.
+    // Se não der para abrir a conversa ali (aba escondida, ocupada…), usa a janelinha de sempre.
+    naVezWA(async () => {
+      const aqui = await enviarNaAbaDoWhatsApp(request);
+      if (aqui?.ok) return aqui;
+      if (aqui && !aqui.naoTentou) throw new Error(aqui.error || 'Envio não confirmado.');
+      return sendCampaignMessage(request, sender.tab?.id || null);
+    })
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(error => sendResponse({ ok: false, error: error.message }));
     return true;

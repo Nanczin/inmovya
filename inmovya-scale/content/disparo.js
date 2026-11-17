@@ -490,6 +490,42 @@ window.IS.Disparo = (() => {
     return r === true;
   }
 
+  // Envio pedido pela esteira do Inmovya (pelo background): na própria aba, igual ao Disparo.
+  // { naoTentou: true } = não deu para abrir aqui (aba escondida, ocupada…): o background usa a janelinha.
+  let ocupadoAqui = false;
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.action !== 'campaign_send_aba') return;
+    (async () => {
+      if (ocupadoAqui || document.hidden || typeof window.IS?.enviarCampanhaNaAba !== 'function') return { naoTentou: true };
+      if (st.campanha?.status === 'rodando' && st.atual) return { naoTentou: true }; // o Disparo está enviando agora
+      ocupadoAqui = true;
+      try {
+        let anterior = null;
+        try { anterior = (await loja('ativa', {}, 3000))?.dados?.chatId || null; } catch (_) { anterior = null; }
+        const aberto = await abrirAqui({ telefone: String(msg.phone || '').replace(/\D/g, '') });
+        if (aberto === 'invalido') return { ok: false, error: 'número sem WhatsApp' };
+        if (aberto !== true) return { naoTentou: true };
+        let r;
+        try {
+          r = await window.IS.enviarCampanhaNaAba({
+            text: msg.text || '',
+            attachments: Array.isArray(msg.attachments) ? msg.attachments : [],
+            envioId: msg.envioId || msg.token,
+            gapMinMs: Number(msg.gapMinMs) || 0,
+            gapMaxMs: Number(msg.gapMaxMs) || 0,
+          });
+        } catch (e) {
+          r = { ok: false, error: e.message };
+        }
+        if (anterior && anterior !== (await loja('ativa', {}, 3000))?.dados?.chatId) loja('abrir', { chatId: anterior }, 8000);
+        return r || { ok: false, error: 'sem resposta' };
+      } finally {
+        ocupadoAqui = false;
+      }
+    })().then(sendResponse);
+    return true;
+  });
+
   async function enviarUm(contato) {
     const { texto, anexos, registro } = montarEnvio(contato);
     contato.textoEnviado = registro;
@@ -513,7 +549,7 @@ window.IS.Disparo = (() => {
     return new Promise(resolve => {
       try {
         chrome.runtime.sendMessage(
-          { action: 'campaign_send', phone: contato.telefone, text: texto, attachments: anexos, background: true, envioId: contato.envioId, gapMinMs: 1500, gapMaxMs: 4000 },
+          { action: 'campaign_send', semAba: true, phone: contato.telefone, text: texto, attachments: anexos, background: true, envioId: contato.envioId, gapMinMs: 1500, gapMaxMs: 4000 },
           r => resolve(chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : r || { ok: false, error: 'sem resposta' })
         );
       } catch (e) {

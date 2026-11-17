@@ -1,5 +1,6 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
 import { varrerRespostas } from "@/lib/varrerRespostas";
+import { intervaloHumano, novoLote, pausaDeLoteMin, variarAutomatico } from "@/lib/variacao";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -533,6 +534,9 @@ export function EsteirasModule() {
     const porEsteira: Record<string, number> = {};
     const prontosParaSegunda: string[] = [];
     const enviadosAgora = new Set<string>();
+    // tempo automático (igual ao Disparo): lote e pausa sorteados quando a esteira não tem pausa própria
+    let loteAlvo = novoLote();
+    let noLote = 0;
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
@@ -567,8 +571,9 @@ export function EsteirasModule() {
       }
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
       try {
-        // monta de novo na hora (saudação pode mudar ao longo do dia)
-        const texto = textoDo(item);
+        // monta de novo na hora (saudação pode mudar ao longo do dia) e varia sinônimos/pontuação
+        // (texto que você editou à mão vai exatamente como escreveu)
+        const texto = editados[item.lead.id] != null ? textoDo(item) : variarAutomatico(textoDo(item));
         const anexos = await prepararAnexosParaEnvio(item.passo.anexos, item.lead.nome, partesDaMensagem(texto).length, item.lead.observacoes);
         const cfgEsteira = getPausaEsteira(item.esteira.id);
         await enviarPeloWhatsApp(item.telefone, texto, anexos, segundoPlano && extensaoAtualizada("1.3.0"), { min: cfgEsteira.gapMin, max: cfgEsteira.gapMax });
@@ -590,12 +595,17 @@ export function EsteirasModule() {
         const pe = getPausaEsteira(item.esteira.id);
         let pausaMin = 0;
         if (pe.cada > 0 && porEsteira[item.esteira.id] % pe.cada === 0) pausaMin = Math.max(pausaMin, pe.minutos);
+        // sem pausa própria configurada: pausa automática a cada 12–22 envios (10–25 min)
+        noLote++;
+        if (!pausaMin && pe.cada <= 0 && noLote >= loteAlvo) pausaMin = pausaDeLoteMin();
         if (pausaMin > 0) {
+          noLote = 0;
+          loteAlvo = novoLote();
           setEmPausa(true);
-          toast({ title: "Pausa", description: `${enviados} envio(s) feitos. Retomando em ${pausaMin} min.` });
+          toast({ title: "Pausa de segurança", description: `${enviados} envio(s) feitos. Retomando em ${pausaMin} min.` });
           await esperar(Math.round(pausaMin * 60));
           setEmPausa(false);
-        } else await esperar(intervaloAleatorio());
+        } else await esperar(intervaloHumano());
       }
     }
     setRodando(false);
@@ -1362,7 +1372,7 @@ export function EsteirasModule() {
                       Em segundo plano
                       {segundoPlano && !extensaoAtualizada("1.3.0") && <span className="text-warning">(atualize o Scale)</span>}
                     </label>
-                    <span title="Pausas e intervalo entre mensagens: configure em cada esteira">2 a 3 min entre leads</span>
+                    <span title="Tempo automático, igual ao Disparo: 2 a 4 min entre leads (às vezes mais), pausa de 10 a 25 min a cada 12 a 22 envios (ou a pausa que você configurou na esteira). Cada mensagem sai com sinônimos e pontuação sorteados.">Tempo e texto variam sozinhos</span>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
