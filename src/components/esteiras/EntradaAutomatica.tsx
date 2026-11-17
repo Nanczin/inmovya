@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Check, Loader2, Plus, Trash2, Zap } from "lucide-react";
 import type { Esteira } from "@/lib/esteiras";
+import { useLeads } from "@/context/LeadsContext";
 
 type Regra = { id: string; etiqueta: string; esteira_id: string; comecar_hoje: boolean; ativo: boolean };
 
@@ -19,6 +20,7 @@ const SQL_ATIVACAO = "-- ENTRADA AUTOMÁTICA NAS ESTEIRAS (aba Esteiras do Inmov
 export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
   const sqlAtivacao = SQL_ATIVACAO;
   const { toast } = useToast();
+  const { refreshLeads } = useLeads();
   const [regras, setRegras] = useState<Regra[]>([]);
   const [faltaAtivar, setFaltaAtivar] = useState(false);
   const [carregando, setCarregando] = useState(true);
@@ -98,6 +100,62 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
     }
   };
 
+  // ---------- puxar quem JÁ tem a etiqueta (a regra sozinha só pega quem chega daqui para frente) ----------
+  const [puxar, setPuxar] = useState<{ regra: Regra; leads: any[]; marcadas: Record<string, boolean>; carregando: boolean; colocando: boolean } | null>(null);
+  const norm = (t?: string | null) =>
+    String(t || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[-_–—]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const FORA = new Set(["respondeu", "fechado", "perdido", "deny list"]);
+  const abrirPuxar = async (r: Regra) => {
+    setPuxar({ regra: r, leads: [], marcadas: {}, carregando: true, colocando: false });
+    const alvo = norm(r.etiqueta);
+    const { data, error } = await supabase.from("leads").select("id, nome, status, tags, origem, etiqueta_projeto, esteira_id").is("esteira_id", null).limit(5000);
+    if (error) {
+      toast({ title: "Não consegui buscar os leads", description: error.message, variant: "destructive" });
+      setPuxar(null);
+      return;
+    }
+    const leads = (data || []).filter((l: any) => {
+      if (FORA.has(norm(l.status))) return false;
+      return [...(l.tags || []), ...(l.etiqueta_projeto || []), l.origem, l.status].some((v) => norm(v) === alvo);
+    });
+    const marcadas: Record<string, boolean> = {};
+    leads.forEach((l: any) => (marcadas[l.status || "Sem etapa"] = true));
+    setPuxar({ regra: r, leads, marcadas, carregando: false, colocando: false });
+  };
+  const escolhidos = puxar ? puxar.leads.filter((l: any) => puxar.marcadas[l.status || "Sem etapa"]) : [];
+  const colocarEscolhidos = async () => {
+    if (!puxar || !escolhidos.length) return;
+    setPuxar({ ...puxar, colocando: true });
+    const inicio = puxar.regra.comecar_hoje
+      ? new Date()
+      : (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 1);
+          d.setHours(0, 0, 0, 0);
+          return d;
+        })();
+    const ids = escolhidos.map((l: any) => l.id);
+    let erro = "";
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase
+        .from("leads")
+        .update({ esteira_id: puxar.regra.esteira_id, esteira_passo: 0, esteira_proximo: inicio.toISOString() })
+        .in("id", ids.slice(i, i + 200))
+        .is("esteira_id", null);
+      if (error) erro = error.message;
+    }
+    if (erro) toast({ title: "Alguns leads não entraram", description: erro, variant: "destructive" });
+    else toast({ title: `${ids.length} lead(s) entraram na esteira`, description: `${nomeEsteira.get(puxar.regra.esteira_id)} · começa ${puxar.regra.comecar_hoje ? "hoje" : "amanhã"}.` });
+    setPuxar(null);
+    refreshLeads();
+  };
+
   const apagar = async (r: Regra) => {
     setRegras((lista) => lista.filter((x) => x.id !== r.id));
     const { error } = await (supabase.from as any)("esteira_regras").delete().eq("id", r.id);
@@ -169,12 +227,68 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
                       <span className="font-semibold">{nomeEsteira.get(r.esteira_id) || "esteira apagada"}</span>
                       <span className="text-xs text-muted-foreground">· começa {r.comecar_hoje ? "no mesmo dia" : "no dia seguinte"}</span>
                       <span className="flex-1" />
+                      <Button variant="outline" size="sm" className="h-8" onClick={() => abrirPuxar(r)} disabled={!r.ativo || !nomeEsteira.has(r.esteira_id)}>
+                        Puxar quem já tem
+                      </Button>
                       <Switch checked={r.ativo} onCheckedChange={(v) => mudar(r, { ativo: v })} aria-label={`Ligar regra ${r.etiqueta}`} />
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => apagar(r)} aria-label={`Apagar regra ${r.etiqueta}`}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {puxar && (
+                <div className="rounded-xl border border-primary/40 bg-card p-3 space-y-2 text-sm">
+                  {puxar.carregando ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Procurando leads com “{puxar.regra.etiqueta}”…
+                    </div>
+                  ) : puxar.leads.length === 0 ? (
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1">Nenhum lead com “{puxar.regra.etiqueta}” fora de esteira.</span>
+                      <Button variant="ghost" size="sm" onClick={() => setPuxar(null)}>Fechar</Button>
+                    </div>
+                  ) : (
+                    <>
+                      <p>
+                        <b>{puxar.leads.length}</b> lead(s) já têm “{puxar.regra.etiqueta}” e estão fora de esteira (sem contar quem respondeu, fechou ou está na Deny List).
+                        Escolha as etapas que entram em <b>{nomeEsteira.get(puxar.regra.esteira_id)}</b>:
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {Object.entries(
+                          puxar.leads.reduce((acc: Record<string, number>, l: any) => {
+                            const k = l.status || "Sem etapa";
+                            acc[k] = (acc[k] || 0) + 1;
+                            return acc;
+                          }, {})
+                        )
+                          .sort((a, b) => (b[1] as number) - (a[1] as number))
+                          .map(([etapa, n]) => (
+                            <label key={etapa} className="flex items-center gap-1.5 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!!puxar.marcadas[etapa]}
+                                onChange={(ev) => setPuxar({ ...puxar, marcadas: { ...puxar.marcadas, [etapa]: ev.target.checked } })}
+                              />
+                              {etapa} <span className="text-muted-foreground">({n as number})</span>
+                            </label>
+                          ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Começam {puxar.regra.comecar_hoje ? "hoje" : "amanhã"} pelo 1º passo. O piloto automático manda no ritmo de sempre (2 a 3 min entre mensagens e as pausas da esteira),
+                        então muitos leads podem levar mais de um dia para receber.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button className="h-9" disabled={!escolhidos.length || puxar.colocando} onClick={colocarEscolhidos}>
+                          {puxar.colocando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+                          Colocar {escolhidos.length} na esteira
+                        </Button>
+                        <Button variant="ghost" className="h-9" onClick={() => setPuxar(null)}>Cancelar</Button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -225,7 +339,7 @@ export function EntradaAutomatica({ esteiras }: { esteiras: Esteira[] }) {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Vale para lead novo (Midrah, Bitrix, Meta Ads, cadastro, importação) e para quem ganhar a etiqueta depois. Confere origem, tags, etiqueta de projeto e etapa
+                A regra pega lead novo (Midrah, Bitrix, Meta Ads, cadastro, importação) e quem ganhar a etiqueta depois. Para quem já tinha a etiqueta antes da regra, use “Puxar quem já tem”. Confere origem, tags, etiqueta de projeto e etapa
                 (20%, 50%…). Não mexe em quem já está numa esteira nem em quem respondeu ou fechou. “No dia seguinte” deixa o 1º contato sair antes, sem mensagem repetida
                 no mesmo dia. O envio dos passos continua pelo piloto automático.
               </p>
