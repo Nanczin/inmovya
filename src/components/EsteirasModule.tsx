@@ -1,7 +1,7 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
 import { respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
 import { intervaloHumano, novoLote, pausaDeLoteMin, variarAutomatico } from "@/lib/variacao";
-import { ehSemWhatsapp, excluirSemWhatsapp } from "@/lib/esteiras";
+import { ehSemWhatsapp, excluirSemWhatsapp, excluiAoFim, montarEtiquetasFim } from "@/lib/esteiras";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -974,7 +974,7 @@ export function EsteirasModule() {
   }, [leads]);
   const [novaEtiqueta, setNovaEtiqueta] = useState("");
   const mudarEtiquetas = (lista: string[]) =>
-    setRascunho((r) => (r ? { ...r, esteira: { ...r.esteira, ao_concluir_tag: Array.from(new Set(lista.map((t) => t.trim()).filter(Boolean))).join(",") || null } } : r));
+    setRascunho((r) => (r ? { ...r, esteira: { ...r.esteira, ao_concluir_tag: montarEtiquetasFim(lista, excluiAoFim(r.esteira)) } } : r));
 
   const moverPasso = (idx: number, dir: -1 | 1) =>
     setRascunho((r) => {
@@ -2018,7 +2018,7 @@ export function EsteirasModule() {
                           </div>
                           <div className="grid gap-1">
                             <span className="text-[11px] text-muted-foreground">Mover para</span>
-                            <Select value={e.ao_concluir_etapa || "nenhuma"} onValueChange={(v) => mudar({ ao_concluir_etapa: v === "nenhuma" ? null : v })}>
+                            <Select disabled={excluiAoFim(e)} value={e.ao_concluir_etapa || "nenhuma"} onValueChange={(v) => mudar({ ao_concluir_etapa: v === "nenhuma" ? null : v })}>
                               <SelectTrigger className="h-9 bg-card">
                                 <SelectValue />
                               </SelectTrigger>
@@ -2033,9 +2033,31 @@ export function EsteirasModule() {
                             </Select>
                           </div>
                         </div>
+                        <label className="flex items-start gap-2 text-sm cursor-pointer rounded-md border border-destructive/30 bg-card px-2.5 py-2">
+                          <Switch
+                            checked={excluiAoFim(e)}
+                            onCheckedChange={(v) => mudar({ ao_concluir_tag: montarEtiquetasFim(tags, v) })}
+                            aria-label="Excluir quem terminar sem responder"
+                          />
+                          <span>
+                            <b>Excluir do Inmovya quem terminar sem responder</b>
+                            <span className="block text-xs text-muted-foreground">
+                              Em vez de mover para outra etapa, o lead é apagado do CRM (com o histórico). Não dá para desfazer. Quem respondeu nunca é apagado.
+                            </span>
+                          </span>
+                        </label>
                         <p className="text-xs text-amber-900">
-                          Chegou em <b>{nomeFinal}</b> e ficou <b>{diasEfetivos} dia(s)</b> sem resposta → vai para <b>{e.ao_concluir_etapa || "fora do funil"}</b>
-                          {tags.length ? <> + etiqueta(s) <b>{tags.join(", ")}</b></> : null} e sai da esteira. Quem for para Respondeu não entra nisso.
+                          {excluiAoFim(e) ? (
+                            <>
+                              Chegou em <b>{nomeFinal}</b> e ficou <b>{diasEfetivos} dia(s)</b> sem resposta → <b className="text-destructive">é excluído do Inmovya</b>. Quem for para Respondeu não
+                              entra nisso.
+                            </>
+                          ) : (
+                            <>
+                              Chegou em <b>{nomeFinal}</b> e ficou <b>{diasEfetivos} dia(s)</b> sem resposta → vai para <b>{e.ao_concluir_etapa || "fora do funil"}</b>
+                              {tags.length ? <> + etiqueta(s) <b>{tags.join(", ")}</b></> : null} e sai da esteira. Quem for para Respondeu não entra nisso.
+                            </>
+                          )}
                         </p>
                         {finalValida && passosValem.length < rascunho.passos.length && (
                           <p className="text-[11px] text-muted-foreground">

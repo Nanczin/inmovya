@@ -7,6 +7,7 @@ import { useLeads } from "@/context/LeadsContext";
 import { useToast } from "@/hooks/use-toast";
 import { avisar } from "@/lib/pilotoAutomatico";
 import { varrerRespostas } from "@/lib/varrerRespostas";
+import { excluirQuemTerminouSemResposta } from "@/lib/esteiras";
 
 type Resposta = { telefone: string; t: number };
 
@@ -74,7 +75,13 @@ export function RespostasWhatsApp() {
     // varredura: confere no WhatsApp Web todos os leads em esteira (pega respostas que chegaram
     // com o WhatsApp Web fechado). Ao abrir e a cada 10 minutos.
     const varrer = async () => {
+      // 1º quem respondeu sai; depois, quem terminou a esteira sem responder (e a esteira manda excluir) é apagado
       const r = await varrerRespostas();
+      excluirQuemTerminouSemResposta().then((nomes) => {
+        if (!nomes.length) return;
+        toastRef.current({ title: `${nomes.length} lead(s) terminaram a esteira sem responder e foram excluídos`, description: nomes.join(", ") });
+        refreshRef.current();
+      });
       if (r.ok && r.sairam.length) {
         const nomes = r.sairam.join(", ");
         toastRef.current({ title: `${r.sairam.length} lead(s) já tinham respondido: saíram da esteira`, description: `${nomes} foram para Respondeu.` });

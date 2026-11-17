@@ -938,9 +938,18 @@ export async function finalizarEsteirasVencidas() {
   return Number(data) || 0;
 }
 
-/** Etiquetas que a esteira coloca ao terminar (várias, separadas por vírgula no banco). */
-export const etiquetasDaEsteira = (e: { ao_concluir_tag?: string | null }) =>
+// "Excluir quem terminar sem responder": vai junto das etiquetas de fim (assim o servidor marca o lead
+// ao finalizar e o Inmovya apaga depois, mesmo que a esteira termine com o Inmovya fechado)
+export const TAG_EXCLUIR_AO_FIM = "excluir-ao-fim";
+const todasEtiquetasFim = (e: { ao_concluir_tag?: string | null }) =>
   Array.from(new Set(String(e.ao_concluir_tag || "").split(",").map((t) => t.trim()).filter(Boolean)));
+export const excluiAoFim = (e: { ao_concluir_tag?: string | null }) => todasEtiquetasFim(e).includes(TAG_EXCLUIR_AO_FIM);
+/** Monta o campo de etiquetas de fim (com ou sem a marca de excluir). */
+export const montarEtiquetasFim = (etiquetas: string[], excluir: boolean) =>
+  Array.from(new Set([...etiquetas.map((t) => t.trim()).filter((t) => t && t !== TAG_EXCLUIR_AO_FIM), ...(excluir ? [TAG_EXCLUIR_AO_FIM] : [])])).join(",") || null;
+
+/** Etiquetas que a esteira coloca ao terminar (várias, separadas por vírgula no banco). */
+export const etiquetasDaEsteira = (e: { ao_concluir_tag?: string | null }) => todasEtiquetasFim(e).filter((t) => t !== TAG_EXCLUIR_AO_FIM);
 
 // Leads marcados para fazer 2 esteiras hoje (guardado neste navegador, vale só para o dia)
 const DOIS_KEY = () => `inmovya_dois_hoje_${new Date().toLocaleDateString("pt-BR")}`;
@@ -980,6 +989,63 @@ export const ehSemWhatsapp = (err: any) => !!err?.semWhatsapp || /não tem Whats
 
 /** O WhatsApp disse que o número não existe: apaga o lead do CRM (e com isso sai da esteira).
  *  Se o banco não deixar apagar (algo ligado a ele), tira da esteira e manda para Deny List. */
+/** Apaga o lead do CRM (com o histórico). Se o banco não deixar, tira da esteira e manda para Deny List. */
+async function apagarLead(id: string) {
+  await supabase.from("lead_timeline").delete().eq("lead_id", id);
+  const { error } = await supabase.from("leads").delete().eq("id", id);
+  return !error;
+}
+
+const CHAVE_FIM_EXCLUIDOS = "inmovya_excluidos_fim_esteira";
+export const lerExcluidosFimEsteira = (): { nome: string; telefone: string; em: string }[] => {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_FIM_EXCLUIDOS) || "[]");
+  } catch {
+    return [];
+  }
+};
+let excluindoFim = false;
+/** Finaliza as esteiras vencidas e apaga quem terminou sem responder numa esteira com "excluir ao terminar". */
+export async function excluirQuemTerminouSemResposta(): Promise<string[]> {
+  if (excluindoFim) return [];
+  excluindoFim = true;
+  try {
+    await finalizarEsteirasVencidas();
+    const { data, error } = await supabase
+      .from("leads")
+      .select("id, nome, telefone, status, tags")
+      .contains("tags", [TAG_EXCLUIR_AO_FIM])
+      .is("esteira_id", null);
+    if (error || !data?.length) return [];
+    const nomes: string[] = [];
+    for (const l of data as any[]) {
+      // respondeu no meio do caminho? não apaga, só tira a marca
+      if (/^(respondeu|interessado)$/i.test(String(l.status || "").trim())) {
+        await supabase.from("leads").update({ tags: (l.tags || []).filter((t: string) => t !== TAG_EXCLUIR_AO_FIM) }).eq("id", l.id);
+        continue;
+      }
+      const ok = await apagarLead(l.id);
+      if (!ok) {
+        await supabase
+          .from("leads")
+          .update({ status: "Deny List", tags: (l.tags || []).filter((t: string) => t !== TAG_EXCLUIR_AO_FIM) })
+          .eq("id", l.id);
+      }
+      nomes.push(l.nome || l.telefone || "lead");
+      try {
+        const lista = lerExcluidosFimEsteira();
+        lista.unshift({ nome: l.nome || "", telefone: l.telefone || "", em: new Date().toISOString() });
+        localStorage.setItem(CHAVE_FIM_EXCLUIDOS, JSON.stringify(lista.slice(0, 300)));
+      } catch {
+        /* ignore */
+      }
+    }
+    return nomes;
+  } finally {
+    excluindoFim = false;
+  }
+}
+
 export async function excluirSemWhatsapp(lead: { id: string; nome?: string | null; telefone?: string | null }) {
   let como: ExcluidoSemWhats["como"] = "excluido";
   await supabase.from("lead_timeline").delete().eq("lead_id", lead.id);
