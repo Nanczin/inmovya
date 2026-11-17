@@ -478,8 +478,9 @@ export function EsteirasModule() {
   }, [filaAuto, doisHoje, liberados]);
   const selecionados = filaAuto.filter((i) => !desmarcados.has(i.lead.id) && i.telefone && estado[i.lead.id]?.s !== "enviado" && !bloqueios[i.lead.id]);
 
-  // Regra: lead no 1º passo (P1) que já recebeu contato hoje (1º contato ou esteira) passa para o dia seguinte,
-  // em vez de ficar parado como "já recebeu hoje". Continua no mesmo passo; só muda o dia.
+  // Regra: lead no 1º passo (P1/D1) que já recebeu contato hoje (1º contato, esteira ou mensagem sua no WhatsApp)
+  // pula o D1: vai para o próximo passo da esteira (D2), marcado para amanhã. Assim não recebe 2 vezes no mesmo dia
+  // e o contato de hoje conta como o D1.
   const empurrandoRef = useRef(false);
   const amanha = () => {
     const d = new Date();
@@ -490,35 +491,46 @@ export function EsteirasModule() {
   const empurrarP1ParaAmanha = async (ids: string[]) => {
     if (!ids.length) return;
     for (let i = 0; i < ids.length; i += 200) {
-      await supabase.from("leads").update({ esteira_proximo: amanha() }).in("id", ids.slice(i, i + 200)).eq("esteira_passo", 0);
+      await supabase
+        .from("leads")
+        .update({ esteira_passo: 1, esteira_proximo: amanha() })
+        .in("id", ids.slice(i, i + 200))
+        .eq("esteira_passo", 0);
     }
   };
   const ultimaConferenciaWhats = useRef(0);
   useEffect(() => {
     if (empurrandoRef.current || rodando) return;
-    const p1 = filaAuto.filter((i) => (Number((i.lead as any).esteira_passo) || 0) === 0 && !liberados.has(i.lead.id));
+    // todos os leads no 1º passo (não só os de hoje), menos quem você liberou à mão
+    const p1 = (leadsEmEsteira as any[]).filter((l) => (Number(l.esteira_passo) || 0) === 0 && !liberados.has(l.id) && !doisHoje.has(l.id));
     if (!p1.length) return;
+    // a esteira precisa ter um 2º passo para pular
+    const temD2 = (l: any) => passosDe(l.esteira_id).length > 1;
     empurrandoRef.current = true;
     (async () => {
-      // 1) pelo Inmovya: 1º contato ou esteira hoje
-      const ids = new Set(p1.filter((i) => bloqueios[i.lead.id] && !/mesmo número/.test(bloqueios[i.lead.id])).map((i) => i.lead.id));
-      // 2) pelo WhatsApp: qualquer mensagem sua hoje para o lead (mandada à mão, por outro sistema…), no máx. 1x por minuto
+      const ids = new Set<string>(
+        p1
+          .filter((l) => temD2(l) && (enviadoHoje(l.esteira_ultimo_envio) || (l.primeiro_contato_status === "enviado" && enviadoHoje(l.primeiro_contato_em))))
+          .map((l) => l.id)
+      );
+      // mensagem sua hoje no WhatsApp (à mão, por outro sistema…): confere no máx. 1x por minuto
       if (Date.now() - ultimaConferenciaWhats.current > 60000) {
         ultimaConferenciaWhats.current = Date.now();
-        const chamados = await chamadosHojeNoWhatsApp(p1.filter((i) => !ids.has(i.lead.id)).map((i) => i.telefone || ""));
-        p1.forEach((i) => {
-          if (i.telefone && chamados.has(String(i.telefone).replace(/\D/g, "").slice(-8))) ids.add(i.lead.id);
+        const resto = p1.filter((l) => temD2(l) && !ids.has(l.id));
+        const chamados = await chamadosHojeNoWhatsApp(resto.map((l) => l.telefone || ""));
+        resto.forEach((l) => {
+          if (l.telefone && chamados.has(String(l.telefone).replace(/\D/g, "").slice(-8))) ids.add(l.id);
         });
       }
       if (!ids.size) return;
       await empurrarP1ParaAmanha(Array.from(ids));
-      toast({ title: `${ids.size} lead(s) do 1º passo foram para amanhã`, description: "Já tinham recebido contato hoje." });
+      toast({ title: `${ids.size} lead(s) pularam o D1`, description: "Já tinham recebido contato hoje: vão para o D2, amanhã." });
       await refreshLeads();
     })().finally(() => {
       empurrandoRef.current = false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bloqueios, rodando, filaAuto.length]);
+  }, [leadsEmEsteira.length, rodando, passosDe]);
 
   /** Confere no banco, na hora de enviar, se o lead já recebeu hoje (outra aba, outro computador, 1º contato). */
   const jaRecebeuHojeNoBanco = async (item: ItemFila, enviadosAgora: Set<string>) => {
@@ -643,7 +655,7 @@ export function EsteirasModule() {
         // no 1º passo e já recebeu contato hoje: vai para amanhã (mesmo passo)
         if ((Number((item.lead as any).esteira_passo) || 0) === 0 && !/mesmo número/.test(motivo)) {
           await empurrarP1ParaAmanha([item.lead.id]).catch(() => {});
-          setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: `${motivo}: P1 passou para amanhã` } }));
+          setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: `${motivo}: pulou o D1, vai para o D2 amanhã` } }));
         } else setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: `não enviado: ${motivo}` } }));
         continue; // sem esperar o intervalo: nada foi enviado
       }
