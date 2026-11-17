@@ -1,3 +1,4 @@
+import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1390,6 +1391,8 @@ export function EsteirasModule() {
                   </div>
                 )}
               </div>
+
+              <EntradaAutomatica esteiras={esteiras} />
 
               {verAgendados && (
                 <div className="rounded-2xl border bg-card p-3 space-y-1 max-h-96 overflow-y-auto">
