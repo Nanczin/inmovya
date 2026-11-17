@@ -113,6 +113,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Loader2,
+  Zap,
   ExternalLink,
   Clock,
   Workflow,
@@ -279,6 +280,28 @@ export function EsteirasModule() {
   const proximosDias = agendados.length;
   const [verAgendados, setVerAgendados] = useState(false);
 
+  // Forçar hoje: quem está agendado para outro dia (na esteira escolhida, ou em todas) vai para a fila de hoje
+  const [forcando, setForcando] = useState(false);
+  const forcarHoje = async (esteiraId: string) => {
+    const alvo = agendados.filter((a) => esteiraId === "todas" || a.esteira.id === esteiraId);
+    if (!alvo.length) return;
+    setForcando(true);
+    const ids = alvo.map((a) => a.lead.id);
+    let erro = "";
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error } = await supabase.from("leads").update({ esteira_proximo: new Date().toISOString() }).in("id", ids.slice(i, i + 200));
+      if (error) erro = error.message;
+    }
+    await refreshLeads();
+    setForcando(false);
+    if (erro) toast({ title: "Não consegui trazer todos para hoje", description: erro, variant: "destructive" });
+    else
+      toast({
+        title: `${ids.length} lead(s) trazidos para hoje`,
+        description: "Quem já recebeu mensagem hoje continua fora para não repetir (dá para liberar um a um na lista).",
+      });
+  };
+
   const [desmarcados, setDesmarcados] = useState<Set<string>>(new Set());
   // a rodada vive fora da tela (lib/execucaoEsteira): trocar de aba não perde o andamento nem o botão Parar
   const execucao = useSyncExternalStore(assinarExecucao, lerExecucao);
@@ -336,6 +359,8 @@ export function EsteirasModule() {
     setFiltroEsteiraState(v);
     setFiltroPasso("todos");
   };
+  const setFiltroEsteiraRef = useRef(setFiltroEsteira);
+  setFiltroEsteiraRef.current = setFiltroEsteira;
   // 2ª rodada: leads que já receberam hoje e cujo próximo passo ficou para outro dia
   const inicioDeHoje = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const segundaRodada = agendados.filter(
@@ -733,6 +758,8 @@ export function EsteirasModule() {
         return;
       }
       await refreshLeads();
+      // o piloto envia TODAS as esteiras (o filtro "executar só uma" é para o envio manual)
+      setFiltroEsteiraRef.current("todas");
       setTimeout(() => rodarRef.current({ auto: true }), 1500); // deixa a fila atualizar com os leads novos
     };
     const t = setInterval(checar, 30000);
@@ -1258,12 +1285,58 @@ export function EsteirasModule() {
                   </Button>
                 </div>
               )}
+              {esteiras.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground mr-1">Executar:</span>
+                  <button
+                    type="button"
+                    disabled={rodando}
+                    onClick={() => setFiltroEsteira("todas")}
+                    className={`text-xs font-semibold rounded-full px-3 py-1.5 transition-colors ${filtroEsteira === "todas" ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}
+                  >
+                    Todas as esteiras ({Object.values(contagemPorEsteira).reduce((a: number, b: number) => a + b, 0)})
+                  </button>
+                  {esteiras.map((e) => {
+                    const ag = agendados.filter((a) => a.esteira.id === e.id).length;
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        disabled={rodando}
+                        onClick={() => setFiltroEsteira(e.id)}
+                        title={`${contagemPorEsteira[e.id] || 0} para hoje · ${ag} agendado(s) para outros dias`}
+                        className={`text-xs font-semibold rounded-full px-3 py-1.5 transition-colors ${filtroEsteira === e.id ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}
+                      >
+                        {e.nome} ({contagemPorEsteira[e.id] || 0})
+                      </button>
+                    );
+                  })}
+                  {(() => {
+                    const n = agendados.filter((a) => filtroEsteira === "todas" || a.esteira.id === filtroEsteira).length;
+                    if (!n) return null;
+                    return (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 ml-auto"
+                        disabled={rodando || forcando}
+                        onClick={() => forcarHoje(filtroEsteira)}
+                        title="Quem está agendado para outro dia nesta esteira passa a receber hoje (o passo em que está)"
+                      >
+                        {forcando ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Zap className="w-4 h-4 mr-1" />}
+                        Forçar hoje ({n})
+                      </Button>
+                    );
+                  })()}
+                </div>
+              )}
               <div className="rounded-2xl border bg-card p-4 shadow-card flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">
                     <span className="text-3xl font-extrabold tabular-nums tracking-tight">{selecionados.length}</span>
                     <span className="text-sm text-muted-foreground">
                       de {filaAuto.length} mensage{filaAuto.length === 1 ? "m" : "ns"} prontas para hoje
+                      {filtroEsteira !== "todas" && <> · só <b className="text-foreground">{esteiras.find((e) => e.id === filtroEsteira)?.nome}</b></>}
                     </span>
                     {Object.keys(bloqueios).length > 0 && (
                       <span className="text-xs font-semibold text-warning" title="Já receberam mensagem hoje (esteira ou 1º contato) ou têm o mesmo número de outro lead">
@@ -1448,33 +1521,6 @@ export function EsteirasModule() {
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {mostrarLista && fila.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    disabled={rodando}
-                    onClick={() => setFiltroEsteira("todas")}
-                    className={`text-xs font-semibold rounded-full px-3 py-1.5 transition-colors ${filtroEsteira === "todas" ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}
-                  >
-                    Todas ({Object.values(contagemPorEsteira).reduce((a: number, b: number) => a + b, 0)})
-                  </button>
-                  {esteiras
-                    .filter((e) => fila.some((i) => i.esteira.id === e.id))
-                    .map((e) => (
-                      <button
-                        key={e.id}
-                        type="button"
-                        disabled={rodando}
-                        onClick={() => setFiltroEsteira(e.id)}
-                        className={`text-xs font-semibold rounded-full px-3 py-1.5 transition-colors ${filtroEsteira === e.id ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}
-                      >
-                        {e.nome} ({contagemPorEsteira[e.id] || 0})
-                      </button>
-                    ))}
-
                 </div>
               )}
 
