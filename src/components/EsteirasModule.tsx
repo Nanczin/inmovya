@@ -428,16 +428,27 @@ export function EsteirasModule() {
   }, [fila, estado]);
   const filaDaEsteira = filtroEsteira === "todas" ? fila : fila.filter((i) => i.esteira.id === filtroEsteira);
   // momentos (passos) da esteira escolhida que têm envio hoje, na ordem da esteira
+  // posição do passo dentro da esteira (0 = D1, 1 = D2…)
+  const posicaoDoPasso = (esteiraId: string, passoId: string) => passosDe(esteiraId).findIndex((p) => p.id === passoId);
+  // dias (passos) para escolher: da esteira escolhida (todos os passos, mesmo sem envio hoje)
+  // ou, em "Todas as esteiras", por posição (1º dia, 2º dia…)
   const momentosDaEsteira = useMemo(() => {
-    if (filtroEsteira === "todas") return [] as { passo: EsteiraPasso; n: number }[];
-    const m = new Map<string, { passo: EsteiraPasso; n: number }>();
-    filaDaEsteira.forEach((i) => {
-      const atual = m.get(i.passo.id) || { passo: i.passo, n: 0 };
-      if (estado[i.lead.id]?.s !== "enviado") atual.n++;
-      m.set(i.passo.id, atual);
-    });
-    return Array.from(m.values()).sort((a, b) => a.passo.ordem - b.passo.ordem);
-  }, [filaDaEsteira, filtroEsteira, estado]);
+    const pendente = (i: ItemFila) => estado[i.lead.id]?.s !== "enviado";
+    if (filtroEsteira === "todas") {
+      const max = Math.max(0, ...esteiras.map((e) => passosDe(e.id).length));
+      return Array.from({ length: max }, (_, k) => ({
+        id: `idx:${k}`,
+        nome: `D${k + 1}`,
+        n: fila.filter((i) => pendente(i) && posicaoDoPasso(i.esteira.id, i.passo.id) === k).length,
+      }));
+    }
+    return passosDe(filtroEsteira).map((p, k) => ({
+      id: p.id,
+      nome: p.titulo || `D${k + 1}`,
+      n: filaDaEsteira.filter((i) => pendente(i) && i.passo.id === p.id).length,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fila, filaDaEsteira, filtroEsteira, estado, esteiras, passosDe]);
   // Vindo do Negócios ("Executar esteira" de uma coluna): mostra só os leads daquela coluna
   const [filtroColuna, setFiltroColuna] = useState<string | null>(() => {
     try {
@@ -449,7 +460,12 @@ export function EsteirasModule() {
     }
   });
   const colunaAlvo = filtroColuna ? getStageForStatus(filtroColuna) : null;
-  const filaPorPasso = filtroPasso === "todos" ? filaDaEsteira : filaDaEsteira.filter((i) => i.passo.id === filtroPasso);
+  const filaPorPasso =
+    filtroPasso === "todos"
+      ? filaDaEsteira
+      : filtroPasso.startsWith("idx:")
+        ? filaDaEsteira.filter((i) => posicaoDoPasso(i.esteira.id, i.passo.id) === Number(filtroPasso.slice(4)))
+        : filaDaEsteira.filter((i) => i.passo.id === filtroPasso);
   const filaVisivel = colunaAlvo ? filaPorPasso.filter((i) => getStageForStatus(i.lead.status)?.id === colunaAlvo.id) : filaPorPasso;
   // "Só colar" do Scale agora também entra no envio: a mensagem pode ser personalizada aqui antes de rodar
   const filaAuto = filaVisivel;
@@ -1521,6 +1537,31 @@ export function EsteirasModule() {
                   })()}
                 </div>
               )}
+              {momentosDaEsteira.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5 pl-3 border-l-2 border-primary/30">
+                  <span className="text-xs font-semibold text-muted-foreground mr-1">Dia:</span>
+                  <button
+                    type="button"
+                    disabled={rodando}
+                    onClick={() => setFiltroPasso("todos")}
+                    className={`text-[11px] font-semibold rounded-full px-2.5 py-1 ${filtroPasso === "todos" ? "bg-primary/15 text-primary" : "bg-card border hover:bg-muted"}`}
+                  >
+                    Todos os dias ({momentosDaEsteira.reduce((a, m) => a + m.n, 0)})
+                  </button>
+                  {momentosDaEsteira.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      disabled={rodando}
+                      onClick={() => setFiltroPasso(m.id)}
+                      className={`text-[11px] font-semibold rounded-full px-2.5 py-1 ${filtroPasso === m.id ? "bg-primary/15 text-primary" : "bg-card border hover:bg-muted"} ${m.n === 0 ? "opacity-60" : ""}`}
+                    >
+                      {m.nome} ({m.n})
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="rounded-2xl border bg-card p-4 shadow-card flex flex-col lg:flex-row lg:items-center gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">
@@ -1528,6 +1569,7 @@ export function EsteirasModule() {
                     <span className="text-sm text-muted-foreground">
                       de {filaAuto.length} mensage{filaAuto.length === 1 ? "m" : "ns"} prontas para hoje
                       {filtroEsteira !== "todas" && <> · só <b className="text-foreground">{esteiras.find((e) => e.id === filtroEsteira)?.nome}</b></>}
+                      {filtroPasso !== "todos" && <> · só <b className="text-foreground">{momentosDaEsteira.find((m) => m.id === filtroPasso)?.nome}</b></>}
                     </span>
                     {Object.keys(bloqueios).length > 0 && (
                       <span className="text-xs font-semibold text-warning" title="Já receberam mensagem hoje (esteira ou 1º contato) ou têm o mesmo número de outro lead">
@@ -1737,30 +1779,6 @@ export function EsteirasModule() {
                         </Button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {mostrarLista && momentosDaEsteira.length > 1 && (
-                <div className="flex flex-wrap gap-1.5 pl-3 border-l-2 border-primary/30">
-                  <button
-                    type="button"
-                    disabled={rodando}
-                    onClick={() => setFiltroPasso("todos")}
-                    className={`text-[11px] font-semibold rounded-full px-2.5 py-1 ${filtroPasso === "todos" ? "bg-primary/15 text-primary" : "bg-card border hover:bg-muted"}`}
-                  >
-                    Todos os momentos ({momentosDaEsteira.reduce((a, m) => a + m.n, 0)})
-                  </button>
-                  {momentosDaEsteira.map(({ passo, n }) => (
-                    <button
-                      key={passo.id}
-                      type="button"
-                      disabled={rodando}
-                      onClick={() => setFiltroPasso(passo.id)}
-                      className={`text-[11px] font-semibold rounded-full px-2.5 py-1 ${filtroPasso === passo.id ? "bg-primary/15 text-primary" : "bg-card border hover:bg-muted"}`}
-                    >
-                      {passo.titulo || `Passo ${passo.ordem + 1}`} ({n})
-                    </button>
                   ))}
                 </div>
               )}
