@@ -1346,7 +1346,7 @@ window.IS.Disparo = (() => {
     setInterval(botao, 5000); // o WhatsApp às vezes refaz o <body>
   }
 
-  return { iniciar: iniciarModulo, _st: st, _lerPlanilha: lerPlanilha, _montarTexto: montarTexto, _combinacoes: combinacoes, _telInternacional: telInternacional };
+  return { iniciar: iniciarModulo, _st: st, _lerTabela: lerTabela, _analisarTabela: analisarTabela, _montarTexto: montarTexto, _combinacoes: combinacoes, _telInternacional: telInternacional };
 })();
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => window.IS.Disparo.iniciar());
