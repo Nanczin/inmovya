@@ -213,6 +213,9 @@ window.IS.Disparo = (() => {
     return sorteado
       .replace(/\{\{\s*nome\s*\}\}/gi, nome)
       .replace(/\{\{\s*nome_completo\s*\}\}/gi, String(contato.nome || '').trim() || nome)
+      .replace(/\{\{\s*telefone\s*\}\}/gi, telBonito(contato.telefone || ''))
+      // colunas da planilha: {{empreendimento}}, {{cidade}}… (em branco se a pessoa não tiver)
+      .replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (m, k) => (k.toLowerCase() === 'saudacao' ? m : String(contato.campos?.[k.toLowerCase()] ?? '').trim()))
       .replace(/\{\{\s*saudacao\s*\}\}/gi, (m, pos, tudo) => (/^[\s\u0002\u0003]*$|[.!?\n][\s\u0002\u0003]*$/.test(tudo.slice(0, pos)) ? saudacao() : saudacao().toLowerCase()))
       .replace(/\s+([,.!?])/g, '$1') // "Oi , tudo bem" quando não tem nome
       .replace(/^[,\s]+/, '');
@@ -304,7 +307,7 @@ window.IS.Disparo = (() => {
       if (!tel) { semNumero++; continue; }
       if (vistos.has(tel)) continue;
       vistos.add(tel);
-      out.push({ nome: String(c.nome || '').trim(), telefone: tel });
+      out.push({ nome: String(c.nome || '').trim(), telefone: tel, ...(c.campos ? { campos: c.campos } : {}) });
     }
     return { contatos: out, semNumero };
   }
@@ -332,26 +335,104 @@ window.IS.Disparo = (() => {
     }
   }
 
-  // planilha: uma pessoa por linha — "Nome;Telefone", "Telefone,Nome", só o telefone, ou CSV com cabeçalho
-  function lerPlanilha(texto) {
-    const linhas = String(texto || '').split(/\r?\n/);
-    const lista = [];
-    for (const linha of linhas) {
-      if (!linha.trim()) continue;
-      const partes = linha.split(/[;\t,|]/).map(p => p.replace(/^"|"$/g, '').trim()).filter(Boolean);
-      const idx = partes.findIndex(p => digitos(p).length >= 10 && digitos(p).length <= 15 && /^[\d\s()+.-]+$/.test(p));
-      if (idx < 0) continue; // cabeçalho ou linha sem telefone
-      const nome = partes.filter((p, i) => i !== idx && !/@/.test(p) && !/^\d+$/.test(p))[0] || '';
-      lista.push({ nome, telefone: partes[idx] });
+  // ---------- planilha: lê as colunas, acha telefone e nome e transforma o resto em variáveis ----------
+  const pareceTelefone = v => { const d = digitos(v); return d.length >= 10 && d.length <= 15 && /^[\d\s()+.\-]+$/.test(String(v).trim()); };
+  const slug = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  /** Texto (colado ou do arquivo) → linhas e colunas. Entende aspas do CSV e escolhe o separador (TAB ; , |). */
+  function lerTabela(texto) {
+    const t = String(texto || '').replace(/\r\n?/g, '\n');
+    const amostra = t.split('\n').slice(0, 20).join('\n');
+    const conta = c => (amostra.match(new RegExp(c === '|' ? '\\|' : c, 'g')) || []).length;
+    const sep = ['\t', ';', ',', '|'].map(c => [c, conta(c)]).sort((a, b) => b[1] - a[1])[0];
+    const delim = sep && sep[1] > 0 ? sep[0] : '\t';
+    const linhas = [];
+    let linha = [], campo = '', aspas = false;
+    for (let i = 0; i < t.length; i++) {
+      const ch = t[i];
+      if (aspas) {
+        if (ch === '"' && t[i + 1] === '"') { campo += '"'; i++; }
+        else if (ch === '"') aspas = false;
+        else campo += ch;
+      } else if (ch === '"' && campo === '') aspas = true;
+      else if (ch === delim) { linha.push(campo.trim()); campo = ''; }
+      else if (ch === '\n') { linha.push(campo.trim()); linhas.push(linha); linha = []; campo = ''; }
+      else campo += ch;
     }
-    return lista;
+    if (campo || linha.length) { linha.push(campo.trim()); linhas.push(linha); }
+    return linhas.filter(l => l.some(c => c));
   }
-  async function carregarDaPlanilha() {
-    const bruto = lerPlanilha(st.textoPlanilha);
+  /** Descobre cabeçalho, coluna do telefone, coluna do nome e as variáveis das outras colunas. */
+  function analisarTabela(linhas) {
+    const nCol = Math.max(0, ...linhas.map(l => l.length));
+    const primeira = linhas[0] || [];
+    const temCabecalho = primeira.length > 0 && !primeira.some(pareceTelefone) && primeira.some(c => /[a-zà-ú]/i.test(c));
+    const dados = temCabecalho ? linhas.slice(1) : linhas;
+    const titulos = Array.from({ length: nCol }, (_, k) => (temCabecalho ? primeira[k] || '' : '') || `Coluna ${k + 1}`);
+    const proporcao = (k, teste) => { const v = dados.map(l => l[k] || '').filter(Boolean); return v.length ? v.filter(teste).length / v.length : 0; };
+    let colTel = titulos.findIndex(t => /tel|fone|cel|whats|phone|n[uú]mero/i.test(t) && proporcao(titulos.indexOf(t), pareceTelefone) > 0.3);
+    if (colTel < 0) {
+      let melhor = -1, nota = 0;
+      for (let k = 0; k < nCol; k++) { const p = proporcao(k, pareceTelefone); if (p > nota) { nota = p; melhor = k; } }
+      colTel = nota >= 0.3 ? melhor : -1;
+    }
+    const ehTexto = v => /[a-zà-ú]/i.test(v) && !/@/.test(v);
+    let colNome = titulos.findIndex((t, k) => k !== colTel && /^(nome|name|cliente|lead|contato|primeiro nome)/i.test(t.trim()));
+    if (colNome < 0) colNome = titulos.findIndex((t, k) => k !== colTel && proporcao(k, ehTexto) > 0.6);
+    const usadas = new Set();
+    const colunas = titulos.map((titulo, k) => {
+      let chave = k === colNome ? 'nome' : k === colTel ? 'telefone' : slug(titulo) || `coluna_${k + 1}`;
+      if (['saudacao', 'nome_completo'].includes(chave)) chave = `${chave}_planilha`;
+      while (usadas.has(chave)) chave += '_2';
+      usadas.add(chave);
+      return { idx: k, titulo, chave };
+    });
+    return { temCabecalho, colTel, colNome, colunas, dados };
+  }
+  function analisarColunas(a) {
+    const usadas = new Set();
+    const colunas = a.colunas.map(c => {
+      let chave = c.idx === a.colNome ? 'nome' : c.idx === a.colTel ? 'telefone' : slug(c.titulo) || `coluna_${c.idx + 1}`;
+      if (['nome', 'telefone', 'saudacao', 'nome_completo'].includes(chave) && c.idx !== a.colNome && c.idx !== a.colTel) chave = `${chave}_planilha`;
+      while (usadas.has(chave)) chave += '_2';
+      usadas.add(chave);
+      return { ...c, chave };
+    });
+    return { colunas };
+  }
+  function contatosDaTabela(a) {
+    if (a.colTel < 0) return [];
+    return a.dados.map(l => {
+      const campos = {};
+      a.colunas.forEach(c => { if (c.idx !== a.colTel && c.idx !== a.colNome) campos[c.chave] = l[c.idx] || ''; });
+      return { nome: a.colNome >= 0 ? l[a.colNome] || '' : '', telefone: l[a.colTel] || '', campos };
+    }).filter(c => pareceTelefone(c.telefone));
+  }
+  // variáveis que a lista carregada tem (para mostrar e para avisar das que não existem)
+  const variaveisDaLista = () => {
+    const ks = new Set();
+    st.contatos.forEach(c => Object.keys(c.campos || {}).forEach(k => ks.add(k)));
+    return Array.from(ks);
+  };
+  const VARIAVEIS_FIXAS = ['nome', 'nome_completo', 'saudacao', 'telefone'];
+  const variaveisDesconhecidas = texto => {
+    const conhecidas = new Set([...VARIAVEIS_FIXAS, ...variaveisDaLista()]);
+    return Array.from(new Set((String(texto || '').match(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi) || []).map(m => m.replace(/[{}\s]/g, '').toLowerCase()))).filter(k => !conhecidas.has(k));
+  };
+
+  async function carregarDaPlanilha(manterMapa = false) {
+    const analise = analisarTabela(lerTabela(st.textoPlanilha));
+    // você pode trocar qual coluna é o telefone/nome; aí refaz com a sua escolha
+    if (manterMapa && st.mapa) {
+      analise.colTel = st.mapa.colTel;
+      analise.colNome = st.mapa.colNome;
+      Object.assign(analise, analisarColunas(analise));
+    }
+    st.mapa = { colTel: analise.colTel, colNome: analise.colNome, colunas: analise.colunas, temCabecalho: analise.temCabecalho };
+    const bruto = contatosDaTabela(analise);
     const { contatos, semNumero } = deduplicar(bruto);
     st.contatos = contatos;
     await novaLista();
-    st.erro = contatos.length ? '' : 'Não achei nenhum telefone. Use uma pessoa por linha: Nome;Telefone (ou só o telefone).';
+    st.erro = contatos.length ? '' : analise.colTel < 0 ? 'Não achei a coluna do telefone. Confira o arquivo ou escolha a coluna abaixo.' : 'Não achei nenhum telefone válido na coluna escolhida.';
     st.aviso = contatos.length ? `${contatos.length} contato(s) da planilha.${semNumero ? ` ${semNumero} número(s) inválido(s) ficaram de fora.` : ''}` : '';
     render();
   }
@@ -823,6 +904,10 @@ window.IS.Disparo = (() => {
       #is-dsp .dsp-ok{padding:8px 10px;border-radius:8px;background:#e8f6ee;color:#0a6b3a;font-size:12px}
       #is-dsp .dsp-erro{padding:8px 10px;border-radius:8px;background:#fdecee;color:#a8212f;font-size:12px}
       #is-dsp .dsp-alerta{padding:8px 10px;border-radius:8px;background:#fff7e6;color:#7a4b00;font-size:12px}
+      #is-dsp .dsp-mapa{border:1px dashed #c7d2cc;border-radius:8px;padding:8px;background:#f7faf8}
+      #is-dsp .dsp-mapa select{font-size:12px;padding:2px 4px;margin-left:4px;max-width:150px}
+      #is-dsp .dsp-var{font-size:11px;border:1px solid #c7d2cc;background:#fff;border-radius:999px;padding:2px 8px;cursor:pointer;font-family:monospace}
+      #is-dsp .dsp-var:hover{background:#e7f5ee}
       #is-dsp mark{background:#ffe08a;color:#111b21;border-radius:3px;padding:0 2px}
       #is-dsp .dsp-enviado summary{display:flex;gap:6px;align-items:center;cursor:pointer;list-style:none}
       #is-dsp .dsp-enviado summary::-webkit-details-marker{display:none}
@@ -926,6 +1011,14 @@ window.IS.Disparo = (() => {
           <button type="button" class="dsp-btn dsp-sec2" data-csv>Abrir arquivo</button></div>
           <div class="dsp-mini">Abre Excel (.xlsx), LibreOffice/Google Planilhas (.ods), CSV, TXT, contatos do celular (.vcf) e .json. Ou copie as colunas Nome e Telefone e cole aqui.</div>
         `}
+        ${st.fonte === 'planilha' && st.mapa && st.mapa.colunas.length ? `<div class="dsp-mapa">
+          <div class="dsp-mini" style="margin-bottom:4px"><b>Colunas encontradas</b>${st.mapa.temCabecalho ? '' : ' (sem cabeçalho)'} — confira:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+            <label class="dsp-mini" style="color:inherit">📞 Telefone <select data-mapa="colTel">${st.mapa.colunas.map(c => `<option value="${c.idx}" ${c.idx === st.mapa.colTel ? 'selected' : ''}>${esc(c.titulo)}</option>`).join('')}</select></label>
+            <label class="dsp-mini" style="color:inherit">👤 Nome <select data-mapa="colNome"><option value="-1">(sem nome)</option>${st.mapa.colunas.map(c => `<option value="${c.idx}" ${c.idx === st.mapa.colNome ? 'selected' : ''}>${esc(c.titulo)}</option>`).join('')}</select></label>
+          </div>
+          ${st.mapa.colunas.filter(c => c.idx !== st.mapa.colTel && c.idx !== st.mapa.colNome).length ? `<div class="dsp-mini">Outras colunas viram variáveis para a mensagem: ${st.mapa.colunas.filter(c => c.idx !== st.mapa.colTel && c.idx !== st.mapa.colNome).map(c => `${esc(c.titulo)} → <code>{{${esc(c.chave)}}}</code>`).join(' · ')}</div>` : ''}
+        </div>` : ''}
         ${st.contatos.length ? `<div class="dsp-mini"><b>${st.contatos.length}</b> na lista: ${st.contatos.slice(0, 4).map(c => esc(c.nome || telBonito(c.telefone))).join(', ')}${st.contatos.length > 4 ? '…' : ''}</div>` : ''}
         ${(() => {
           const rep = jaReceberam();
@@ -947,6 +1040,8 @@ window.IS.Disparo = (() => {
         <div class="dsp-tit"><span class="dsp-num">2</span> Mensagem</div>
         <textarea id="dsp-msg" rows="6" placeholder="{Oi|Olá|Oii} {{nome}}, {{saudacao}}! Tudo bem?&#10;===&#10;Separei uma oportunidade que combina com você…">${esc(st.mensagem)}</textarea>
         <div class="dsp-mini">{{nome}} = primeiro nome · {{saudacao}} = Bom dia/Boa tarde/Boa noite · {Oi|Olá} = cada um recebe uma opção · uma linha só com === separa em várias mensagens</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span class="dsp-mini">Inserir:</span>${[...VARIAVEIS_FIXAS, ...variaveisDaLista()].map(k => `<button type="button" class="dsp-var" data-inserir-var="${esc(k)}">{{${esc(k)}}}</button>`).join('')}</div>
+        ${(() => { const d = variaveisDesconhecidas(st.mensagem + ' ' + st.anexos.map(a => a.legendaTexto || '').join(' ')); return d.length ? `<div class="dsp-alerta">A lista não tem ${d.map(k => `<code>{{${esc(k)}}}</code>`).join(', ')}: vai sair em branco. Confira o nome da coluna.</div>` : ''; })()}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <button type="button" class="dsp-btn dsp-sec2" data-gerar-spin title="Coloca opções {a|b|c} nas palavras que têm sinônimo">✨ Gerar variações (spintax)</button>
           ${st.textoAntesSpin != null ? '<button type="button" class="dsp-btn dsp-sec2" data-desfazer-spin>↩ Desfazer</button>' : ''}
@@ -1124,6 +1219,10 @@ window.IS.Disparo = (() => {
   function aoMudar(ev) {
     const el = ev.target;
     if (el.dataset.et) { st.marcadas[el.dataset.et] = el.checked; return; }
+    if (el.dataset.mapa && st.mapa) {
+      st.mapa[el.dataset.mapa] = Number(el.value);
+      return carregarDaPlanilha(true);
+    }
     if (el.dataset.repetir) { st.repetir = el.dataset.repetir; st.erro = ''; return redesenhar(); }
     if (el.dataset.tempo) {
       st.cfg.tempoAuto = el.dataset.tempo === 'auto';
@@ -1159,6 +1258,17 @@ window.IS.Disparo = (() => {
     if ('atualizarEt' in d) { st.etiquetas = undefined; redesenhar(); return listarEtiquetas(); }
     if ('carregarEt' in d) return carregarDasEtiquetas();
     if ('carregarPl' in d) return carregarDaPlanilha();
+    if (d.inserirVar) {
+      const ta = document.getElementById('is-dsp')?.querySelector('#dsp-msg');
+      const tag = `{{${d.inserirVar}}}`;
+      if (ta) {
+        const ini = ta.selectionStart ?? st.mensagem.length;
+        const fim = ta.selectionEnd ?? ini;
+        st.mensagem = st.mensagem.slice(0, ini) + tag + st.mensagem.slice(fim);
+      } else st.mensagem += tag;
+      st.previa = '';
+      return redesenhar();
+    }
     if ('csv' in d) return lerCsv();
     if ('anexar' in d) return escolherAnexos();
     if (d.tirarAnexo) { st.anexos = st.anexos.filter(a => a.id !== d.tirarAnexo); return redesenhar(); }
