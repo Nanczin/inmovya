@@ -386,13 +386,18 @@ window.IS.Disparo = (() => {
   function lerCsv() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.csv,.txt,text/csv,text/plain';
+    input.accept = '.xlsx,.xlsm,.xls,.ods,.csv,.tsv,.txt,.vcf,.json,text/csv,text/plain,text/vcard,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.oasis.opendocument.spreadsheet';
     input.style.display = 'none';
     input.addEventListener('change', async () => {
       const f = input.files && input.files[0];
       input.remove();
       if (!f) return;
-      st.textoPlanilha = await f.text();
+      try {
+        st.textoPlanilha = window.IS?.lerArquivoContatos ? await window.IS.lerArquivoContatos(f) : await f.text();
+      } catch (e) {
+        st.erro = `Não consegui ler ${f.name}: ${e.message || e}`;
+        return render();
+      }
       carregarDaPlanilha();
     });
     document.body.appendChild(input);
@@ -918,8 +923,8 @@ window.IS.Disparo = (() => {
         ` : `
           <textarea id="dsp-planilha" rows="5" placeholder="Uma pessoa por linha:&#10;Maria Silva;11999998888&#10;João;(11) 98888-7777&#10;ou só o telefone">${esc(st.textoPlanilha)}</textarea>
           <div style="display:flex;gap:6px"><button type="button" class="dsp-btn dsp-pri" data-carregar-pl style="flex:1">Usar esta lista</button>
-          <button type="button" class="dsp-btn dsp-sec2" data-csv>Abrir CSV</button></div>
-          <div class="dsp-mini">Do Excel/Google Planilhas: copie as colunas Nome e Telefone e cole aqui, ou salve como CSV.</div>
+          <button type="button" class="dsp-btn dsp-sec2" data-csv>Abrir arquivo</button></div>
+          <div class="dsp-mini">Abre Excel (.xlsx), LibreOffice/Google Planilhas (.ods), CSV, TXT, contatos do celular (.vcf) e .json. Ou copie as colunas Nome e Telefone e cole aqui.</div>
         `}
         ${st.contatos.length ? `<div class="dsp-mini"><b>${st.contatos.length}</b> na lista: ${st.contatos.slice(0, 4).map(c => esc(c.nome || telBonito(c.telefone))).join(', ')}${st.contatos.length > 4 ? '…' : ''}</div>` : ''}
         ${(() => {
