@@ -719,8 +719,8 @@ window.IS.Disparo = (() => {
       return Number.isFinite(x) ? Math.min(max, Math.max(min, Math.round(x))) : pad;
     };
     const out = {
-      intervaloMin: n(c.intervaloMin, 20, 3600, CFG_PADRAO.intervaloMin),
-      intervaloMax: n(c.intervaloMax, 20, 3600, CFG_PADRAO.intervaloMax),
+      intervaloMin: n(c.intervaloMin, 120, 3600, CFG_PADRAO.intervaloMin), // mínimo 2 min
+      intervaloMax: n(c.intervaloMax, 120, 3600, CFG_PADRAO.intervaloMax),
       lote: n(c.lote, 0, 500, CFG_PADRAO.lote),
       pausaLote: n(c.pausaLote, 1, 600, CFG_PADRAO.pausaLote),
       limiteDia: n(c.limiteDia, 1, 1000, CFG_PADRAO.limiteDia),
@@ -973,20 +973,20 @@ window.IS.Disparo = (() => {
 
       <div class="dsp-sec">
         <div class="dsp-tit"><span class="dsp-num">4</span> Proteção contra bloqueio</div>
-        <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit;margin-bottom:6px"><input type="checkbox" data-cfg-bool="tempoAuto" ${auto ? 'checked' : ''} style="width:auto"> <span><b>⏱️ Tempo automático (recomendado)</b> — o sistema sorteia sozinho o tempo entre envios, quantos manda antes de pausar e o tamanho da pausa</span></label>
-        ${auto ? `<div class="dsp-ok">Entre ${TEMPO_AUTO.min / 60} e ${Math.round(TEMPO_AUTO.max / 60 * 10) / 10} min entre um envio e outro (às vezes um pouco mais) · pausa de ${TEMPO_AUTO.pausaMin} a ${TEMPO_AUTO.pausaMax} min a cada ${TEMPO_AUTO.loteMin}–${TEMPO_AUTO.loteMax} envios. Nunca repete o mesmo ritmo.</div>` : ''}
-        ${auto ? `<div class="dsp-mini">Também respeita: até ${cfg.limiteDia} envios por dia · das ${esc(cfg.horaIni)} às ${esc(cfg.horaFim)}. Para mudar, desmarque o tempo automático.</div>` : `
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px">
+          <label class="dsp-mini" style="display:flex;align-items:flex-start;gap:6px;color:inherit"><input type="radio" name="dsp-tempo" data-tempo="auto" ${auto ? 'checked' : ''} style="width:auto;margin-top:2px"> <span><b>⏱️ Automático (recomendado)</b> — sorteia de 2 a 4,3 min entre um envio e outro (às vezes um pouco mais) e faz uma pausa de ${TEMPO_AUTO.pausaMin} a ${TEMPO_AUTO.pausaMax} min a cada ${TEMPO_AUTO.loteMin}–${TEMPO_AUTO.loteMax} envios</span></label>
+          <label class="dsp-mini" style="display:flex;align-items:center;gap:6px;color:inherit;flex-wrap:wrap"><input type="radio" name="dsp-tempo" data-tempo="fixo" ${!auto ? 'checked' : ''} style="width:auto"> <b>Definir o tempo:</b> entre
+            <input type="number" min="2" step="0.5" data-cfg-min="intervaloMin" value="${Math.round(cfg.intervaloMin / 6) / 10}" style="width:64px" ${auto ? 'disabled' : ''}> e
+            <input type="number" min="2" step="0.5" data-cfg-min="intervaloMax" value="${Math.round(cfg.intervaloMax / 6) / 10}" style="width:64px" ${auto ? 'disabled' : ''}> minutos</label>
+        </div>
+        ${auto ? '' : `<div class="dsp-mini">Os dois números iguais = tempo exato. Mínimo de 2 min para não arriscar bloqueio.</div>`}
         <div class="dsp-grade">
-          <label>Intervalo mínimo (segundos)<input type="number" min="20" data-cfg="intervaloMin" value="${cfg.intervaloMin}"></label>
-          <label>Intervalo máximo (segundos)<input type="number" min="20" data-cfg="intervaloMax" value="${cfg.intervaloMax}"></label>
-          <label>Pausar a cada (envios)<input type="number" min="0" data-cfg="lote" value="${cfg.lote}"></label>
-          <label>Pausa de (minutos)<input type="number" min="1" data-cfg="pausaLote" value="${cfg.pausaLote}"></label>
+          ${auto ? '' : `<label>Pausar a cada (envios, 0 = sem pausa)<input type="number" min="0" data-cfg="lote" value="${cfg.lote}"></label>
+          <label>Pausa de (minutos)<input type="number" min="1" data-cfg="pausaLote" value="${cfg.pausaLote}"></label>`}
           <label>Limite por dia<input type="number" min="1" data-cfg="limiteDia" value="${cfg.limiteDia}"></label>
           <label>Enviar a partir de<input type="time" data-cfg="horaIni" value="${esc(cfg.horaIni)}"></label>
           <label>Até<input type="time" data-cfg="horaFim" value="${esc(cfg.horaFim)}"></label>
         </div>
-        `}
-        ${!auto && cfg.intervaloMin < 60 ? '<div class="dsp-alerta">Intervalo abaixo de 1 minuto aumenta muito o risco de bloqueio.</div>' : ''}
         ${st.contatos.length ? `<div class="dsp-mini">Tempo estimado: <b>${mmss((tempoMedio + pausas) * 1000)}</b> para ${qtd} contato(s)${qtd > cfg.limiteDia ? `, em ${Math.ceil(qtd / cfg.limiteDia)} dias (limite de ${cfg.limiteDia}/dia)` : ''}.</div>` : ''}
       </div>`;
   }
@@ -1113,12 +1113,23 @@ window.IS.Disparo = (() => {
       if (a) a.legendaTexto = el.value;
       st.previa = '';
     }
+    else if (el.dataset.cfgMin) st.cfg[el.dataset.cfgMin] = Math.round(Number(String(el.value).replace(',', '.')) * 60);
     else if (el.dataset.cfg) st.cfg[el.dataset.cfg] = el.type === 'time' ? el.value : Number(el.value);
   }
   function aoMudar(ev) {
     const el = ev.target;
     if (el.dataset.et) { st.marcadas[el.dataset.et] = el.checked; return; }
     if (el.dataset.repetir) { st.repetir = el.dataset.repetir; st.erro = ''; return redesenhar(); }
+    if (el.dataset.tempo) {
+      st.cfg.tempoAuto = el.dataset.tempo === 'auto';
+      st.cfg = normalizarCfg(st.cfg);
+      chrome.storage.local.set({ [CHAVE_CFG]: st.cfg }).catch(() => {});
+      return redesenhar();
+    }
+    if (el.dataset.cfgMin || el.dataset.cfg) {
+      st.cfg = normalizarCfg(st.cfg);
+      chrome.storage.local.set({ [CHAVE_CFG]: st.cfg }).catch(() => {});
+    }
     if (el.dataset.cfgBool) {
       st.cfg[el.dataset.cfgBool] = el.checked;
       chrome.storage.local.set({ [CHAVE_CFG]: normalizarCfg(st.cfg) }).catch(() => {});
@@ -1130,7 +1141,7 @@ window.IS.Disparo = (() => {
       return;
     }
     if (el.dataset.legendaTexto) chrome.storage.local.set({ [CHAVE_ANEXOS]: st.anexos }).catch(() => {});
-    if (el.dataset.cfg || el.id === 'dsp-msg' || el.dataset.legendaTexto) redesenhar(); // atualiza avisos e estimativa ao sair do campo
+    if (el.dataset.cfg || el.dataset.cfgMin || el.id === 'dsp-msg' || el.dataset.legendaTexto) redesenhar(); // atualiza avisos e estimativa ao sair do campo
   }
 
   async function aoClicar(ev) {
