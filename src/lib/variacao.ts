@@ -117,3 +117,35 @@ export function intervaloHumano() {
 }
 export const novoLote = () => sorteio(TEMPO_AUTO.loteMin, TEMPO_AUTO.loteMax);
 export const pausaDeLoteMin = () => sorteio(TEMPO_AUTO.pausaMin, TEMPO_AUTO.pausaMax);
+
+// ---------- Tempo de envio da esteira: automático (sorteado) ou definido por você ----------
+export type TempoEnvio = { modo: "auto" | "fixo"; minMin: number; maxMin: number };
+const CHAVE_TEMPO = "inmovya_esteira_tempo_envio";
+export const TEMPO_MINIMO_MIN = 2; // nunca menos de 2 min entre envios (evita bloqueio)
+export function getTempoEnvio(): TempoEnvio {
+  try {
+    const t = JSON.parse(localStorage.getItem(CHAVE_TEMPO) || "null");
+    if (t && (t.modo === "auto" || t.modo === "fixo")) {
+      const minMin = Math.max(TEMPO_MINIMO_MIN, Number(t.minMin) || TEMPO_MINIMO_MIN);
+      const maxMin = Math.max(minMin, Number(t.maxMin) || minMin);
+      return { modo: t.modo, minMin, maxMin };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { modo: "auto", minMin: 3, maxMin: 5 };
+}
+export function setTempoEnvio(t: TempoEnvio) {
+  try {
+    localStorage.setItem(CHAVE_TEMPO, JSON.stringify(t));
+  } catch {
+    /* ignore */
+  }
+}
+/** Segundos até o próximo lead conforme a escolha (automático = intervaloHumano). */
+export function proximoIntervaloEsteira(t: TempoEnvio = getTempoEnvio()) {
+  if (t.modo === "auto") return intervaloHumano();
+  const a = Math.round(t.minMin * 60);
+  const b = Math.round(Math.max(t.minMin, t.maxMin) * 60);
+  return a + Math.floor(Math.random() * (b - a + 1));
+}

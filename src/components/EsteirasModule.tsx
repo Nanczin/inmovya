@@ -1,6 +1,6 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
 import { chamadosHojeNoWhatsApp, respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
-import { intervaloHumano, novoLote, pausaDeLoteMin, variarAutomatico } from "@/lib/variacao";
+import { getTempoEnvio, novoLote, pausaDeLoteMin, proximoIntervaloEsteira, setTempoEnvio, TEMPO_MINIMO_MIN, variarAutomatico, type TempoEnvio } from "@/lib/variacao";
 import { ehSemWhatsapp, excluirSemWhatsapp, excluiAoFim, montarEtiquetasFim } from "@/lib/esteiras";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
@@ -208,6 +208,14 @@ export function EsteirasModule() {
     }
   };
   const [jaRodouHoje, setJaRodouHoje] = useState(false);
+  // tempo entre envios: automático (sorteado, igual ao Disparo) ou o que você definir
+  const [tempoEnvio, setTempoEnvioState] = useState<TempoEnvio>(getTempoEnvio);
+  const [verTempo, setVerTempo] = useState(false);
+  const mudarTempo = (t: Partial<TempoEnvio>) => {
+    const novo = { ...tempoEnvio, ...t };
+    setTempoEnvioState(novo);
+    setTempoEnvio(novo);
+  };
   const [semWhatsHoje, setSemWhatsHoje] = useState<string[]>([]);
   const conferirRespostas = async () => {
     setConferindoRespostas(true);
@@ -740,7 +748,7 @@ export function EsteirasModule() {
         if (pe.cada > 0 && porEsteira[item.esteira.id] % pe.cada === 0) pausaMin = Math.max(pausaMin, pe.minutos);
         // sem pausa própria configurada: pausa automática a cada 12–22 envios (10–25 min)
         noLote++;
-        if (!pausaMin && pe.cada <= 0 && noLote >= loteAlvo) pausaMin = pausaDeLoteMin();
+        if (!pausaMin && pe.cada <= 0 && tempoEnvio.modo === "auto" && noLote >= loteAlvo) pausaMin = pausaDeLoteMin();
         if (pausaMin > 0) {
           noLote = 0;
           loteAlvo = novoLote();
@@ -748,7 +756,7 @@ export function EsteirasModule() {
           toast({ title: "Pausa de segurança", description: `${enviados} envio(s) feitos. Retomando em ${pausaMin} min.` });
           await esperar(Math.round(pausaMin * 60));
           setEmPausa(false);
-        } else await esperar(intervaloHumano());
+        } else await esperar(proximoIntervaloEsteira(tempoEnvio));
       }
     }
     limparRodada(); // terminou ou você clicou em Parar: não retoma
@@ -1595,8 +1603,56 @@ export function EsteirasModule() {
                       Em segundo plano
                       {segundoPlano && !extensaoAtualizada("1.3.0") && <span className="text-warning">(atualize o Scale)</span>}
                     </label>
-                    <span title="Tempo automático, igual ao Disparo: 2 a 4 min entre leads (às vezes mais), pausa de 10 a 25 min a cada 12 a 22 envios (ou a pausa que você configurou na esteira). Cada mensagem sai com sinônimos e pontuação sorteados.">Tempo e texto variam sozinhos</span>
+                    <button
+                      type="button"
+                      className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                      onClick={() => setVerTempo((v) => !v)}
+                      title="Escolher o tempo entre um envio e outro"
+                    >
+                      ⏱ {tempoEnvio.modo === "auto" ? "Tempo automático" : tempoEnvio.minMin === tempoEnvio.maxMin ? `${tempoEnvio.minMin} min entre envios` : `${tempoEnvio.minMin} a ${tempoEnvio.maxMin} min entre envios`}
+                    </button>
                   </div>
+                  {verTempo && (
+                    <div className="mt-2 rounded-xl border bg-muted/30 p-3 text-xs space-y-2 max-w-[520px]">
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input type="radio" name="tempo-esteira" className="mt-0.5" checked={tempoEnvio.modo === "auto"} onChange={() => mudarTempo({ modo: "auto" })} disabled={rodando} />
+                        <span>
+                          <b className="text-foreground">Automático (recomendado)</b> — sorteia de 2 a 4 min entre um lead e outro (às vezes um pouco mais) e faz uma pausa de 10 a 25 min a cada 12 a 22 envios.
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input type="radio" name="tempo-esteira" className="mt-0.5" checked={tempoEnvio.modo === "fixo"} onChange={() => mudarTempo({ modo: "fixo" })} disabled={rodando} />
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <b className="text-foreground">Definir o tempo:</b> entre
+                          <Input
+                            type="number"
+                            min={TEMPO_MINIMO_MIN}
+                            className="h-7 w-16 text-xs"
+                            value={tempoEnvio.minMin}
+                            disabled={rodando}
+                            onChange={(ev) => {
+                              const v = Math.max(TEMPO_MINIMO_MIN, Number(ev.target.value) || TEMPO_MINIMO_MIN);
+                              mudarTempo({ modo: "fixo", minMin: v, maxMin: Math.max(v, tempoEnvio.maxMin) });
+                            }}
+                          />
+                          e
+                          <Input
+                            type="number"
+                            min={TEMPO_MINIMO_MIN}
+                            className="h-7 w-16 text-xs"
+                            value={tempoEnvio.maxMin}
+                            disabled={rodando}
+                            onChange={(ev) => mudarTempo({ modo: "fixo", maxMin: Math.max(tempoEnvio.minMin, Number(ev.target.value) || tempoEnvio.minMin) })}
+                          />
+                          minutos
+                        </span>
+                      </label>
+                      <p className="text-muted-foreground">
+                        Os dois números iguais = tempo exato. Mínimo de {TEMPO_MINIMO_MIN} min para não arriscar bloqueio. No tempo definido, só valem as pausas que você configurou em cada esteira.
+                        O texto continua variando sozinho nos dois modos. Vale também para o piloto automático.
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                 {rodando ? (
