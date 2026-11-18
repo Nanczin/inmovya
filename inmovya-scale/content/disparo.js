@@ -337,7 +337,8 @@ window.IS.Disparo = (() => {
 
   // ---------- planilha: lê as colunas, acha telefone e nome e transforma o resto em variáveis ----------
   const pareceTelefone = v => { const d = digitos(v); return d.length >= 10 && d.length <= 15 && /^[\d\s()+.\-]+$/.test(String(v).trim()); };
-  const slug = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const slugBase = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const slug = t => { const k = slugBase(t); return k === 'e_mail' ? 'email' : k; };
   /** Texto (colado ou do arquivo) → linhas e colunas. Entende aspas do CSV e escolhe o separador (TAB ; , |). */
   function lerTabela(texto) {
     const t = String(texto || '').replace(/\r\n?/g, '\n');
