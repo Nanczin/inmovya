@@ -16,7 +16,8 @@ type Extrair = (contato: any, lista?: any) => { nome: string; telefone: string; 
 
 const digitos = (t?: string | null) => String(t || "").replace(/\D/g, "");
 
-export function ListaCaixaPostal({ listas, extrair, onCriada }: { listas: any[]; extrair: Extrair; onCriada: (listaId: string) => void }) {
+// Por mailing: só os contatos daquela lista (lista)
+export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: any; listas: any[]; extrair: Extrair; onCriada: (listaId: string) => void }) {
   const { toast } = useToast();
   const [total, setTotal] = useState<number | null>(null);
   const [aberto, setAberto] = useState(false);
@@ -28,9 +29,10 @@ export function ListaCaixaPostal({ listas, extrair, onCriada }: { listas: any[];
     const { count, error } = await supabase
       .from("contatos")
       .select("id", { count: "exact", head: true })
+      .eq("lista_id", lista.id)
       .eq("dados_extras->>classificacao", CAIXA_POSTAL);
     setTotal(error ? null : count || 0);
-  }, []);
+  }, [lista.id]);
 
   useEffect(() => {
     contar();
@@ -40,7 +42,7 @@ export function ListaCaixaPostal({ listas, extrair, onCriada }: { listas: any[];
 
   const abrir = () => {
     setQtd(total || 0);
-    setNome(`Caixa Postal — ${new Date().toLocaleDateString("pt-BR")}`);
+    setNome(`${lista.nome} — Caixa Postal ${new Date().toLocaleDateString("pt-BR")}`);
     setAberto(true);
   };
 
@@ -57,6 +59,7 @@ export function ListaCaixaPostal({ listas, extrair, onCriada }: { listas: any[];
         const { data, error } = await supabase
           .from("contatos")
           .select("*")
+          .eq("lista_id", lista.id)
           .eq("dados_extras->>classificacao", CAIXA_POSTAL)
           .range(de, de + 999);
         if (error) throw error;
@@ -81,8 +84,8 @@ export function ListaCaixaPostal({ listas, extrair, onCriada }: { listas: any[];
         .from("listas_contatos")
         .insert({
           user_id: user.id,
-          nome: nome.trim() || `Caixa Postal — ${new Date().toLocaleDateString("pt-BR")}`,
-          descricao: `Quem caiu na caixa postal / não atendeu (${escolhidos.length} contato(s))`,
+          nome: nome.trim() || `${lista.nome} — Caixa Postal ${new Date().toLocaleDateString("pt-BR")}`,
+          descricao: `Caixa postal / não atendeu do mailing "${lista.nome}" (${escolhidos.length} contato(s))`,
           origem: "Caixa Postal",
           total_contatos: escolhidos.length,
           validados: escolhidos.length,
@@ -92,7 +95,7 @@ export function ListaCaixaPostal({ listas, extrair, onCriada }: { listas: any[];
           taxa_entrega: 100,
           status: "Ativa",
           configuracoes: { tipo: "caixa_postal" },
-          metadados: { geradaEm: new Date().toISOString(), tipo: "caixa_postal" },
+          metadados: { geradaEm: new Date().toISOString(), tipo: "caixa_postal", mailingOrigem: lista.id },
         } as any)
         .select()
         .single();
@@ -141,17 +144,27 @@ export function ListaCaixaPostal({ listas, extrair, onCriada }: { listas: any[];
 
   return (
     <>
-      <Button variant="outline" className="h-10" onClick={abrir} disabled={!total} title="Junta numa lista nova quem caiu na caixa postal ou não atendeu">
-        <PhoneMissed className="w-4 h-4 mr-1.5" />
-        Gerar lista da caixa postal
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full text-xs sm:text-sm"
+        onClick={(e) => {
+          e.stopPropagation();
+          abrir();
+        }}
+        disabled={!total}
+        title="Junta numa lista nova quem caiu na caixa postal ou não atendeu neste mailing"
+      >
+        <PhoneMissed className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+        <span className="truncate">Gerar lista da caixa postal</span>
         <span className="ml-1.5 rounded-full bg-warning/20 text-foreground px-2 text-xs font-bold tabular-nums">{total ?? "…"}</span>
       </Button>
       <Dialog open={aberto} onOpenChange={(v) => !gerando && setAberto(v)}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[440px]" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle>Gerar lista da caixa postal</DialogTitle>
             <DialogDescription>
-              Tem <b>{total}</b> contato(s) classificados como Caixa Postal/Não atendeu. Eles vão para uma lista nova, prontos para ligar de novo, e saem da lista de
+              O mailing <b>{lista.nome}</b> tem <b>{total}</b> contato(s) classificados como Caixa Postal/Não atendeu. Eles vão para uma lista nova, prontos para ligar de novo, e saem da lista de
               origem para você não ligar duas vezes. As tentativas de caixa postal continuam contando.
             </DialogDescription>
           </DialogHeader>

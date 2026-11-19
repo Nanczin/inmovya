@@ -1238,18 +1238,6 @@ export function LigacoesModule() {
       {/* Metas Dialog (o mesmo da Arena: ligações, leads, interações, negociações, visitas, documentos e vendas) */}
       <DefinirMetasDialog open={showMetasDialog} onOpenChange={setShowMetasDialog} onSalvo={(m) => setMetaLigacoes(m.diaLigacoes)} />
 
-      {/* Lista da caixa postal: junta quem não atendeu numa lista nova */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <ListaCaixaPostal
-          listas={listas}
-          extrair={extractDataFromImportedFormat}
-          onCriada={async (id) => {
-            await carregarDados();
-            handleSelecionarLista(id);
-          }}
-        />
-      </div>
-
       {/* Lista Selection */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 sm:gap-4">
         {listas.map((lista) => (
@@ -1313,6 +1301,15 @@ export function LigacoesModule() {
                     <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4" />
                   </Button>
                 </div>
+                <ListaCaixaPostal
+                  lista={lista}
+                  listas={listas}
+                  extrair={extractDataFromImportedFormat}
+                  onCriada={async (id) => {
+                    await carregarDados();
+                    handleSelecionarLista(id);
+                  }}
+                />
               </div>
             </CardContent>
           </Card>
