@@ -2,6 +2,7 @@
 // (pelo Inmovya Scale) quem mandou mensagem depois do último envio. Quem respondeu sai da esteira
 // e vai para a coluna Respondeu. Pega também respostas que chegaram com o WhatsApp Web fechado.
 import { supabase } from "@/integrations/supabase/client";
+import { travaResposta } from "@/lib/trava";
 
 export type ResultadoVarredura = { ok: boolean; conferidos: number; sairam: string[]; erro?: string };
 
@@ -56,6 +57,8 @@ export async function varrerRespostas(): Promise<ResultadoVarredura> {
     const respondidos = await perguntarAoWhatsApp(leads.map((l: any) => ({ telefone: digitos(l.telefone), desde: desde(l) })));
     const ult8 = (t: string) => digitos(t).slice(-8);
     const quem = new Set(respondidos.map((r) => ult8(r.telefone)));
+    // trava de engajamento: quem respondeu conta como "respondeu" no termômetro
+    travaResposta(respondidos.map((r: any) => ({ telefone: digitos(r.telefone), quando: Number(r.quando) || Date.now() })));
 
     const sairam: string[] = [];
     for (const l of leads as any[]) {

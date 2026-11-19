@@ -27,6 +27,8 @@ window.IS.Disparo = (() => {
     maxPessoas: 0, // envia para no máximo N pessoas da lista (0 = todas)
     autoVariar: true, // cada envio sai diferente: sinônimos e pontuação sorteados
     tempoAuto: true, // tempo "humano": intervalo, tamanho do lote e pausas sorteados sozinhos
+    // Trava de engajamento (termômetro de respostas deste disparo)
+    trava: { ligada: true, verde: 40, amarelo: 20, cada: 10, janelaMin: 60 },
   };
 
   // tempo automático: nunca menos de 2 min entre envios
@@ -52,6 +54,8 @@ window.IS.Disparo = (() => {
     hist: {}, // telefone -> quando recebeu o último disparo (últimos 120 dias)
     repetir: null, // quem já recebeu disparo: null (ainda não escolheu) | 'pular' | 'enviar'
     proximoEm: 0,
+    trava: null, // status da trava de engajamento (vem do background)
+    fatorTrava: 1,
   };
   let rodandoLoop = false;
   let seq = 0;
@@ -731,6 +735,15 @@ window.IS.Disparo = (() => {
             continue;
           }
         }
+        // Trava de engajamento: pode enviar agora? (alarme, pausa geral, pausa do disparo, termômetro)
+        const cfgTrava = normalizarCfg(st.cfg).trava;
+        const tv = window.IS.trava ? await window.IS.trava.pode({ origem: 'disparo', nome: 'Disparo', cfg: cfgTrava }) : null;
+        atualizarTrava();
+        if (tv && tv.ok && !tv.pode) {
+          await esperar(60000, `🛑 ${tv.motivo} Continua sozinho quando a trava liberar.`);
+          continue;
+        }
+        st.fatorTrava = tv?.fator || 1;
         item.status = 'enviando';
         st.atual = item;
         render();
@@ -742,15 +755,20 @@ window.IS.Disparo = (() => {
           c.noLote = (c.noLote || 0) + 1;
           await somarHoje();
           await marcarHistorico(item.telefone);
+          if (window.IS.trava) await window.IS.trava.registrar({ telefone: item.telefone, origem: 'disparo', nome: 'Disparo', cfg: cfgTrava });
         } else {
           item.status = 'erro';
           item.erro = (r && r.error) || 'não enviado';
+          // erro de envio (não "número sem WhatsApp") = alarme da trava: pausa tudo até você clicar em Retomar
+          if (window.IS.trava) await window.IS.trava.alarme({ erro: item.erro, semWhatsapp: !!(r && r.semWhatsapp) });
         }
+        atualizarTrava();
         st.atual = null;
         await salvarCampanha();
         render();
         if (c.status === 'rodando' && c.contatos.some(x => x.status === 'pendente')) {
-          await esperar(proximoIntervalo(cfg) * 1000, 'Próximo envio em');
+          const fator = st.fatorTrava || 1;
+          await esperar(proximoIntervalo(cfg) * 1000 * fator, fator > 1 ? 'Próximo envio em (🟡 poucas respostas: intervalo dobrado)' : 'Próximo envio em');
         }
       }
       if (st.campanha && st.campanha.status === 'concluido') {
@@ -817,6 +835,18 @@ window.IS.Disparo = (() => {
       autoVariar: c.autoVariar !== false,
       maxPessoas: n(c.maxPessoas, 0, 100000, 0),
       tempoAuto: c.tempoAuto !== false,
+      trava: (() => {
+        const t = c.trava || {};
+        const r = {
+          ligada: t.ligada !== false,
+          verde: n(t.verde, 1, 100, 40),
+          amarelo: n(t.amarelo, 0, 100, 20),
+          cada: n(t.cada, 3, 100, 10),
+          janelaMin: n(t.janelaMin, 10, 1440, 60),
+        };
+        if (r.amarelo > r.verde) r.amarelo = r.verde;
+        return r;
+      })(),
     };
     if (out.intervaloMax < out.intervaloMin) out.intervaloMax = out.intervaloMin;
     return out;
@@ -918,6 +948,13 @@ window.IS.Disparo = (() => {
       #is-dsp .dsp-anexo{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--inmovya-border,#d1d7db);border-radius:8px}
       #is-dsp .dsp-anexo span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       #is-dsp .dsp-placar{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+      #is-dsp .dsp-placar5{grid-template-columns:repeat(5,1fr)}
+      #is-dsp .dsp-placar5 b{font-size:15px}
+      #is-dsp .dsp-placar5 span{font-size:10.5px}
+      #is-dsp .dsp-trava{display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:10px;border:1px solid var(--inmovya-border,#d1d7db)}
+      #is-dsp .dsp-trava.on{border-color:rgba(220,38,38,.45);background:rgba(220,38,38,.06)}
+      #is-dsp .dsp-trava-motivo{font-weight:700}
+      #is-dsp .dsp-trava .dsp-btn{align-self:flex-start;padding:6px 10px;font-size:12px}
       #is-dsp .dsp-placar div{padding:8px;border-radius:8px;background:var(--inmovya-surface,#f0f2f5);text-align:center}
       #is-dsp .dsp-placar b{display:block;font-size:18px}
       #is-dsp .dsp-placar span{font-size:11px;color:var(--inmovya-text-secondary,#667781)}
@@ -967,6 +1004,7 @@ window.IS.Disparo = (() => {
     st.aberto = true;
     if (!st.campanha) await carregar();
     render();
+    atualizarTrava();
     if (st.tela === 'novo') listarEtiquetas();
   }
   function fechar() {
@@ -1088,7 +1126,70 @@ window.IS.Disparo = (() => {
           <label>Enviar a partir de<input type="time" data-cfg="horaIni" value="${esc(cfg.horaIni)}"></label>
           <label>Até<input type="time" data-cfg="horaFim" value="${esc(cfg.horaFim)}"></label>
         </div>
+        ${htmlTravaCfg()}
+        ${htmlTravaQuadro()}
         ${st.contatos.length ? `<div class="dsp-mini">Tempo estimado: <b>${mmss((tempoMedio + pausas) * 1000)}</b> para ${qtd} contato(s)${qtd > cfg.limiteDia ? `, em ${Math.ceil(qtd / cfg.limiteDia)} dias (limite de ${cfg.limiteDia}/dia)` : ''}.</div>` : ''}
+      </div>`;
+  }
+
+  // ---------- Trava de engajamento: quadrinho + configuração ----------
+  let travaPedindo = false;
+  async function atualizarTrava() {
+    if (travaPedindo || !window.IS.trava) return;
+    travaPedindo = true;
+    try {
+      const s = await window.IS.trava.status(false);
+      if (!s || !s.ok) return;
+      const antes = JSON.stringify(st.trava && { a: st.trava.alarme, g: st.trava.global, o: st.trava.origens?.disparo, i: st.trava.ignoradosHoje });
+      st.trava = s;
+      const depois = JSON.stringify({ a: s.alarme, g: s.global, o: s.origens?.disparo, i: s.ignoradosHoje });
+      if (antes !== depois && st.aberto) redesenhar();
+    } finally {
+      travaPedindo = false;
+    }
+  }
+  try { chrome.storage.onChanged.addListener((m, area) => { if (area === 'local' && (m.travaEstado || m.travaLog)) atualizarTrava(); }); } catch (_) { /* recarregada */ }
+  setInterval(() => { if (st.aberto) atualizarTrava(); }, 30000);
+
+  const TRAVA_COR = { verde: ['🟢', 'normal'], amarelo: ['🟡', 'intervalo dobrado'], vermelho: ['🔴', 'pausado'], medindo: ['⚪', 'medindo…'] };
+  function htmlTravaQuadro() {
+    const s = st.trava;
+    const cfgT = normalizarCfg(st.cfg).trava;
+    if (!s) return '<div class="dsp-trava"><div class="dsp-mini">Trava de engajamento: carregando…</div></div>';
+    const o = s.origens?.disparo;
+    const n = o?.numeros || { enviados: 0, responderam: 0, ignoraram: 0, taxa: null, maduras: 0 };
+    const stt = !cfgT.ligada ? 'desligada' : o?.status || 'medindo';
+    const [bola, txt] = stt === 'desligada' ? ['⚫', 'desligada'] : TRAVA_COR[stt];
+    let motivo = '';
+    if (s.alarme) motivo = `<div class="dsp-trava-motivo">⚠️ ${esc(s.alarme.motivo)}</div><button type="button" class="dsp-btn dsp-ver" data-trava-retomar="alarme">Retomar</button>`;
+    else if (s.global) motivo = `<div class="dsp-trava-motivo">⏸️ ${esc(s.global.motivo)}</div><button type="button" class="dsp-btn dsp-sec2" data-trava-retomar="global">Retomar mesmo assim</button>`;
+    else if (o?.pausa) motivo = `<div class="dsp-trava-motivo">⏸️ ${esc(o.pausa.motivo)}</div><button type="button" class="dsp-btn dsp-sec2" data-trava-retomar="disparo">Retomar mesmo assim</button>`;
+    else if (stt === 'amarelo') motivo = `<div class="dsp-mini">🟡 Poucas respostas: o tempo entre os envios está dobrado até a próxima medição (${o.proximaMedicao} envios).</div>`;
+    else if (stt === 'medindo' && cfgT.ligada) motivo = `<div class="dsp-mini">Medindo… a taxa só conta mensagens enviadas há mais de ${cfgT.janelaMin} min (precisa de ${cfgT.cada}; tem ${n.maduras}).</div>`;
+    return `<div class="dsp-trava${s.alarme || s.global || o?.pausa ? ' on' : ''}">
+      <div class="dsp-tit" style="justify-content:space-between">🛡️ Trava de engajamento — hoje <span class="dsp-mini">${bola} ${txt}</span></div>
+      <div class="dsp-placar dsp-placar5">
+        <div><b>${n.enviados}</b><span>enviados</span></div>
+        <div><b>${n.responderam}</b><span>responderam</span></div>
+        <div><b>${n.ignoraram}</b><span>ignoraram</span></div>
+        <div><b>${n.taxa == null ? '—' : n.taxa + '%'}</b><span>taxa</span></div>
+        <div><b>${bola}</b><span>${txt}</span></div>
+      </div>
+      ${motivo}
+      <div class="dsp-mini">Ignorados hoje somando esteiras e disparo: <b>${s.ignoradosHoje}/${s.limiteDia}</b> (no limite, tudo pausa até amanhã).</div>
+    </div>`;
+  }
+  function htmlTravaCfg() {
+    const t = normalizarCfg(st.cfg).trava;
+    return `<div class="dsp-sec" style="gap:6px">
+        <label class="dsp-mini" style="display:flex;align-items:flex-start;gap:6px;color:inherit"><input type="checkbox" data-cfg-trava-bool="ligada" ${t.ligada ? 'checked' : ''} style="width:auto;margin-top:2px"> <span><b>🛡️ Trava de engajamento</b> — mede quantos responderam e freia este disparo se muita gente ignorar</span></label>
+        ${t.ligada ? `<div class="dsp-grade">
+          <label>Normal a partir de (% que respondeu)<input type="number" min="1" max="100" data-cfg-trava="verde" value="${t.verde}"></label>
+          <label>Abaixo de (%) pausa até amanhã<input type="number" min="0" max="100" data-cfg-trava="amarelo" value="${t.amarelo}"></label>
+          <label>Medir a cada (envios)<input type="number" min="3" max="100" data-cfg-trava="cada" value="${t.cada}"></label>
+          <label>Esperar resposta por (minutos)<input type="number" min="10" max="1440" data-cfg-trava="janelaMin" value="${t.janelaMin}"></label>
+        </div>
+        <div class="dsp-mini">Entre ${t.amarelo}% e ${t.verde}%: o tempo entre os envios dobra. O 1º contato de lead novo não é afetado.</div>` : ''}
       </div>`;
   }
 
@@ -1108,6 +1209,7 @@ window.IS.Disparo = (() => {
         <div><b>${t.pulado}</b><span>pulados</span></div>
       </div>
       <div class="dsp-barra"><i style="width:${pct}%"></i></div>
+      ${htmlTravaQuadro()}
       ${c.status === 'rodando'
         ? st.atual
           ? `<div class="dsp-ok">⏳ Enviando para <b>${esc(st.atual.nome || telBonito(st.atual.telefone))}</b>…${st.atual.repetido ? ` <span style="color:#7a4b00">🔁 já tinha recebido disparo ${esc(quandoFoi(st.atual.repetido))}</span>` : ''}</div>`
@@ -1216,6 +1318,7 @@ window.IS.Disparo = (() => {
     }
     else if (el.dataset.cfgMin) st.cfg[el.dataset.cfgMin] = Math.round(Number(String(el.value).replace(',', '.')) * 60);
     else if (el.dataset.cfg) st.cfg[el.dataset.cfg] = el.type === 'time' ? el.value : Number(el.value);
+    else if (el.dataset.cfgTrava) st.cfg.trava = { ...(st.cfg.trava || CFG_PADRAO.trava), [el.dataset.cfgTrava]: Number(el.value) };
   }
   function aoMudar(ev) {
     const el = ev.target;
@@ -1234,6 +1337,13 @@ window.IS.Disparo = (() => {
     if (el.dataset.cfgMin || el.dataset.cfg) {
       st.cfg = normalizarCfg(st.cfg);
       chrome.storage.local.set({ [CHAVE_CFG]: st.cfg }).catch(() => {});
+    }
+    if (el.dataset.cfgTrava || el.dataset.cfgTravaBool) {
+      if (el.dataset.cfgTravaBool) st.cfg.trava = { ...(st.cfg.trava || CFG_PADRAO.trava), ligada: el.checked };
+      st.cfg = normalizarCfg(st.cfg);
+      chrome.storage.local.set({ [CHAVE_CFG]: st.cfg }).catch(() => {});
+      if (window.IS.trava) window.IS.trava.cfg({ origem: 'disparo', nome: 'Disparo', cfg: st.cfg.trava });
+      return redesenhar();
     }
     if (el.dataset.cfgBool) {
       st.cfg[el.dataset.cfgBool] = el.checked;

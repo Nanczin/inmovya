@@ -63,6 +63,22 @@
     });
   });
 
+  // Trava de engajamento: o Inmovya pergunta se pode enviar, registra envios/respostas, vê o status e testa
+  const TRAVA_OPS = ['pode', 'registrar', 'resposta', 'status', 'retomar', 'cfg', 'alarme', 'teste'];
+  window.addEventListener('INMOVYA_TRAVA', event => {
+    const detail = event.detail || {};
+    const responder = (dados) => window.dispatchEvent(new CustomEvent('INMOVYA_TRAVA_RESULT', { detail: { token: detail.token, ...dados } }));
+    if (!TRAVA_OPS.includes(detail.op)) return responder({ ok: false, error: 'operação desconhecida' });
+    try {
+      chrome.runtime.sendMessage({ ...(detail.dados || {}), action: `trava_${detail.op}` }, response => {
+        const error = chrome.runtime.lastError?.message;
+        responder(error ? { ok: false, error } : response || { ok: false, error: 'sem resposta' });
+      });
+    } catch (e) {
+      responder({ ok: false, error: 'A extensão foi recarregada. Atualize esta página (F5).' });
+    }
+  });
+
   // Respostas dos leads (WhatsApp → Inmovya): o lead sai da esteira na hora
   const entregarRespostasNaPagina = itens => {
     if (Array.isArray(itens) && itens.length) window.dispatchEvent(new CustomEvent('INMOVYA_RESPOSTAS', { detail: { itens } }));

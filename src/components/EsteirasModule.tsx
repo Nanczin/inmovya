@@ -1,4 +1,6 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
+import { TravaConfigEsteira, TravaPainel, TravaQuadroEsteira, avisarTravaMudou, useTravaStatus } from "@/components/esteiras/TravaQuadro";
+import { travaAlarme, travaPode, travaRegistrar, travaResposta, travaRetomar } from "@/lib/trava";
 import { chamadosHojeNoWhatsApp, respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
 import { getTempoEnvio, novoLote, pausaDeLoteMin, proximoIntervaloEsteira, setTempoEnvio, TEMPO_MINIMO_MIN, variarAutomatico, type TempoEnvio } from "@/lib/variacao";
 import { ehSemWhatsapp, excluirSemWhatsapp, excluiAoFim, montarEtiquetasFim } from "@/lib/esteiras";
@@ -603,6 +605,7 @@ export function EsteirasModule() {
   const [respondidosHoje, setRespondidosHoje] = useState<string[]>([]);
   const [verPiloto, setVerPiloto] = useState(false);
   const [novoHorario, setNovoHorario] = useState("");
+  const travaSt = useTravaStatus(); // trava de engajamento (quadrinho de cada esteira)
 
   const rodar = async (opts: { auto?: boolean; ids?: string[] } = {}) => {
     // retomada depois de recarregar: só quem faltava; envio manual com quantidade: só os X primeiros
@@ -668,9 +671,19 @@ export function EsteirasModule() {
     // tempo automático (igual ao Disparo): lote e pausa sorteados quando a esteira não tem pausa própria
     let loteAlvo = novoLote();
     let noLote = 0;
+    // Trava de engajamento: esteira pausada (poucas respostas) é pulada; 🟡 = intervalo dobrado
+    const travadas = new Map<string, string>();
+    let fatorTrava = 1;
+    let paradaPelaTrava = "";
     for (let i = 0; i < lista.length; i++) {
       if (pararRef.current) break;
       const item = lista[i];
+      fatorTrava = 1;
+      if (travadas.has(item.esteira.id)) {
+        // fica para amanhã no mesmo passo (nada muda no lead)
+        setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: `trava: ${travadas.get(item.esteira.id)}` } }));
+        continue;
+      }
       // guarda quem falta: se a página recarregar, o envio continua daqui
       salvarRodada(lista.slice(i).map((x) => x.lead.id), !!opts.auto);
       setProgressoEsteira(i, lista.length, item.lead.nome);
@@ -698,6 +711,7 @@ export function EsteirasModule() {
         const noAberto = await respondeuNoWhatsAppAberto(item.telefone, desde);
         const respondeu = noAberto ?? (await leadRespondeu(item.telefone));
         if (respondeu) {
+          travaResposta([{ telefone: item.telefone, t: Date.now() }]);
           try {
             await marcarRespondeu(item.lead.id);
             setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: "respondeu: foi para Respondeu" } }));
@@ -709,6 +723,22 @@ export function EsteirasModule() {
           continue;
         }
       }
+      // Trava de engajamento: pode enviar? (alarme, limite do dia, termômetro desta esteira)
+      const tv = await travaPode(item.esteira.id, item.esteira.nome);
+      if (tv && !tv.pode) {
+        const motivo = tv.motivo || "pausado pela trava de engajamento";
+        setEstado((s) => ({ ...s, [item.lead.id]: { s: "pulado", erro: `trava: ${motivo}` } }));
+        avisarTravaMudou();
+        if (tv.tipo === "origem") {
+          travadas.set(item.esteira.id, motivo);
+          toast({ title: `Esteira ${item.esteira.nome} pausada`, description: motivo, variant: "destructive" });
+          avisar(`Inmovya: esteira ${item.esteira.nome} pausada`, motivo);
+          continue; // as outras esteiras seguem
+        }
+        paradaPelaTrava = motivo; // alarme ou limite do dia: para tudo
+        break;
+      }
+      fatorTrava = tv?.fator && tv.fator > 1 ? tv.fator : 1;
       setEstado((s) => ({ ...s, [item.lead.id]: { s: "enviando" } }));
       try {
         // monta de novo na hora (saudação pode mudar ao longo do dia) e varia sinônimos/pontuação
@@ -720,6 +750,7 @@ export function EsteirasModule() {
         // 2 esteiras hoje: se é o 1º envio do dia, o próximo passo fica para hoje; no 2º, vai para o próximo dia
         const proximoHoje = doisHoje.has(item.lead.id) && !enviadoHoje(item.lead.esteira_ultimo_envio);
         if (item.telefone) enviadosAgora.add(item.telefone);
+        if (item.telefone) travaRegistrar(item.esteira.id, item.esteira.nome, item.telefone).then(avisarTravaMudou);
         await avancarLead(item.lead, item.esteira, item.passos, item.passo, texto, { proximoHoje });
         if (proximoHoje) prontosParaSegunda.push(item.lead.id);
         enviados++;
@@ -739,6 +770,9 @@ export function EsteirasModule() {
           continue; // nada foi enviado: sem intervalo
         }
         setEstado((s) => ({ ...s, [item.lead.id]: { s: "erro", erro: err?.message || "Falha" } }));
+        // erro de envio = alarme da trava (pausa tudo até você clicar em Retomar)
+        await travaAlarme(String(err?.message || "falha no envio"), false);
+        avisarTravaMudou();
       }
       if (i < lista.length - 1 && !pararRef.current) {
         // pausa depois de X envios desta esteira; senão, o intervalo normal entre leads
@@ -756,8 +790,16 @@ export function EsteirasModule() {
           toast({ title: "Pausa de segurança", description: `${enviados} envio(s) feitos. Retomando em ${pausaMin} min.` });
           await esperar(Math.round(pausaMin * 60));
           setEmPausa(false);
-        } else await esperar(proximoIntervaloEsteira(tempoEnvio));
+        } else {
+          // 🟡 poucas respostas nesta esteira: o intervalo dobra (o mínimo de 2 min continua valendo)
+          if (fatorTrava > 1) setEstado((s) => ({ ...s, [item.lead.id]: { ...(s[item.lead.id] || { s: "enviado" }), erro: "🟡 poucas respostas: próximo intervalo dobrado" } }));
+          await esperar(proximoIntervaloEsteira(tempoEnvio) * fatorTrava);
+        }
       }
+    }
+    if (paradaPelaTrava) {
+      toast({ title: "Envios pausados pela trava de engajamento", description: paradaPelaTrava, variant: "destructive" });
+      avisar("Inmovya: envios pausados", paradaPelaTrava);
     }
     limparRodada(); // terminou ou você clicou em Parar: não retoma
     setRodando(false);
@@ -1399,6 +1441,15 @@ export function EsteirasModule() {
               />
             </>
           )}
+          <TravaQuadroEsteira
+            esteiraId={e.id}
+            nome={e.nome}
+            status={travaSt.status}
+            onRetomar={async (alvo) => {
+              await travaRetomar(alvo);
+              travaSt.atualizar();
+            }}
+          />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
               variant="ghost"
@@ -1708,6 +1759,9 @@ export function EsteirasModule() {
                 )}
                 </div>
               </div>
+
+              {/* Trava de engajamento */}
+              <TravaPainel esteiras={esteiras.map((x) => ({ id: x.id, nome: x.nome }))} />
 
               {/* Piloto automático */}
               <div className={`rounded-2xl border p-4 flex flex-col gap-3 ${piloto.ativo ? "border-success/40 bg-success/[0.06]" : "bg-card"}`}>
@@ -2195,6 +2249,7 @@ export function EsteirasModule() {
                       </div>
                     );
                   })()}
+                  {rascunho.esteira.id && <TravaConfigEsteira esteiraId={rascunho.esteira.id} nome={rascunho.esteira.nome} />}
                   {(() => {
                     const e = rascunho.esteira;
                     const colunas = Array.from(new Set(rascunho.passos.map((p) => (p.etapa || "").trim()).filter(Boolean)));

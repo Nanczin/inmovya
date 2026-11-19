@@ -244,6 +244,33 @@
     }
     return res;
   }
+  // Trava de engajamento: tracinhos (ack) da SUA última mensagem para cada telefone, enviada depois de "desde".
+  // ack: -1 erro · 0 relógio · 1 enviado (1 tracinho) · 2 entregue · 3 lido
+  function acks(itens) {
+    const chats = lista(colecoes().Chat).filter(ehPessoa);
+    if (!chats.length) throw new Error('as conversas do WhatsApp ainda não carregaram');
+    const porTel = new Map();
+    for (const c of chats) {
+      const k = ultimos8(telefoneDoChat(c));
+      if (k.length === 8 && !porTel.has(k)) porTel.set(k, c);
+    }
+    const res = [];
+    for (const it of itens || []) {
+      const chat = porTel.get(ultimos8(it.telefone));
+      if (!chat) continue;
+      const desde = Number(it.desde) || 0;
+      let ultima = null;
+      let tUlt = 0;
+      for (const m of lista(pegar(chat, 'msgs'))) {
+        const id = pegar(m, 'id');
+        if (!(id && (id.fromMe || pegar(id, 'fromMe'))) || TIPOS_SISTEMA.has(String(pegar(m, 'type') || ''))) continue;
+        const t = Number(pegar(m, 't') || 0) * 1000;
+        if (t >= desde && t >= tUlt) { tUlt = t; ultima = m; }
+      }
+      if (ultima) res.push({ telefone: it.telefone, ack: Number(pegar(ultima, 'ack')), t: tUlt });
+    }
+    return res;
+  }
   async function adicionarEtiqueta(chatId, nome) {
     const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);
     if (!chat) return { ok: false, erro: 'conversa não encontrada' };
@@ -276,6 +303,7 @@
       else if (op === 'mensagens') resposta = { ok: true, dados: mensagens(args.chatId) };
       else if (op === 'enviouDesde') resposta = { ok: true, dados: respondeuDesde(args.itens, true) };
       else if (op === 'respondeuDesde') resposta = { ok: true, dados: respondeuDesde(args.itens) };
+      else if (op === 'acks') resposta = { ok: true, dados: acks(args.itens) };
       else if (op === 'ativa') resposta = { ok: true, dados: conversaAtiva() };
       else if (op === 'acharConversa') resposta = { ok: true, dados: acharConversa(args.telefone) };
       else if (op === 'adicionarEtiqueta') resposta = { ok: true, dados: await adicionarEtiqueta(args.chatId, args.nome) };

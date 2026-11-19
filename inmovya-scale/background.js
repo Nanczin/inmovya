@@ -566,6 +566,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   // Lead respondeu no WhatsApp: guarda na fila e entrega para o Inmovya tirar da esteira na hora
   if (request?.action === 'lead_respondeu') {
+    travaMarcarResposta(request.telefone, request.t, false).catch(() => {});
     respostaRecebida(request.telefone, request.t).then(() => sendResponse({ ok: true }));
     return true;
   }
@@ -665,5 +666,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // 1º contato automático (roda sozinho, com o Inmovya fechado)
+importScripts("trava.js");
 importScripts("agente-primeiro-contato.js");
 importScripts("robo-anuncios.js");

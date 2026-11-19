@@ -239,6 +239,8 @@ async function agenteRodada() {
 async function agenteRodadaAgora() {
   const cred = await agenteCredenciais();
   if (!cred) return; // agente nunca configurado neste Chrome
+  // Trava de engajamento: o 1º contato só para no ALARME (aviso do WhatsApp, erro, tracinho)
+  try { if (!(await travaPode({ primeiroContato: true })).pode) return; } catch (_) { /* sem trava: segue */ }
   // uma rodada por vez, mesmo se o service worker reiniciar no meio (trava vence em 12 min)
   const { agenteOcupadoAte = 0, agenteUltimoEnvio = 0, agenteProximoEnvio = 0 } =
     await chrome.storage.local.get(['agenteOcupadoAte', 'agenteUltimoEnvio', 'agenteProximoEnvio']);
@@ -326,6 +328,7 @@ async function agenteAtender(cred, cfg, lead) {
     const feito = await naVezWAPrioridade(async () => {
       const msg = await agenteGerarMensagem(lead, cfg);
       if (!(await agenteAindaLigado(cred))) return { parou: true };
+      try { if (!(await travaPode({ primeiroContato: true })).pode) return { parou: true }; } catch (_) { /* sem trava: segue */ }
       await sendCampaignMessage({ phone: tel, text: msg.texto, background: true, gapMinMs: 0, gapMaxMs: 0 });
       agenteMomentoEnvio = Date.now();
       return { msg };
