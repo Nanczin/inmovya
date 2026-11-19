@@ -19,20 +19,34 @@ const digitos = (t?: string | null) => String(t || "").replace(/\D/g, "");
 // Por mailing: só os contatos daquela lista (lista)
 export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: any; listas: any[]; extrair: Extrair; onCriada: (listaId: string) => void }) {
   const { toast } = useToast();
-  const [total, setTotal] = useState<number | null>(null);
+  const [total, setTotal] = useState<number | null>(null); // de hoje
+  const [totalGeral, setTotalGeral] = useState<number>(0); // todos os dias
+  const [incluirAntigos, setIncluirAntigos] = useState(false);
   const [aberto, setAberto] = useState(false);
   const [qtd, setQtd] = useState<number>(0);
   const [nome, setNome] = useState("");
   const [gerando, setGerando] = useState(false);
 
+  // "de hoje" = classificado como caixa postal hoje (a hora da última mudança do contato)
+  const inicioHoje = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  };
   const contar = useCallback(async () => {
-    const { count, error } = await supabase
-      .from("contatos")
-      .select("id", { count: "exact", head: true })
-      .eq("lista_id", lista.id)
-      .eq("dados_extras->>classificacao", CAIXA_POSTAL);
-    setTotal(error ? null : count || 0);
+    const [hoje, geral] = await Promise.all([
+      supabase
+        .from("contatos")
+        .select("id", { count: "exact", head: true })
+        .eq("lista_id", lista.id)
+        .eq("dados_extras->>classificacao", CAIXA_POSTAL)
+        .gte("updated_at", inicioHoje()),
+      supabase.from("contatos").select("id", { count: "exact", head: true }).eq("lista_id", lista.id).eq("dados_extras->>classificacao", CAIXA_POSTAL),
+    ]);
+    setTotal(hoje.error ? null : hoje.count || 0);
+    setTotalGeral(geral.count || 0);
   }, [lista.id]);
+  const disponiveis = incluirAntigos ? totalGeral : total || 0;
 
   useEffect(() => {
     contar();
@@ -41,6 +55,7 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
   }, [contar, listas.length]);
 
   const abrir = () => {
+    setIncluirAntigos(false);
     setQtd(total || 0);
     setNome(`${lista.nome} — Caixa Postal ${new Date().toLocaleDateString("pt-BR")}`);
     setAberto(true);
@@ -56,12 +71,9 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
       // busca todos (em páginas de 1000)
       const todos: any[] = [];
       for (let de = 0; ; de += 1000) {
-        const { data, error } = await supabase
-          .from("contatos")
-          .select("*")
-          .eq("lista_id", lista.id)
-          .eq("dados_extras->>classificacao", CAIXA_POSTAL)
-          .range(de, de + 999);
+        let q = supabase.from("contatos").select("*").eq("lista_id", lista.id).eq("dados_extras->>classificacao", CAIXA_POSTAL);
+        if (!incluirAntigos) q = q.gte("updated_at", inicioHoje());
+        const { data, error } = await q.range(de, de + 999);
         if (error) throw error;
         todos.push(...(data || []));
         if (!data || data.length < 1000) break;
@@ -152,19 +164,19 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
           e.stopPropagation();
           abrir();
         }}
-        disabled={!total}
-        title="Junta numa lista nova quem caiu na caixa postal ou não atendeu neste mailing"
+        disabled={!total && !totalGeral}
+        title={`Hoje: ${total ?? 0} na caixa postal neste mailing (no total: ${totalGeral})`}
       >
         <PhoneMissed className="w-3.5 h-3.5 mr-1.5 shrink-0" />
         <span className="truncate">Gerar lista da caixa postal</span>
-        <span className="ml-1.5 rounded-full bg-warning/20 text-foreground px-2 text-xs font-bold tabular-nums">{total ?? "…"}</span>
+        <span className="ml-1.5 rounded-full bg-warning/20 text-foreground px-2 text-xs font-bold tabular-nums">{total ?? "…"} hoje</span>
       </Button>
       <Dialog open={aberto} onOpenChange={(v) => !gerando && setAberto(v)}>
         <DialogContent className="sm:max-w-[440px]" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle>Gerar lista da caixa postal</DialogTitle>
             <DialogDescription>
-              O mailing <b>{lista.nome}</b> tem <b>{total}</b> contato(s) classificados como Caixa Postal/Não atendeu. Eles vão para uma lista nova, prontos para ligar de novo, e saem da lista de
+              Hoje, <b>{total}</b> contato(s) do mailing <b>{lista.nome}</b> caíram na Caixa Postal/Não atenderam. Eles vão para uma lista nova, prontos para ligar de novo, e saem da lista de
               origem para você não ligar duas vezes. As tentativas de caixa postal continuam contando.
             </DialogDescription>
           </DialogHeader>
@@ -173,18 +185,31 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
               Nome da lista
               <Input value={nome} onChange={(e) => setNome(e.target.value)} />
             </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={incluirAntigos}
+                onChange={(e) => {
+                  setIncluirAntigos(e.target.checked);
+                  setQtd(e.target.checked ? totalGeral : total || 0);
+                }}
+              />
+              Incluir também os de dias anteriores ({totalGeral} no total)
+            </label>
             <label className="grid gap-1 text-sm font-semibold">
               Quantos contatos
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
                   min={1}
-                  max={total || undefined}
+                  max={disponiveis || undefined}
                   className="w-28"
                   value={qtd || ""}
-                  onChange={(e) => setQtd(Math.max(0, Math.min(total || 0, parseInt(e.target.value) || 0)))}
+                  onChange={(e) => setQtd(Math.max(0, Math.min(disponiveis, parseInt(e.target.value) || 0)))}
                 />
-                <span className="text-xs font-normal text-muted-foreground">de {total} disponíveis (quem tem menos tentativas vem primeiro)</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  de {disponiveis} disponíveis {incluirAntigos ? "(todos os dias)" : "(de hoje)"}
+                </span>
               </div>
             </label>
           </div>
