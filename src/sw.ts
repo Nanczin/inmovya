@@ -8,8 +8,10 @@ import { ExpirationPlugin } from 'workbox-expiration';
 
 declare let self: ServiceWorkerGlobalScope;
 
-// Take control immediately
+// Take control immediately (versão nova do site entra na hora, sem precisar fechar todas as abas)
 self.skipWaiting();
+self.addEventListener('install', () => { self.skipWaiting(); });
+self.addEventListener('message', (event) => { if (event.data?.type === 'SKIP_WAITING') self.skipWaiting(); });
 clientsClaim();
 
 // Clean old caches
