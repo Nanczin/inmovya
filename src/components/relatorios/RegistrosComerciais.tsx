@@ -277,8 +277,8 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
                   const vazioDia = !DIARIO.some((c) => v[c] > 0);
                   return (
                     <tr key={k} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => abrir(k)} title="Clique para registrar ou corrigir este dia">
-                      <td className="px-3 py-2 font-medium capitalize whitespace-nowrap">
-                        {nomeDia(d)}
+                      <td className="px-3 py-2 font-medium whitespace-nowrap">
+                        <span className="capitalize">{nomeDia(d)}</span>
                         {k === chave(new Date()) && <span className="ml-1.5 text-[10px] font-bold text-primary">hoje</span>}
                         {vazioDia && <span className="ml-1.5 text-[10px] text-muted-foreground">sem registro</span>}
                       </td>
