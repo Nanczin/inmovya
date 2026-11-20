@@ -91,12 +91,39 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   const vgvMes = vgvDoMes(vgvPorDia, mesAtual);
   const vendasPorVgv = metas ? vendasProporcionais(vgvMes, metas) : null;
 
-  const abrir = () => {
-    const hoje = chave(new Date());
-    setDia(hoje);
-    carregarDia(hoje);
+  const abrir = (k = chave(new Date())) => {
+    setDia(k);
+    carregarDia(k);
     setAberto(true);
   };
+
+  // Métricas dia a dia no período (sábado e domingo só aparecem se tiverem algum número)
+  const [verTodosDias, setVerTodosDias] = useState(false);
+  const DIARIO: Campo[] = ["interacoes", "documentacoes", "visitas", "negociacoes"];
+  const dias = useMemo(() => {
+    const lista: { k: string; d: Date; v: Valores }[] = [];
+    const hoje = chave(new Date());
+    for (let d = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate()); d < fim; d.setDate(d.getDate() + 1)) {
+      const k = chave(d);
+      if (k > hoje) break;
+      const v = porDia[k] || vazio();
+      const fds = d.getDay() === 0 || d.getDay() === 6;
+      const temAlgo = DIARIO.some((c) => v[c] > 0) || v.vendas > 0;
+      if (fds && !temAlgo) continue;
+      lista.push({ k, d: new Date(d), v });
+    }
+    return lista.reverse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [porDia, inicio, fim]);
+  const diasUteis = dias.length;
+  const maxDia = useMemo(() => {
+    const m = vazio();
+    dias.forEach(({ v }) => DIARIO.forEach((c) => (m[c] = Math.max(m[c], v[c]))));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dias]);
+  const diasVisiveis = verTodosDias ? dias : dias.slice(0, 10);
+  const nomeDia = (d: Date) => d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }).replace(".", "");
   const carregarDia = (k: string) => {
     const row = linhaDoDia[k];
     const v = vazio();
@@ -152,7 +179,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
           <h3 className="font-bold leading-tight">Atendimento até a venda</h3>
           <p className="text-xs text-muted-foreground mt-0.5">O que você registrou no período e quanto de uma etapa passou para a próxima</p>
         </div>
-        <Button onClick={abrir} className="h-9">
+        <Button onClick={() => abrir()} className="h-9">
           <PenLine className="w-4 h-4 mr-1.5" /> Registrar
         </Button>
       </div>
@@ -220,6 +247,78 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
             </div>
           )}
         </div>
+      </div>
+
+      {/* Por dia */}
+      <div className="mt-5">
+        <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
+          <div>
+            <h4 className="font-bold text-sm leading-tight">Por dia</h4>
+            <p className="text-xs text-muted-foreground">Clique em um dia para corrigir os números. Fim de semana só aparece se tiver registro.</p>
+          </div>
+        </div>
+        {dias.length === 0 ? (
+          <div className="text-sm text-muted-foreground rounded-xl border p-4 text-center">Nenhum dia neste período ainda.</div>
+        ) : (
+          <div className="rounded-xl border overflow-x-auto">
+            <table className="w-full text-sm min-w-[460px]">
+              <thead>
+                <tr className="bg-muted/50 text-xs text-muted-foreground">
+                  <th className="text-left font-semibold px-3 py-2">Dia</th>
+                  {DIARIO.map((c) => (
+                    <th key={c} className="text-right font-semibold px-3 py-2">
+                      {CAMPOS.find((x) => x.id === c)!.nome}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {diasVisiveis.map(({ k, d, v }) => {
+                  const vazioDia = !DIARIO.some((c) => v[c] > 0);
+                  return (
+                    <tr key={k} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => abrir(k)} title="Clique para registrar ou corrigir este dia">
+                      <td className="px-3 py-2 font-medium capitalize whitespace-nowrap">
+                        {nomeDia(d)}
+                        {k === chave(new Date()) && <span className="ml-1.5 text-[10px] font-bold text-primary">hoje</span>}
+                        {vazioDia && <span className="ml-1.5 text-[10px] text-muted-foreground">sem registro</span>}
+                      </td>
+                      {DIARIO.map((c) => {
+                        const n = v[c];
+                        const pct = maxDia[c] > 0 ? (n / maxDia[c]) * 100 : 0;
+                        return (
+                          <td key={c} className="px-3 py-2 text-right tabular-nums">
+                            <div className="flex items-center justify-end gap-2">
+                              <div className="hidden sm:block w-14 h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden="true">
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: corAtual }} />
+                              </div>
+                              <span className={n ? "font-bold" : "text-muted-foreground"}>{n}</span>
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t bg-muted/30 text-xs">
+                  <td className="px-3 py-2 font-semibold">Total · média/dia</td>
+                  {DIARIO.map((c) => (
+                    <td key={c} className="px-3 py-2 text-right tabular-nums">
+                      <b className="text-sm">{atual[c]}</b>
+                      <span className="text-muted-foreground"> · {(atual[c] / Math.max(1, diasUteis)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</span>
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+        {dias.length > 10 && (
+          <Button variant="ghost" size="sm" className="mt-1.5 h-8" onClick={() => setVerTodosDias((x) => !x)}>
+            {verTodosDias ? "Mostrar só os últimos 10 dias" : `Ver todos os ${dias.length} dias`}
+          </Button>
+        )}
       </div>
 
       <Dialog open={aberto} onOpenChange={setAberto}>
