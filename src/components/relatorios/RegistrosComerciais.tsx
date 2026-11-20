@@ -100,22 +100,55 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   // Métricas dia a dia no período (sábado e domingo só aparecem se tiverem algum número)
   const [verTodosDias, setVerTodosDias] = useState(false);
   const DIARIO: Campo[] = ["interacoes", "documentacoes", "visitas", "negociacoes"];
+  // filtro próprio desta tabela: período e dias da semana
+  const [modoPer, setModoPer] = useState<"topo" | "7" | "15" | "mes" | "mesPassado" | "datas">("topo");
+  const [deTxt, setDeTxt] = useState(() => chave(new Date(Date.now() - 6 * 864e5)));
+  const [ateTxt, setAteTxt] = useState(() => chave(new Date()));
+  const [semana, setSemana] = useState<number[]>([1, 2, 3, 4, 5, 6, 0]);
+  const [soComRegistro, setSoComRegistro] = useState(false);
+  const faixa = useMemo(() => {
+    const h = new Date();
+    const hoje0 = new Date(h.getFullYear(), h.getMonth(), h.getDate());
+    const amanha = new Date(hoje0.getTime() + 864e5);
+    if (modoPer === "7") return { a: new Date(hoje0.getTime() - 6 * 864e5), b: amanha };
+    if (modoPer === "15") return { a: new Date(hoje0.getTime() - 14 * 864e5), b: amanha };
+    if (modoPer === "mes") return { a: new Date(h.getFullYear(), h.getMonth(), 1), b: amanha };
+    if (modoPer === "mesPassado") return { a: new Date(h.getFullYear(), h.getMonth() - 1, 1), b: new Date(h.getFullYear(), h.getMonth(), 1) };
+    if (modoPer === "datas") {
+      const [y1, m1, d1] = deTxt.split("-").map(Number);
+      const [y2, m2, d2] = ateTxt.split("-").map(Number);
+      const a = new Date(y1 || h.getFullYear(), (m1 || 1) - 1, d1 || 1);
+      const b = new Date(y2 || h.getFullYear(), (m2 || 1) - 1, (d2 || 1) + 1);
+      return b > a ? { a, b } : { a: b, b: a };
+    }
+    return { a: inicio, b: fim };
+  }, [modoPer, deTxt, ateTxt, inicio, fim]);
+  const semanaPadrao = semana.length === 7;
   const dias = useMemo(() => {
     const lista: { k: string; d: Date; v: Valores }[] = [];
     const hoje = chave(new Date());
-    for (let d = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate()); d < fim; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(faixa.a.getFullYear(), faixa.a.getMonth(), faixa.a.getDate()); d < faixa.b; d.setDate(d.getDate() + 1)) {
       const k = chave(d);
       if (k > hoje) break;
+      if (!semana.includes(d.getDay())) continue;
       const v = porDia[k] || vazio();
       const fds = d.getDay() === 0 || d.getDay() === 6;
       const temAlgo = DIARIO.some((c) => v[c] > 0) || v.vendas > 0;
-      if (fds && !temAlgo) continue;
+      if (!temAlgo && (soComRegistro || (fds && semanaPadrao))) continue;
       lista.push({ k, d: new Date(d), v });
     }
     return lista.reverse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [porDia, inicio, fim]);
+  }, [porDia, faixa, semana, soComRegistro]);
   const diasUteis = dias.length;
+  const totalDias = useMemo(() => {
+    const t = vazio();
+    dias.forEach(({ v }) => DIARIO.forEach((c) => (t[c] += v[c])));
+    return t;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dias]);
+  const SEMANA: [number, string][] = [[1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sáb"], [0, "Dom"]];
+  const PERIODOS: [typeof modoPer, string][] = [["topo", "Igual ao topo"], ["7", "7 dias"], ["15", "15 dias"], ["mes", "Este mês"], ["mesPassado", "Mês passado"], ["datas", "Escolher datas"]];
   const maxDia = useMemo(() => {
     const m = vazio();
     dias.forEach(({ v }) => DIARIO.forEach((c) => (m[c] = Math.max(m[c], v[c]))));
@@ -254,11 +287,60 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
         <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
           <div>
             <h4 className="font-bold text-sm leading-tight">Por dia</h4>
-            <p className="text-xs text-muted-foreground">Clique em um dia para corrigir os números. Fim de semana só aparece se tiver registro.</p>
+            <p className="text-xs text-muted-foreground">Clique em um dia para corrigir os números.</p>
           </div>
         </div>
+        <div className="flex flex-col gap-2 mb-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PERIODOS.map(([id, nome]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setModoPer(id)}
+                className={`h-8 px-3 rounded-lg text-xs font-semibold border transition-colors ${modoPer === id ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-muted"}`}
+              >
+                {nome}
+              </button>
+            ))}
+            {modoPer === "datas" && (
+              <span className="flex items-center gap-1.5 text-xs">
+                <Input type="date" className="h-8 w-[140px]" value={deTxt} max={chave(new Date())} onChange={(e) => setDeTxt(e.target.value)} aria-label="De" />
+                até
+                <Input type="date" className="h-8 w-[140px]" value={ateTxt} max={chave(new Date())} onChange={(e) => setAteTxt(e.target.value)} aria-label="Até" />
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground mr-0.5">Dias:</span>
+            {SEMANA.map(([n, nome]) => {
+              const on = semana.includes(n);
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setSemana((s) => (on ? (s.length > 1 ? s.filter((x) => x !== n) : s) : [...s, n]))}
+                  className={`h-8 min-w-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors ${on ? "bg-primary/10 text-primary border-primary/40" : "bg-card text-muted-foreground hover:bg-muted"}`}
+                >
+                  {nome}
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => setSemana([1, 2, 3, 4, 5])} className="h-8 px-2 rounded-lg text-xs font-semibold text-primary hover:underline">
+              Só dias úteis
+            </button>
+            <button type="button" onClick={() => setSemana([1, 2, 3, 4, 5, 6, 0])} className="h-8 px-2 rounded-lg text-xs font-semibold text-primary hover:underline">
+              Todos
+            </button>
+            <label className="flex items-center gap-1.5 text-xs ml-auto cursor-pointer">
+              <input type="checkbox" checked={soComRegistro} onChange={(e) => setSoComRegistro(e.target.checked)} />
+              Só dias com registro
+            </label>
+          </div>
+          {semanaPadrao && !soComRegistro && <span className="text-[11px] text-muted-foreground">Sábado e domingo sem registro ficam escondidos.</span>}
+        </div>
         {dias.length === 0 ? (
-          <div className="text-sm text-muted-foreground rounded-xl border p-4 text-center">Nenhum dia neste período ainda.</div>
+          <div className="text-sm text-muted-foreground rounded-xl border p-4 text-center">Nenhum dia com esse filtro.</div>
         ) : (
           <div className="rounded-xl border overflow-x-auto">
             <table className="w-full text-sm min-w-[460px]">
@@ -305,8 +387,8 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
                   <td className="px-3 py-2 font-semibold">Total · média/dia</td>
                   {DIARIO.map((c) => (
                     <td key={c} className="px-3 py-2 text-right tabular-nums">
-                      <b className="text-sm">{atual[c]}</b>
-                      <span className="text-muted-foreground"> · {(atual[c] / Math.max(1, diasUteis)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</span>
+                      <b className="text-sm">{totalDias[c]}</b>
+                      <span className="text-muted-foreground"> · {(totalDias[c] / Math.max(1, diasUteis)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</span>
                     </td>
                   ))}
                 </tr>
