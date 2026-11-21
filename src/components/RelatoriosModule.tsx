@@ -50,8 +50,6 @@ function janelas(p: PeriodoId, de?: string, ate?: string) {
   return { inicio, fim, inicioAnt, fimAnt: inicio, dias };
 }
 
-const SEMANA: [number, string][] = [[1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sáb"], [0, "Dom"]];
-const TODOS_DIAS = [1, 2, 3, 4, 5, 6, 0];
 
 const dentro = (iso: string | undefined | null, a: Date, b: Date) => {
   if (!iso) return false;
@@ -248,24 +246,6 @@ export function RelatoriosModule() {
   const [de, setDe] = useState<string>(() => paraInput(somarDias(new Date(), -29)));
   const [ate, setAte] = useState<string>(() => paraInput(new Date()));
   const j = useMemo(() => janelas(periodo, de, ate), [periodo, de, ate]);
-  // dias da semana: um filtro só para todas as métricas da página
-  const [semana, setSemana] = useState<number[]>(() => {
-    try {
-      const v = JSON.parse(localStorage.getItem("inmovya_relatorio_semana") || "null");
-      return Array.isArray(v) && v.length ? v : TODOS_DIAS;
-    } catch {
-      return TODOS_DIAS;
-    }
-  });
-  const mudarSemana = (v: number[]) => {
-    setSemana(v);
-    try {
-      localStorage.setItem("inmovya_relatorio_semana", JSON.stringify(v));
-    } catch {
-      /* ignore */
-    }
-  };
-  const diaOk = (iso: string | undefined | null) => !!iso && semana.includes(new Date(iso).getDay());
 
   const escolher = (p: PeriodoId) => {
     setPeriodo(p);
@@ -322,8 +302,8 @@ export function RelatoriosModule() {
   }, [j]);
 
   // ---------- leads ----------
-  const leadsAtual = useMemo(() => leads.filter((l) => dentro(l.created_at, j.inicio, j.fim) && diaOk(l.created_at)), [leads, j, semana]);
-  const leadsAnt = useMemo(() => leads.filter((l) => dentro(l.created_at, j.inicioAnt, j.fimAnt) && diaOk(l.created_at)), [leads, j, semana]);
+  const leadsAtual = useMemo(() => leads.filter((l) => dentro(l.created_at, j.inicio, j.fim)), [leads, j]);
+  const leadsAnt = useMemo(() => leads.filter((l) => dentro(l.created_at, j.inicioAnt, j.fimAnt)), [leads, j]);
 
   // funil: posição ATUAL dos leads que chegaram no período (quem está no 50% já passou pelo 20%)
   const funil = (lista: typeof leads) => {
@@ -372,7 +352,6 @@ export function RelatoriosModule() {
     const mA = contar(itensA);
     const mB = contar(itensB);
     return Array.from({ length: j.dias }, (_, i) => i)
-      .filter((i) => semana.includes(somarDias(j.inicio, i).getDay()))
       .map((i) => {
       const dA = somarDias(j.inicio, i);
       const dB = somarDias(j.inicioAnt, i);
@@ -384,7 +363,7 @@ export function RelatoriosModule() {
       };
     });
   };
-  const leadsPorDia = useMemo(() => serieDiaria(leadsAtual, leadsAnt, (l) => l.created_at), [leadsAtual, leadsAnt, j, semana]);
+  const leadsPorDia = useMemo(() => serieDiaria(leadsAtual, leadsAnt, (l) => l.created_at), [leadsAtual, leadsAnt, j]);
 
   // origem
   const porOrigem = useMemo(() => {
@@ -413,9 +392,9 @@ export function RelatoriosModule() {
   }, [leadsAtual, leadsAnt]);
 
   // ---------- ligações ----------
-  const ligA = useMemo(() => ligacoes.filter((l) => dentro(l.data_ligacao, j.inicio, j.fim) && diaOk(l.data_ligacao)), [ligacoes, j, semana]);
-  const ligB = useMemo(() => ligacoes.filter((l) => dentro(l.data_ligacao, j.inicioAnt, j.fimAnt) && diaOk(l.data_ligacao)), [ligacoes, j, semana]);
-  const ligPorDia = useMemo(() => serieDiaria(ligA, ligB, (l) => l.data_ligacao), [ligA, ligB, j, semana]);
+  const ligA = useMemo(() => ligacoes.filter((l) => dentro(l.data_ligacao, j.inicio, j.fim)), [ligacoes, j]);
+  const ligB = useMemo(() => ligacoes.filter((l) => dentro(l.data_ligacao, j.inicioAnt, j.fimAnt)), [ligacoes, j]);
+  const ligPorDia = useMemo(() => serieDiaria(ligA, ligB, (l) => l.data_ligacao), [ligA, ligB, j]);
   const interessados = (lista: Ligacao[]) => lista.filter((l) => nomeResultado(l.resultado || "") === "Interessado").length;
   const resultados = useMemo(() => {
     const m = new Map<string, { nome: string; atual: number; anterior: number }>();
@@ -439,10 +418,19 @@ export function RelatoriosModule() {
 
   const eixo = { stroke: cores.grade, tick: { fill: cores.texto, fontSize: 11 }, tickLine: false, axisLine: false } as const;
   const fmtData = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
-  const todosOsDias = semana.length === 7;
-  const uteis = semana.length === 5 && [1, 2, 3, 4, 5].every((d) => semana.includes(d));
-  const rotuloDias = todosOsDias ? "" : uteis ? " · só dias úteis" : ` · só ${SEMANA.filter(([n]) => semana.includes(n)).map(([, nome]) => nome).join(", ")}`;
-  const rotuloPeriodo = `${fmtData(j.inicio)} a ${fmtData(somarDias(j.fim, -1))}${rotuloDias}, comparando com os ${j.dias} dia(s) antes (${fmtData(j.inicioAnt)} a ${fmtData(somarDias(j.fimAnt, -1))})`;
+  const rotuloPeriodo = `${fmtData(j.inicio)} a ${fmtData(somarDias(j.fim, -1))} (${j.dias} ${j.dias === 1 ? "dia" : "dias"})`;
+  const rotuloAnterior = `${fmtData(j.inicioAnt)} a ${fmtData(somarDias(j.fimAnt, -1))}`;
+  // mudar uma data já passa para "Escolher datas", partindo do período que está na tela
+  const mudarData = (qual: "de" | "ate", valor: string) => {
+    if (!valor) return;
+    if (periodo !== "custom") {
+      setDe(paraInput(j.inicio));
+      setAte(paraInput(somarDias(j.fim, -1)));
+      escolher("custom");
+    }
+    if (qual === "de") setDe(valor);
+    else setAte(valor);
+  };
 
   const GraficoDiario = ({ dados, nome }: { dados: typeof leadsPorDia; nome: string }) => (
     <>
@@ -472,60 +460,36 @@ export function RelatoriosModule() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-5">
-      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {rotuloPeriodo}
-          {carregando && " · carregando ligações…"}
-        </p>
+      {/* Filtro único: vale para TODAS as métricas desta página */}
+      <section className="rounded-2xl border bg-card p-3 sm:p-4 shadow-card flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
-        {periodo === "custom" && (
-          <div className="flex items-center gap-1.5 text-sm">
-            <input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className="h-8 rounded-md border bg-card px-2 text-sm" aria-label="De" />
-            <span className="text-muted-foreground">até</span>
-            <input type="date" value={ate} min={de} max={paraInput(new Date())} onChange={(e) => setAte(e.target.value)} className="h-8 rounded-md border bg-card px-2 text-sm" aria-label="Até" />
+          <span className="text-sm font-bold mr-1">Período</span>
+          <div className="flex flex-wrap rounded-lg border bg-muted/40 p-0.5" role="tablist" aria-label="Período">
+            {PERIODOS.filter((p) => p.id !== "custom").map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                aria-selected={periodo === p.id}
+                onClick={() => escolher(p.id)}
+                className={`px-3 h-8 rounded-md text-sm font-semibold ${periodo === p.id ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {p.nome}
+              </button>
+            ))}
           </div>
-        )}
-        <div className="flex flex-wrap rounded-lg border bg-card p-0.5" role="tablist" aria-label="Período">
-          {PERIODOS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              aria-selected={periodo === p.id}
-              onClick={() => escolher(p.id)}
-              className={`px-3 h-8 rounded-md text-sm font-semibold ${periodo === p.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {p.nome}
-            </button>
-          ))}
+          <div className={`flex items-center gap-1.5 text-sm rounded-lg border px-2 h-9 ${periodo === "custom" ? "border-primary ring-1 ring-primary/30" : ""}`}>
+            <span className="text-xs text-muted-foreground">De</span>
+            <input type="date" value={periodo === "custom" ? de : paraInput(j.inicio)} max={periodo === "custom" ? ate : undefined} onChange={(e) => mudarData("de", e.target.value)} className="h-7 bg-transparent text-sm outline-none" aria-label="De" />
+            <span className="text-xs text-muted-foreground">até</span>
+            <input type="date" value={periodo === "custom" ? ate : paraInput(somarDias(j.fim, -1))} max={paraInput(new Date())} onChange={(e) => mudarData("ate", e.target.value)} className="h-7 bg-transparent text-sm outline-none" aria-label="Até" />
+          </div>
         </div>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center justify-end gap-1.5" role="group" aria-label="Dias da semana">
-        <span className="text-xs text-muted-foreground mr-0.5">Dias da semana:</span>
-        {SEMANA.map(([n, nome]) => {
-          const on = semana.includes(n);
-          return (
-            <button
-              key={n}
-              type="button"
-              aria-pressed={on}
-              onClick={() => mudarSemana(on ? (semana.length > 1 ? semana.filter((x) => x !== n) : semana) : [...semana, n])}
-              className={`h-8 min-w-[44px] px-2 rounded-lg text-xs font-semibold border transition-colors ${on ? "bg-primary/10 text-primary border-primary/40" : "bg-card text-muted-foreground hover:bg-muted"}`}
-            >
-              {nome}
-            </button>
-          );
-        })}
-        <button type="button" onClick={() => mudarSemana([1, 2, 3, 4, 5])} className={`h-8 px-2 rounded-lg text-xs font-semibold ${uteis ? "text-foreground underline" : "text-primary hover:underline"}`}>
-          Só dias úteis
-        </button>
-        <button type="button" onClick={() => mudarSemana(TODOS_DIAS)} className={`h-8 px-2 rounded-lg text-xs font-semibold ${todosOsDias ? "text-foreground underline" : "text-primary hover:underline"}`}>
-          Todos
-        </button>
-      </div>
-      </div>
+        <p className="text-xs text-muted-foreground">
+          Mostrando <b className="text-foreground">{rotuloPeriodo}</b>, todos os dias da semana. As setinhas comparam com os {j.dias} {j.dias === 1 ? "dia" : "dias"} antes ({rotuloAnterior}).
+          {carregando && " Carregando ligações…"}
+        </p>
+      </section>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Indicador titulo="Leads novos" valor={leadsAtual.length.toLocaleString("pt-BR")} atual={leadsAtual.length} anterior={leadsAnt.length} />
@@ -614,7 +578,7 @@ export function RelatoriosModule() {
       </Painel>
 
       <h2 className="text-lg font-extrabold tracking-tight pt-2">Atendimento</h2>
-      <RegistrosComerciais inicio={j.inicio} fim={j.fim} inicioAnt={j.inicioAnt} fimAnt={j.fimAnt} corAtual={cores.atual} corVerde={cores.verde} semana={semana} />
+      <RegistrosComerciais inicio={j.inicio} fim={j.fim} inicioAnt={j.inicioAnt} fimAnt={j.fimAnt} corAtual={cores.atual} corVerde={cores.verde} />
 
       <h2 className="text-lg font-extrabold tracking-tight pt-2">Ligações da Oferta Ativa</h2>
       <div className="grid lg:grid-cols-2 gap-4">
@@ -661,7 +625,7 @@ export function RelatoriosModule() {
       <p className="text-[11px] text-muted-foreground">As ligações ficam guardadas por 60 dias.</p>
 
       <div className="pt-4 border-t">
-        <FunilModule filtro={{ inicio: j.inicio, fim: j.fim, semana }} />
+        <FunilModule filtro={{ inicio: j.inicio, fim: j.fim, semana: [0, 1, 2, 3, 4, 5, 6] }} />
       </div>
     </div>
   );

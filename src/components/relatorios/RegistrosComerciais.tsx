@@ -103,12 +103,10 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
     setAberto(true);
   };
 
-  // Métricas dia a dia no período (sábado e domingo só aparecem se tiverem algum número)
-  const [verTodosDias, setVerTodosDias] = useState(false);
+  // Métricas dia a dia: todos os dias do período, inclusive sábado e domingo
+  const [verTodosDias, setVerTodosDias] = useState(true);
   const DIARIO: Campo[] = ["interacoes", "documentacoes", "visitas", "negociacoes"];
   const faixa = useMemo(() => ({ a: inicio, b: fim }), [inicio, fim]);
-  const soComRegistro = false;
-  const semanaPadrao = semana.length === 7;
   const dias = useMemo(() => {
     const lista: { k: string; d: Date; v: Valores }[] = [];
     const hoje = chave(new Date());
@@ -117,9 +115,6 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
       if (k > hoje) break;
       if (!semana.includes(d.getDay())) continue;
       const v = porDia[k] || vazio();
-      const fds = d.getDay() === 0 || d.getDay() === 6;
-      const temAlgo = DIARIO.some((c) => v[c] > 0) || v.vendas > 0;
-      if (!temAlgo && (soComRegistro || (fds && semanaPadrao))) continue;
       lista.push({ k, d: new Date(d), v });
     }
     return lista.reverse();
@@ -270,7 +265,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
         <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
           <div>
             <h4 className="font-bold text-sm leading-tight">Por dia</h4>
-            <p className="text-xs text-muted-foreground">Segue o filtro do topo da página. Clique em um dia para corrigir os números.{semanaPadrao ? " Sábado e domingo sem registro ficam escondidos." : ""}</p>
+            <p className="text-xs text-muted-foreground">Todos os dias do período, inclusive sábado e domingo. Clique em um dia para registrar ou corrigir.</p>
           </div>
         </div>
         {dias.length === 0 ? (
@@ -292,7 +287,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
                 {diasVisiveis.map(({ k, d, v }) => {
                   const vazioDia = !DIARIO.some((c) => v[c] > 0);
                   return (
-                    <tr key={k} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => abrir(k)} title="Clique para registrar ou corrigir este dia">
+                    <tr key={k} className={`border-t hover:bg-muted/40 cursor-pointer ${d.getDay() === 0 || d.getDay() === 6 ? "bg-muted/25" : ""}`} onClick={() => abrir(k)} title="Clique para registrar ou corrigir este dia">
                       <td className="px-3 py-2 font-medium whitespace-nowrap">
                         <span className="capitalize">{nomeDia(d)}</span>
                         {k === chave(new Date()) && <span className="ml-1.5 text-[10px] font-bold text-primary">hoje</span>}
