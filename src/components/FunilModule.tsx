@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { FUNIL_TIERS, getFunilTier } from "@/lib/negociosStages";
 
-export function FunilModule() {
+export function FunilModule({ filtro }: { filtro?: { inicio: Date; fim: Date; semana: number[] } } = {}) {
     const { leads } = useLeads();
     const { toast } = useToast();
 
@@ -112,6 +112,8 @@ export function FunilModule() {
             if (!getFunilTier(l.status)) return false;
             if (!l.created_at) return true; // fallback
             const leadDate = new Date(l.created_at);
+            // dentro de Relatórios: usa o filtro único do topo (período + dias da semana)
+            if (filtro) return leadDate >= filtro.inicio && leadDate < filtro.fim && filtro.semana.includes(leadDate.getDay());
 
             if (startDate) {
                 const start = new Date(startDate);
@@ -273,6 +275,7 @@ export function FunilModule() {
             // Also respecting date filters for 'Others' export
             if (!l.created_at) return true;
             const d = new Date(l.created_at);
+            if (filtro) return d >= filtro.inicio && d < filtro.fim && filtro.semana.includes(d.getDay());
             if (startDate && d < new Date(startDate)) return false;
             if (endDate && d > new Date(`${endDate}T23:59:59`)) return false;
             return true;
@@ -371,6 +374,9 @@ export function FunilModule() {
                     </p>
                 </div>
 
+                {filtro ? (
+                    <p className="text-xs text-muted-foreground">Segue o filtro do topo da página.</p>
+                ) : (
                 <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex items-center bg-white rounded-lg p-1 pr-2 border shadow-sm h-10 w-max transition-all focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary">
                         <CalendarIcon className="w-4 h-4 ml-2 mr-2 text-slate-400" />
@@ -394,6 +400,7 @@ export function FunilModule() {
                         )}
                     </div>
                 </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
