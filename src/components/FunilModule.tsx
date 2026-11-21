@@ -369,13 +369,13 @@ export function FunilModule({ filtro }: { filtro?: { inicio: Date; fim: Date; se
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h2 className="text-lg font-extrabold tracking-tight">Funil de vendas</h2>
-                    <p className="text-muted-foreground mt-1">
-                        Visualize o fluxo de conversão e exporte seus leads segmentados por etapa.
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                        Fluxo de conversão do período escolhido no topo. Dá para exportar os leads de cada etapa.
                     </p>
                 </div>
 
                 {filtro ? (
-                    <p className="text-xs text-muted-foreground">Segue o filtro do topo da página.</p>
+                    null
                 ) : (
                 <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex items-center bg-white rounded-lg p-1 pr-2 border shadow-sm h-10 w-max transition-all focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary">
