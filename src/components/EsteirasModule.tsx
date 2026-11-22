@@ -188,7 +188,7 @@ export const lerRodada = (): { ids: string[]; auto: boolean } | null => {
   }
 };
 
-export function EsteirasModule() {
+export function EsteirasModule({ initialEsteiraId }: { initialEsteiraId?: string } = {}) {
   const { leads, refreshLeads } = useLeads();
   const { toast } = useToast();
   const [conferindoRespostas, setConferindoRespostas] = useState(false);
@@ -1006,6 +1006,21 @@ export function EsteirasModule() {
   useEffect(() => {
     if (!esteiraSel && esteiras.length) setEsteiraSel(esteiras[0].id);
   }, [esteiras, esteiraSel]);
+
+  // Link direto (/esteiras?esteira=ID, ex.: vindo da Agenda): abre já nesta esteira — só navegação, não envia nada
+  const linkDiretoFeito = useRef(false);
+  useEffect(() => {
+    if (!initialEsteiraId || linkDiretoFeito.current || !esteiras.length) return;
+    const e = esteiras.find((x) => x.id === initialEsteiraId);
+    if (!e) return;
+    linkDiretoFeito.current = true;
+    setAba("esteiras");
+    setFiltroEsteira(e.id);
+    setEsteiraSel(e.id);
+    setParada({ esteiraId: e.id, idx: 0 } as ParadaSelecionada);
+    window.setTimeout(() => document.getElementById(`esteira-${e.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 400);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEsteiraId, esteiras]);
 
   useEffect(() => {
     const e = esteiras.find((x) => x.id === esteiraSel);

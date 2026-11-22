@@ -41,6 +41,7 @@ import {
 
 interface NegociosModuleProps {
   onNavigate?: (module: string, params?: any) => void;
+  initialColuna?: string; // link direto: /negocios?coluna=p2
 }
 
 // Leads que já saíram do funil ativo (disparo / nutrição) e não têm etapa
@@ -76,7 +77,14 @@ const proximoLembrete = (lead: Lead) => {
   return { titulo: t.title as string, quando, atrasado };
 };
 
-export function NegociosModule({ onNavigate }: NegociosModuleProps) {
+/** Acha a coluna pelo id ("p2", "20") ou pelo nome ("P2", "20%"). */
+const acharColuna = (c?: string) => {
+  if (!c) return undefined;
+  const n = normalizeStatus(c);
+  return NEGOCIO_STAGES.find((s) => s.id === c || normalizeStatus(s.id) === n || normalizeStatus(s.name) === n || normalizeStatus(s.value) === n);
+};
+
+export function NegociosModule({ onNavigate, initialColuna }: NegociosModuleProps) {
   // Botão da coluna: abre Esteiras → Hoje só com os leads desta coluna
   const executarEsteiraDaColuna = (status: string) => {
     try {
@@ -113,7 +121,20 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     }
   };
 
-  const [activePhase, setActivePhase] = useState<"all" | NegocioPhaseId>("all");
+  const colunaInicial = acharColuna(initialColuna);
+  const [activePhase, setActivePhase] = useState<"all" | NegocioPhaseId>(() => (colunaInicial ? colunaInicial.phase : "all"));
+  // link direto para uma coluna: rola até ela e destaca por alguns segundos
+  const [colunaDestaque, setColunaDestaque] = useState<string | null>(colunaInicial?.id || null);
+  useEffect(() => {
+    if (!colunaInicial) return;
+    const t1 = window.setTimeout(() => document.getElementById(`coluna-${colunaInicial.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" }), 350);
+    const t2 = window.setTimeout(() => setColunaDestaque(null), 5000);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [search, setSearch] = useState("");
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
@@ -668,8 +689,9 @@ export function NegociosModule({ onNavigate }: NegociosModuleProps) {
     return (
       <div
         key={stage.id}
+        id={`coluna-${stage.id}`}
         className={`flex-shrink-0 w-[calc(100vw-56px)] max-w-[290px] sm:w-[256px] snap-start rounded-2xl bg-muted/55 dark:bg-muted/40 flex flex-col max-h-[calc(100dvh-230px)] min-h-[160px] transition-colors ${
-          dragOverStage === stage.id ? "ring-2 ring-primary/50 bg-primary/5" : ""
+          dragOverStage === stage.id || colunaDestaque === stage.id ? "ring-2 ring-primary/60 bg-primary/5" : ""
         }`}
         onDragOver={(e) => {
           e.preventDefault();

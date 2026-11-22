@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -31,13 +31,14 @@ interface Props {
   corAtual: string;
   corVerde: string;
   semana?: number[]; // dias da semana do filtro de cima (0 = domingo)
+  abrirAoCarregar?: boolean; // link direto /relatorios?registrar=1 (ex.: vindo da Agenda)
 }
 const diaDaSemana = (k: string) => {
   const [y, m, d] = k.split("-").map(Number);
   return new Date(y, m - 1, d).getDay();
 };
 
-export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, corVerde, semana = [0, 1, 2, 3, 4, 5, 6] }: Props) {
+export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, corVerde, semana = [0, 1, 2, 3, 4, 5, 6], abrirAoCarregar = false }: Props) {
   const { toast } = useToast();
   const [porDia, setPorDia] = useState<Record<string, Valores>>({});
   const [linhaDoDia, setLinhaDoDia] = useState<Record<string, any>>({});
@@ -71,7 +72,10 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
     const mt = await carregarMetas();
     setMetas(mt);
     setVgvPorDia(vgvPorDiaDe(mt));
+    setCarregou(true);
   }, []);
+  const [carregou, setCarregou] = useState(false);
+  const secaoRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     carregar();
@@ -135,6 +139,16 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   }, [dias]);
   const diasVisiveis = verTodosDias ? dias : dias.slice(0, 10);
   const nomeDia = (d: Date) => d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" }).replace(".", "");
+  // link direto (Agenda → Relatórios → Registrar): rola até aqui e abre o Registrar de hoje
+  const abriuDireto = useRef(false);
+  useEffect(() => {
+    if (!abrirAoCarregar || !carregou || abriuDireto.current) return;
+    abriuDireto.current = true;
+    secaoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    abrir();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirAoCarregar, carregou]);
+
   const carregarDia = (k: string) => {
     const row = linhaDoDia[k];
     const v = vazio();
@@ -184,7 +198,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   const max = Math.max(1, ...CAMPOS.map((c) => atual[c.id]));
 
   return (
-    <section className="rounded-2xl border bg-card p-4 sm:p-5 shadow-card">
+    <section ref={secaoRef} className="rounded-2xl border bg-card p-4 sm:p-5 shadow-card scroll-mt-4">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
           <h3 className="font-bold leading-tight">Atendimento até a venda</h3>

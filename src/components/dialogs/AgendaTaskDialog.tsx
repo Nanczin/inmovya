@@ -14,6 +14,8 @@ import { CalendarIcon, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useLeads } from "@/context/LeadsContext";
+import { ACOES, linkSeguro, type AcaoTipo } from "@/lib/agendaIrPara";
+import { NEGOCIO_STAGES, NEGOCIO_PHASES } from "@/lib/negociosStages";
 
 interface AgendaTaskDialogProps {
     isOpen: boolean;
@@ -27,6 +29,8 @@ interface AgendaTaskDialogProps {
         due_date: string;
         lead_id: string | null;
         status: string;
+        acao_tipo?: string | null;
+        acao_alvo?: string | null;
     } | null;
 }
 
@@ -37,6 +41,10 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
     const [time, setTime] = useState("09:00");
     const [selectedLeadId, setSelectedLeadId] = useState<string>("none");
     const [loading, setLoading] = useState(false);
+    // "Ir para": para onde o clique no compromisso leva
+    const [acaoTipo, setAcaoTipo] = useState<string>("none");
+    const [acaoAlvo, setAcaoAlvo] = useState<string>("");
+    const [esteiras, setEsteiras] = useState<{ id: string; nome: string }[]>([]);
     
     const { toast } = useToast();
     const { leads } = useLeads();
@@ -50,15 +58,24 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
                 setDate(taskDate);
                 setTime(format(taskDate, "HH:mm"));
                 setSelectedLeadId(taskToEdit.lead_id || "none");
+                setAcaoTipo(taskToEdit.acao_tipo || "none");
+                setAcaoAlvo(taskToEdit.acao_alvo || "");
             } else {
                 setTitle("");
                 setDescription("");
                 setDate(selectedDate || new Date());
                 setTime("09:00");
                 setSelectedLeadId("none");
+                setAcaoTipo("none");
+                setAcaoAlvo("");
             }
         }
     }, [isOpen, taskToEdit, selectedDate]);
+
+    useEffect(() => {
+        if (!isOpen || esteiras.length) return;
+        supabase.from("esteiras").select("id, nome").order("nome").then(({ data }) => setEsteiras((data as any) || []));
+    }, [isOpen, esteiras.length]);
 
     const handleSave = async () => {
         if (!title || !date || !time) {
@@ -86,17 +103,45 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
 
             const leadIdToSave = selectedLeadId === "none" ? null : selectedLeadId;
 
+            // "Ir para"
+            const tipo = acaoTipo === "none" ? null : (acaoTipo as AcaoTipo);
+            const precisaLead = ACOES.find((a) => a.id === tipo)?.precisaLead;
+            if (precisaLead && !leadIdToSave) {
+                toast({ title: "Escolha o lead", description: "Para ir ao WhatsApp ou à ficha, vincule o compromisso a um lead.", variant: "destructive" });
+                return;
+            }
+            let alvo: string | null = null;
+            if (tipo === "negocios" || tipo === "esteira") {
+                if (!acaoAlvo) {
+                    toast({ title: tipo === "esteira" ? "Escolha a esteira" : "Escolha a coluna", variant: "destructive" });
+                    return;
+                }
+                alvo = acaoAlvo;
+            } else if (tipo === "link") {
+                alvo = linkSeguro(acaoAlvo);
+                if (!alvo) {
+                    toast({ title: "Link inválido", description: "Cole um endereço começando com https://", variant: "destructive" });
+                    return;
+                }
+            } else if (precisaLead) alvo = leadIdToSave;
+            const irPara = { acao_tipo: tipo, acao_alvo: alvo };
+            // banco ainda sem as colunas novas (SQL não rodado): salva o resto e avisa
+            const semColunas = (e: any) => /acao_tipo|acao_alvo/i.test(String(e?.message || ""));
+            let avisoSql = false;
+
             if (taskToEdit) {
-                const { error } = await supabase
-                    .from('tasks')
-                    .update({
-                        user_id: user.id,
-                        lead_id: leadIdToSave,
-                        title,
-                        description,
-                        due_date: dateTime.toISOString(),
-                    })
-                    .eq('id', taskToEdit.id);
+                const dados = {
+                    user_id: user.id,
+                    lead_id: leadIdToSave,
+                    title,
+                    description,
+                    due_date: dateTime.toISOString(),
+                };
+                let { error } = await supabase.from('tasks').update({ ...dados, ...irPara } as any).eq('id', taskToEdit.id);
+                if (error && semColunas(error)) {
+                    avisoSql = !!tipo;
+                    ({ error } = await supabase.from('tasks').update(dados).eq('id', taskToEdit.id));
+                }
 
                 if (error) throw error;
                 
@@ -105,18 +150,19 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
                     description: `Agendado para ${format(dateTime, "dd/MM 'às' HH:mm", { locale: ptBR })}`
                 });
             } else {
-                const { data: taskData, error } = await supabase
-                    .from('tasks')
-                    .insert({
-                        user_id: user.id,
-                        lead_id: leadIdToSave,
-                        title,
-                        description,
-                        due_date: dateTime.toISOString(),
-                        status: 'pending'
-                    })
-                    .select()
-                    .single();
+                const dados = {
+                    user_id: user.id,
+                    lead_id: leadIdToSave,
+                    title,
+                    description,
+                    due_date: dateTime.toISOString(),
+                    status: 'pending'
+                };
+                let { data: taskData, error } = await supabase.from('tasks').insert({ ...dados, ...irPara } as any).select().single();
+                if (error && semColunas(error)) {
+                    avisoSql = !!tipo;
+                    ({ data: taskData, error } = await supabase.from('tasks').insert(dados).select().single());
+                }
 
                 if (error) throw error;
 
@@ -143,6 +189,13 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
                 });
             }
 
+            if (avisoSql) {
+                toast({
+                    title: "Compromisso salvo, mas sem o \"Ir para\"",
+                    description: "Falta rodar o SQL da Agenda no Supabase (supabase/agenda_ir_para.sql). Depois disso o \"Ir para\" passa a ser salvo.",
+                    variant: "destructive",
+                });
+            }
             if (onSuccess) onSuccess();
             handleClose();
 
@@ -173,7 +226,7 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
     
     return (
         <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose() }}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px] max-h-[92vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{taskToEdit ? "Editar Compromisso" : "Novo Compromisso"}</DialogTitle>
                 </DialogHeader>
@@ -203,6 +256,49 @@ export function AgendaTaskDialog({ isOpen, onClose, onSuccess, selectedDate, tas
                                 ))}
                             </SelectContent>
                         </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Ir para (Opcional)</Label>
+                        <Select value={acaoTipo} onValueChange={(v) => { setAcaoTipo(v); setAcaoAlvo(""); }}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Ao clicar no compromisso…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">Nada (padrão: WhatsApp do lead, se tiver)</SelectItem>
+                                {ACOES.map((a) => (
+                                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        {acaoTipo === "negocios" && (
+                            <Select value={acaoAlvo} onValueChange={setAcaoAlvo}>
+                                <SelectTrigger><SelectValue placeholder="Qual coluna? (ex.: P2, 20%)" /></SelectTrigger>
+                                <SelectContent className="max-h-72">
+                                    {NEGOCIO_PHASES.map((ph) =>
+                                        NEGOCIO_STAGES.filter((st) => st.phase === ph.id).map((st) => (
+                                            <SelectItem key={st.id} value={st.id}>{ph.label} · {st.name}</SelectItem>
+                                        ))
+                                    )}
+                                </SelectContent>
+                            </Select>
+                        )}
+                        {acaoTipo === "esteira" && (
+                            <Select value={acaoAlvo} onValueChange={setAcaoAlvo}>
+                                <SelectTrigger><SelectValue placeholder={esteiras.length ? "Qual esteira?" : "Carregando esteiras…"} /></SelectTrigger>
+                                <SelectContent className="max-h-72">
+                                    {esteiras.map((e) => (
+                                        <SelectItem key={e.id} value={e.id}>{e.nome}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                        {acaoTipo === "link" && (
+                            <Input value={acaoAlvo} onChange={(e) => setAcaoAlvo(e.target.value)} placeholder="https://… (ex.: a planilha da Midrah)" inputMode="url" />
+                        )}
+                        {(acaoTipo === "whatsapp" || acaoTipo === "lead") && selectedLeadId === "none" && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400">Vincule um lead acima para este destino funcionar.</p>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

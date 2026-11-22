@@ -35,6 +35,10 @@ const App = () => (
               <BrowserRouter>
                 <Routes>
                   <Route path="/" element={<Index />} />
+                  {/* links diretos (só IDs na URL): /leads?lead=ID, /negocios?coluna=p2, /esteiras?esteira=ID… */}
+                  {["/leads", "/negocios", "/esteiras", "/ligacoes", "/relatorios", "/agenda"].map((p) => (
+                    <Route key={p} path={p} element={<Index />} />
+                  ))}
                   <Route path="/auth" element={<Auth />} />
                   <Route path="/install" element={<Install />} />
                   

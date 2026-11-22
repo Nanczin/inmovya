@@ -231,7 +231,7 @@ const nomeResultado = (r: string) => {
   return r.length > 28 ? `${r.slice(0, 27)}…` : r;
 };
 
-export function RelatoriosModule() {
+export function RelatoriosModule({ abrirRegistrar = false }: { abrirRegistrar?: boolean } = {}) {
   const { leads } = useLeads();
   const cores = useCores();
   const [periodo, setPeriodo] = useState<PeriodoId>(() => {
@@ -578,7 +578,7 @@ export function RelatoriosModule() {
       </Painel>
 
       <h2 className="text-lg font-extrabold tracking-tight pt-2">Atendimento</h2>
-      <RegistrosComerciais inicio={j.inicio} fim={j.fim} inicioAnt={j.inicioAnt} fimAnt={j.fimAnt} corAtual={cores.atual} corVerde={cores.verde} />
+      <RegistrosComerciais inicio={j.inicio} fim={j.fim} inicioAnt={j.inicioAnt} fimAnt={j.fimAnt} corAtual={cores.atual} corVerde={cores.verde} abrirAoCarregar={abrirRegistrar} />
 
       <h2 className="text-lg font-extrabold tracking-tight pt-2">Ligações da Oferta Ativa</h2>
       <div className="grid lg:grid-cols-2 gap-4">

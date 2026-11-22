@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   format,
   addMonths,
@@ -17,7 +17,11 @@ import {
   isBefore,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus, Check, Trash2, Pencil, User, CalendarDays, List, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Check, Trash2, Pencil, User, CalendarDays, List, AlertCircle, MessageCircle, Contact, Kanban, Workflow, Phone, ClipboardList, ExternalLink, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { CompromissoLeads } from "@/components/agenda/CompromissoLeads";
+import { abrirWhatsApp, caminhoInterno, leadsNasObservacoes, linkSeguro, type AcaoTipo, type LeadAchado } from "@/lib/agendaIrPara";
+import { NEGOCIO_STAGES } from "@/lib/negociosStages";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -41,6 +45,9 @@ interface Task {
   due_date: string;
   status: string;
   lead_id: string | null;
+  acao_tipo?: string | null;
+  acao_alvo?: string | null;
+  leads_feitos?: string[] | null;
 }
 
 const feito = (t: Task) => t.status === "completed";
@@ -76,6 +83,15 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
 
   const { toast } = useToast();
   const { leads } = useLeads();
+  const navigate = useNavigate();
+  const [painel, setPainel] = useState<Task | null>(null); // compromisso com vários leads aberto
+  const [nomesEsteiras, setNomesEsteiras] = useState<Record<string, string>>({});
+  useEffect(() => {
+    supabase
+      .from("esteiras")
+      .select("id, nome")
+      .then(({ data }) => setNomesEsteiras(Object.fromEntries(((data as any[]) || []).map((e) => [e.id, e.nome]))));
+  }, []);
 
   const mudarVisao = (v: "lista" | "mes") => {
     setVisao(v);
@@ -116,8 +132,15 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
           .limit(100),
       ]);
       if (doMes.error) throw doMes.error;
-      setTasks(((doMes.data as Task[]) || []).filter((t) => !ehLembreteTemperatura(t)));
-      setAtrasados(((pendentes.data as Task[]) || []).filter((t) => !ehLembreteTemperatura(t)));
+      let reserva: Record<string, string[]> = {};
+      try {
+        reserva = JSON.parse(localStorage.getItem("inmovya_agenda_leads_feitos") || "{}");
+      } catch {
+        /* ignore */
+      }
+      const comFeitos = (t: Task) => (Array.isArray(t.leads_feitos) || !reserva[t.id] ? t : { ...t, leads_feitos: reserva[t.id] });
+      setTasks(((doMes.data as Task[]) || []).filter((t) => !ehLembreteTemperatura(t)).map(comFeitos));
+      setAtrasados(((pendentes.data as Task[]) || []).filter((t) => !ehLembreteTemperatura(t)).map(comFeitos));
     } catch (error) {
       console.error("Erro ao carregar a agenda:", error);
       toast({ title: "Não consegui carregar a agenda", description: "Confira a internet e tente de novo.", variant: "destructive" });
@@ -178,6 +201,96 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
 
   const nomeLead = (id: string | null) => (id ? leads.find((l) => l.id === id)?.nome || "Lead" : null);
 
+  // ---------- "Ir para": o que o clique no compromisso faz ----------
+  // nomes das observações que batem com leads (guardado por texto, para não refazer a cada desenho)
+  const cacheBloco = useMemo(() => new Map<string, LeadAchado[]>(), [leads]);
+  const leadsDoBloco = (t: Task): LeadAchado[] => {
+    const k = t.description || "";
+    if (!k) return [];
+    if (!cacheBloco.has(k)) cacheBloco.set(k, leadsNasObservacoes(k, leads as any));
+    return cacheBloco.get(k)!;
+  };
+  const feitosDe = (t: Task) => (Array.isArray(t.leads_feitos) ? t.leads_feitos : []);
+  type Destino = { tipo: AcaoTipo | "multi" | "editar"; nome: string; curto: string; icone: ReactNode };
+  const destinoDe = (t: Task): Destino => {
+    const cls = "w-3.5 h-3.5";
+    const bloco = leadsDoBloco(t);
+    if (bloco.length >= 2) return { tipo: "multi", nome: `${bloco.length} leads`, curto: "", icone: <Users className={cls} /> };
+    const tipo = (t.acao_tipo || (t.lead_id ? "whatsapp" : "")) as AcaoTipo | "";
+    switch (tipo) {
+      case "whatsapp":
+        return { tipo, curto: "WhatsApp", nome: `WhatsApp${nomeLead(t.acao_alvo || t.lead_id) ? ` de ${nomeLead(t.acao_alvo || t.lead_id)}` : ""}`, icone: <MessageCircle className={`${cls} text-success`} /> };
+      case "lead":
+        return { tipo, curto: "Ficha", nome: `Ficha de ${nomeLead(t.acao_alvo || t.lead_id) || "lead"}`, icone: <Contact className={cls} /> };
+      case "negocios":
+        return { tipo, curto: NEGOCIO_STAGES.find((s) => s.id === t.acao_alvo)?.name || "Negócios", nome: `Negócios · ${NEGOCIO_STAGES.find((s) => s.id === t.acao_alvo)?.name || t.acao_alvo || ""}`, icone: <Kanban className={cls} /> };
+      case "esteira":
+        return { tipo, curto: "Esteira", nome: `Esteira · ${nomesEsteiras[t.acao_alvo || ""] || "esteira"}`, icone: <Workflow className={cls} /> };
+      case "ligacoes":
+        return { tipo, curto: "Ligações", nome: "Ligações", icone: <Phone className={cls} /> };
+      case "registrar":
+        return { tipo, curto: "Registrar", nome: "Registrar (nine box)", icone: <ClipboardList className={cls} /> };
+      case "link":
+        return { tipo, curto: "Link", nome: "Link", icone: <ExternalLink className={cls} /> };
+      default:
+        return { tipo: "editar", curto: "", nome: "Editar", icone: <Pencil className={cls} /> };
+    }
+  };
+  const whatsDoLead = async (leadId: string | null | undefined) => {
+    const l = leads.find((x) => x.id === leadId);
+    if (!l) return toast({ title: "Lead não encontrado", description: "Ele pode ter sido excluído.", variant: "destructive" });
+    const r = await abrirWhatsApp(l.telefone);
+    if (!r.ok && r.aviso) toast({ title: "Não abri o WhatsApp", description: r.aviso, variant: "destructive" });
+  };
+  /** Vai para o destino escolhido no "Ir para" (sem olhar os vários leads). */
+  const irParaDestino = (t: Task) => {
+    const tipo = (t.acao_tipo || (t.lead_id ? "whatsapp" : "")) as AcaoTipo | "";
+    if (!tipo) return editar(t);
+    if (tipo === "whatsapp") return whatsDoLead(t.acao_alvo || t.lead_id);
+    if (tipo === "link") {
+      const url = linkSeguro(t.acao_alvo);
+      if (!url) return toast({ title: "Link inválido", description: "Edite o compromisso e cole o link de novo.", variant: "destructive" });
+      window.open(url, "_blank", "noopener");
+      return;
+    }
+    const caminho = caminhoInterno(tipo, t.acao_alvo, t.lead_id);
+    if (caminho) navigate(caminho);
+  };
+  /** Clique no card: vários leads → painel; "Ir para" → destino; lead vinculado → WhatsApp; nada → edição. */
+  const clicar = (t: Task) => {
+    if (leadsDoBloco(t).length >= 2) return setPainel(t);
+    irParaDestino(t);
+  };
+
+  // marcar um lead como feito dentro do compromisso (todos feitos = compromisso concluído)
+  const CHAVE_FEITOS = "inmovya_agenda_leads_feitos"; // reserva enquanto o SQL não foi rodado
+  const alternarLeadFeito = async (t: Task, leadId: string) => {
+    const atuais = feitosDe(t);
+    const novos = atuais.includes(leadId) ? atuais.filter((x) => x !== leadId) : [...atuais, leadId];
+    const todos = leadsDoBloco(t).map((a) => a.id);
+    const completo = todos.length > 0 && todos.every((id) => novos.includes(id));
+    const status = completo ? "completed" : t.status === "completed" && !completo ? "pending" : t.status;
+    const atualizado = { ...t, leads_feitos: novos, status };
+    const trocar = (l: Task[]) => l.map((x) => (x.id === t.id ? atualizado : x));
+    setTasks(trocar);
+    setAtrasados((l) => (status === "completed" ? l.filter((x) => x.id !== t.id) : trocar(l)));
+    setPainel(atualizado);
+    let { error } = await supabase.from("tasks").update({ leads_feitos: novos, status } as any).eq("id", t.id);
+    if (error && /leads_feitos/i.test(error.message)) {
+      // banco sem a coluna nova: guarda neste aparelho e conclui o compromisso mesmo assim
+      try {
+        const m = JSON.parse(localStorage.getItem(CHAVE_FEITOS) || "{}");
+        m[t.id] = novos;
+        localStorage.setItem(CHAVE_FEITOS, JSON.stringify(m));
+      } catch {
+        /* ignore */
+      }
+      ({ error } = await supabase.from("tasks").update({ status }).eq("id", t.id));
+    }
+    if (error) toast({ title: "Não consegui salvar", description: error.message, variant: "destructive" });
+    else if (completo && t.status !== "completed") toast({ title: "Todos feitos!", description: "Compromisso concluído." });
+  };
+
   // dias com compromisso no mês (para os pontinhos do calendário)
   const porDia = useMemo(() => {
     const m = new Map<string, Task[]>();
@@ -210,10 +323,22 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
   const Item = ({ t, compacto = false }: { t: Task; compacto?: boolean }) => {
     const lead = nomeLead(t.lead_id);
     const ok = feito(t);
+    const dest = destinoDe(t);
+    const bloco = dest.tipo === "multi" ? leadsDoBloco(t) : [];
+    const nFeitos = bloco.filter((a) => feitosDe(t).includes(a.id)).length;
     return (
       <div
-        className={`group flex items-start gap-3 rounded-xl px-3 ${compacto ? "py-2" : "py-2.5"} hover:bg-muted/70 transition-colors cursor-pointer`}
-        onClick={() => editar(t)}
+        role="button"
+        tabIndex={0}
+        className={`group flex items-start gap-3 rounded-xl px-3 ${compacto ? "py-2" : "py-2.5"} hover:bg-muted/70 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50`}
+        onClick={() => clicar(t)}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            clicar(t);
+          }
+        }}
+        title={dest.tipo === "editar" ? "Clique para editar" : `Clique para ir: ${dest.nome}`}
       >
         <button
           type="button"
@@ -231,7 +356,18 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
         </button>
         <div className="w-12 shrink-0 text-sm font-bold tabular-nums text-primary pt-px">{format(parseISO(t.due_date), "HH:mm")}</div>
         <div className="flex-1 min-w-0">
-          <div className={`text-sm font-semibold leading-snug ${ok ? "line-through text-muted-foreground" : ""}`}>{t.title}</div>
+          <div className="flex items-start gap-1.5">
+            <div className={`text-sm font-semibold leading-snug ${ok ? "line-through text-muted-foreground" : ""}`}>{t.title}</div>
+            {dest.tipo !== "editar" && (
+              <span
+                className="mt-px inline-flex items-center gap-1 shrink-0 rounded-full bg-primary/10 text-primary px-1.5 py-0.5 text-[10.5px] font-semibold"
+                aria-label={`Vai para: ${dest.nome}`}
+              >
+                {dest.icone}
+                {dest.tipo === "multi" ? `${nFeitos}/${bloco.length} leads` : <span className="hidden sm:inline">{dest.curto}</span>}
+              </span>
+            )}
+          </div>
           {lead && (
             <div className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1">
               <User className="w-3 h-3" /> {lead}
@@ -477,7 +613,7 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          editar(t);
+                          clicar(t);
                         }}
                         className={`w-full text-left truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
                           feito(t) ? "text-muted-foreground line-through" : "bg-primary/10 text-primary"
@@ -506,6 +642,35 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
         selectedDate={dataNova}
         taskToEdit={emEdicao}
       />
+
+      {painel && (
+        <CompromissoLeads
+          aberto={!!painel}
+          onFechar={() => setPainel(null)}
+          titulo={painel.title}
+          quando={painel.due_date}
+          descricao={painel.description}
+          achados={leadsDoBloco(painel)}
+          feitos={feitosDe(painel)}
+          concluido={feito(painel)}
+          destino={painel.acao_tipo ? (() => {
+            const d = destinoDe({ ...painel, description: "" });
+            return { nome: d.nome, icone: d.icone };
+          })() : null}
+          onIrPara={() => {
+            const t = painel;
+            setPainel(null);
+            irParaDestino(t);
+          }}
+          onWhatsApp={(a) => whatsDoLead(a.id)}
+          onAlternarFeito={(id) => alternarLeadFeito(painel, id)}
+          onEditar={() => {
+            const t = painel;
+            setPainel(null);
+            editar(t);
+          }}
+        />
+      )}
 
       <AlertDialog open={!!paraExcluir} onOpenChange={(o) => !o && setParaExcluir(null)}>
         <AlertDialogContent>

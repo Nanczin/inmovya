@@ -193,7 +193,7 @@ export function LinhasEsteiras({ esteiras, passosDe, leads, fimDeHoje, seleciona
         const sel = selecionada?.esteiraId === e.id ? selecionada.idx : null;
         const paradas = [...ps.map((p, i) => ({ i, rotulo: rotuloCurto(p, i), titulo: p.titulo || `Passo ${i + 1}`, fim: false })), { i: ps.length, rotulo: "Fim", titulo: "Aguardando resposta", fim: true }];
         return (
-          <div key={e.id} className="rounded-2xl border bg-card px-2.5 py-1.5">
+          <div key={e.id} id={`esteira-${e.id}`} className="rounded-2xl border bg-card px-2.5 py-1.5 scroll-mt-4">
             <button
               type="button"
               aria-expanded={aberta}

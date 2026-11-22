@@ -591,6 +591,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     setTimeout(() => chrome.runtime.reload(), 300);
     return false;
   }
+  // Agenda do Inmovya: abre a conversa do lead na aba do WhatsApp Web e traz a aba para a frente.
+  // Se uma esteira/disparo estiver enviando, não mexe (para não atrapalhar o envio).
+  if (request?.action === 'abrir_conversa') {
+    (async () => {
+      if (filaWARodando) return { ok: false, ocupado: true };
+      const abas = (await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' })).filter(a => !String(a.url || '').includes('inmovya_auto') && !abasEscondidas.has(a.id));
+      if (!abas.length) return { ok: false, erro: 'WhatsApp Web não está aberto' };
+      const aba = abas[0];
+      const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'abrir_conversa_aba', telefone: request.telefone }, x => res(chrome.runtime.lastError ? { ok: false, erro: chrome.runtime.lastError.message } : x)));
+      if (r?.ocupado) return { ok: false, ocupado: true };
+      if (!r?.ok) return { ok: false, erro: r?.erro || 'conversa não encontrada' };
+      try { await chrome.tabs.update(aba.id, { active: true }); await chrome.windows.update(aba.windowId, { focused: true }); } catch (_) { /* segue */ }
+      return { ok: true };
+    })().then(sendResponse).catch(e => sendResponse({ ok: false, erro: e?.message }));
+    return true;
+  }
   if (request?.action === 'teste_abrir') {
     (async () => {
       const abas = (await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' })).filter(a => !String(a.url || '').includes('inmovya_auto'));

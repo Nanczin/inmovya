@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,26 @@ const Index = () => {
   const [globalViewTaskId, setGlobalViewTaskId] = useState<string | null>(null);
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // muda a cada link direto, para a tela abrir de novo já no lugar certo
+  const [navKey, setNavKey] = useState(0);
+
+  // Links diretos: /leads?lead=ID · /negocios?coluna=p2 · /esteiras?esteira=ID · /ligacoes · /relatorios?registrar=1 · /agenda
+  useEffect(() => {
+    const seg = location.pathname.replace(/^\/+/, "").split("/")[0];
+    const modulos: Record<string, string> = { leads: "leads", negocios: "negocios", esteiras: "esteiras", ligacoes: "ligacoes", relatorios: "relatorios", agenda: "agenda" };
+    const mod = modulos[seg];
+    if (!mod) return;
+    const p = new URLSearchParams(location.search);
+    setActiveModule(mod);
+    setNavigationParams({
+      id: p.get("lead") || p.get("compromisso") || undefined,
+      coluna: p.get("coluna") || undefined,
+      esteira: p.get("esteira") || undefined,
+      registrar: p.has("registrar"),
+    });
+    setNavKey((k) => k + 1);
+  }, [location.key, location.pathname, location.search]);
 
     useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -106,20 +126,20 @@ const Index = () => {
       case "agenda":
         return <AgendaModule initialTaskId={navigationParams?.id} />;
       case "leads":
-        return <LeadsModule initialLeadId={navigationParams?.id} />;
+        return <LeadsModule key={navKey} initialLeadId={navigationParams?.id} />;
       case "email-marketing":
         return <GmailSystemModule />;
       case "negocios":
-        return <NegociosModule onNavigate={handleNavigation} />;
+        return <NegociosModule key={navKey} onNavigate={handleNavigation} initialColuna={navigationParams?.coluna} />;
       case "esteiras":
-        return <EsteirasModule />;
+        return <EsteirasModule key={navKey} initialEsteiraId={navigationParams?.esteira} />;
       case "mailing":
         return <MailingModule onModuleChange={setActiveModule} />;
       case "ligacoes":
         return <LigacoesModule />;
       case "funil": // o funil agora fica dentro de Relatórios
       case "relatorios":
-        return <RelatoriosModule />;
+        return <RelatoriosModule key={navKey} abrirRegistrar={!!navigationParams?.registrar} />;
       case "arena":
         return <ArenaModule />;
       case "settings":
@@ -142,6 +162,9 @@ const Index = () => {
               /* ignore */
             }
             setActiveModule(m);
+            setNavigationParams(null);
+            // saiu de um link direto pelo menu: a barra de endereço volta para o início
+            if (location.pathname !== "/") navigate("/", { replace: true });
           }}
         />
 

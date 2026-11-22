@@ -63,6 +63,20 @@
     });
   });
 
+  // Agenda: abrir a conversa de um lead no WhatsApp Web que já está aberto (sem abrir outra aba)
+  window.addEventListener('INMOVYA_ABRIR_CONVERSA', event => {
+    const detail = event.detail || {};
+    const responder = (dados) => window.dispatchEvent(new CustomEvent('INMOVYA_ABRIR_CONVERSA_RESULT', { detail: { token: detail.token, ...dados } }));
+    try {
+      chrome.runtime.sendMessage({ action: 'abrir_conversa', telefone: detail.telefone }, response => {
+        const error = chrome.runtime.lastError?.message;
+        responder(error ? { ok: false, erro: error } : response || { ok: false });
+      });
+    } catch (e) {
+      responder({ ok: false, erro: 'extensão recarregada' });
+    }
+  });
+
   // Trava de engajamento: o Inmovya pergunta se pode enviar, registra envios/respostas, vê o status e testa
   const TRAVA_OPS = ['pode', 'registrar', 'resposta', 'status', 'retomar', 'cfg', 'alarme', 'teste'];
   window.addEventListener('INMOVYA_TRAVA', event => {

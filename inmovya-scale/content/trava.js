@@ -29,6 +29,22 @@
     return true;
   });
 
+  // Agenda do Inmovya: abrir a conversa de um telefone nesta aba (só se nada estiver enviando aqui)
+  chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+    if (msg?.action !== 'abrir_conversa_aba') return;
+    (async () => {
+      const disparo = window.IS?.Disparo?._st;
+      if (disparo?.atual) return { ok: false, ocupado: true }; // disparo mandando uma mensagem agora
+      const tel = String(msg.telefone || '').replace(/\D/g, '');
+      const achado = await loja('acharConversa', { telefone: tel }, 6000);
+      const chatId = achado?.dados?.chatId;
+      if (!chatId) return { ok: false, erro: 'sem conversa com esse número' };
+      const ab = await loja('abrir', { chatId }, 8000);
+      return ab?.ok ? { ok: true } : { ok: false, erro: ab?.erro || 'não abriu' };
+    })().then(sendResponse).catch(e => sendResponse({ ok: false, erro: e?.message }));
+    return true;
+  });
+
   const enviar = (m) => new Promise(res => {
     try { chrome.runtime.sendMessage(m, r => res(chrome.runtime.lastError ? null : r)); } catch (_) { res(null); }
   });
