@@ -128,36 +128,67 @@ export type LeadAchado = { id: string; nome: string; telefone?: string; trecho: 
  */
 export function leadsNasObservacoes(texto: string | null | undefined, leads: { id: string; nome: string; telefone?: string }[]): LeadAchado[] {
   if (!texto || !leads.length) return [];
-  // depois de ":" começa a lista; separa por vírgula, ponto e vírgula, quebra de linha, marcadores e " e "
+  // separa por vírgula, ponto e vírgula, dois-pontos, parênteses, quebra de linha, ponto final, marcadores e " e Nome"
   const pedacos = String(texto)
-    .split(/\n/)
-    .flatMap((linha) => {
-      const i = linha.indexOf(":");
-      return (i >= 0 ? linha.slice(i + 1) : linha).split(/[,;•·|\/]| - | – | e (?=[A-ZÁÉÍÓÚÂÊÔÃÕ])/);
-    })
+    .split(/[\n,;:()\[\]•·|\/]|\.\s| - | – | e (?=[A-ZÁÉÍÓÚÂÊÔÃÕ])/)
     .map((p) => p.trim())
     .filter(Boolean);
   const base = leads
     .filter((l) => l.nome && l.nome.trim().length >= 2)
     .map((l) => ({ ...l, n: norm(l.nome), dig: String(l.telefone || "").replace(/\D/g, "").slice(-8) }));
+  const porNome = new Map<string, typeof base>();
+  base.forEach((l) => porNome.set(l.n, [...(porNome.get(l.n) || []), l]));
   const saida: LeadAchado[] = [];
   const vistos = new Set<string>();
-  for (const pedaco of pedacos) {
-    const dig = pedaco.replace(/\D/g, "");
-    const p = norm(pedaco.replace(/\(?\+?\d[\d\s().-]{6,}\d\)?/g, ""));
-    let achados: typeof base = [];
-    if (dig.length >= 8) achados = base.filter((l) => l.dig && l.dig === dig.slice(-8));
-    if (!achados.length) {
-      if (!p || p.length < 3 || p.split(" ").length > 5) continue;
-      const exatos = base.filter((l) => l.n === p);
-      achados = exatos.length ? exatos : base.filter((l) => l.n.startsWith(`${p} `));
-    }
-    if (!achados.length) continue;
+  const juntar = (achados: typeof base, trecho: string) => {
     const repetido = achados.length > 1;
     for (const l of achados.slice(0, 4)) {
       if (vistos.has(l.id)) continue;
       vistos.add(l.id);
-      saida.push({ id: l.id, nome: l.nome, telefone: l.telefone, trecho: pedaco, repetido });
+      saida.push({ id: l.id, nome: l.nome, telefone: l.telefone, trecho, repetido });
+    }
+  };
+  for (const pedaco of pedacos) {
+    // telefone no trecho: confere pelos 8 últimos dígitos
+    const dig = pedaco.replace(/\D/g, "");
+    if (dig.length >= 8) {
+      const porTel = base.filter((l) => l.dig && l.dig === dig.slice(-8));
+      if (porTel.length) {
+        juntar(porTel, pedaco);
+        continue;
+      }
+    }
+    const palavras = norm(pedaco.replace(/\(?\+?\d[\d\s().-]{6,}\d\)?/g, "")).split(" ").filter(Boolean);
+    if (!palavras.length) continue;
+    // só o primeiro nome (ex.: "Sandro"): todos os leads que começam assim
+    if (palavras.length <= 2) {
+      const p = palavras.join(" ");
+      const exatos = porNome.get(p);
+      if (exatos) {
+        juntar(exatos, pedaco);
+        continue;
+      }
+      if (p.length >= 3) {
+        const comeca = base.filter((l) => l.n.startsWith(`${p} `));
+        if (comeca.length) {
+          juntar(comeca, pedaco);
+          continue;
+        }
+      }
+    }
+    // nome completo no meio de uma frase (ex.: "Retomar também Juliana Braite"): procura de 4 a 2 palavras seguidas
+    let i = 0;
+    while (i < palavras.length) {
+      let achou = 0;
+      for (let tam = Math.min(4, palavras.length - i); tam >= 2; tam--) {
+        const lista = porNome.get(palavras.slice(i, i + tam).join(" "));
+        if (lista) {
+          juntar(lista, pedaco);
+          achou = tam;
+          break;
+        }
+      }
+      i += achou || 1;
     }
   }
   return saida;
