@@ -375,7 +375,7 @@ export function AgendaModule({ initialTaskId }: { initialTaskId?: string }) {
           )}
           {!compacto && t.description && <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.description}</div>}
         </div>
-        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="icon"
