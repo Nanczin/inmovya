@@ -601,7 +601,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const aba = abas[0];
       const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'abrir_conversa_aba', telefone: request.telefone }, x => res(chrome.runtime.lastError ? { ok: false, erro: chrome.runtime.lastError.message } : x)));
       if (r?.ocupado) return { ok: false, ocupado: true };
-      if (!r?.ok) return { ok: false, erro: r?.erro || 'conversa não encontrada' };
+      if (!r?.ok) {
+        // número sem conversa ainda: abre o "enviar para" do próprio WhatsApp NESTA aba (não cria outra)
+        const tel = String(request.telefone || '').replace(/\D/g, '');
+        if (!tel) return { ok: false, erro: r?.erro || 'sem telefone' };
+        await chrome.tabs.update(aba.id, { url: `https://web.whatsapp.com/send?phone=${tel}`, active: true });
+        try { await chrome.windows.update(aba.windowId, { focused: true }); } catch (_) { /* segue */ }
+        return { ok: true, recarregou: true };
+      }
       try { await chrome.tabs.update(aba.id, { active: true }); await chrome.windows.update(aba.windowId, { focused: true }); } catch (_) { /* segue */ }
       return { ok: true };
     })().then(sendResponse).catch(e => sendResponse({ ok: false, erro: e?.message }));

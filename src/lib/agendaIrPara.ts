@@ -77,6 +77,8 @@ export async function abrirWhatsApp(telefone?: string | null): Promise<{ ok: boo
   const r = await pedirExtensao(tel);
   if (r?.ok) return { ok: true };
   if (r?.ocupado) return { ok: false, aviso: "Uma esteira ou disparo está enviando agora no WhatsApp. Para não atrapalhar, abra a conversa quando terminar." };
+  // extensão antiga (não sabe abrir a conversa): não abro outra aba do WhatsApp para não derrubar a que está aberta
+  if (!r) return { ok: false, aviso: "Atualize a extensão Inmovya Scale para a versão 1.30 (Recarregar em chrome://extensions) para abrir a conversa no WhatsApp que já está aberto." };
   const aba = window.open(`https://web.whatsapp.com/send?phone=${tel}`, "_blank");
   if (!aba) return { ok: false, aviso: "O navegador bloqueou a nova aba. Libere pop-ups para o Inmovya." };
   return { ok: true };
