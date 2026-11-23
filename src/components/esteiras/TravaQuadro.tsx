@@ -95,11 +95,11 @@ function Motivo({ o, cfg, status, retomar }: { o?: TravaOrigem; cfg: TravaCfg; s
 }
 
 /** Quadrinho de uma esteira. */
-export function TravaQuadroEsteira({ esteiraId, nome, status, onRetomar }: { esteiraId: string; nome: string; status: TravaStatus | null; onRetomar: (alvo: string) => void }) {
+export function TravaQuadroEsteira({ esteiraId, nome, status, onRetomar, onMudou }: { esteiraId: string; nome: string; status: TravaStatus | null; onRetomar: (alvo: string) => void; onMudou?: () => void }) {
   const o = status?.origens?.[origemEsteira(esteiraId)];
   const cfg = getTravaEsteira(esteiraId);
   return (
-    <div className={`rounded-xl border p-3 flex flex-col gap-2 ${o?.pausa ? "border-red-300 bg-red-50/60 dark:border-red-900 dark:bg-red-950/30" : "bg-card"}`}>
+    <div className={`rounded-xl border p-3 flex flex-col gap-2 ${o?.pausa || status?.alarme || status?.global ? "border-red-300 bg-red-50/60 dark:border-red-900 dark:bg-red-950/30" : "bg-card"}`}>
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-bold flex items-center gap-1.5 min-w-0">
           <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" aria-hidden="true" />
@@ -111,8 +111,58 @@ export function TravaQuadroEsteira({ esteiraId, nome, status, onRetomar }: { est
           </Button>
         )}
       </div>
+      {status?.alarme && (
+        <div className="rounded-lg border border-red-300 bg-red-100/70 dark:bg-red-950/50 dark:border-red-900 p-2.5 flex flex-col gap-1.5">
+          <div className="text-xs font-bold text-red-800 dark:text-red-300">⚠️ Todos os envios automáticos estão pausados (inclusive o 1º contato)</div>
+          <div className="text-[11px]">{status.alarme.motivo}</div>
+          <Button size="sm" className="h-8 self-start bg-success hover:bg-success/90 text-success-foreground" onClick={() => onRetomar("alarme")}>
+            <Play className="w-3.5 h-3.5 mr-1" /> Retomar
+          </Button>
+        </div>
+      )}
+      {!status?.alarme && status?.global && (
+        <div className="rounded-lg border border-red-300 bg-red-100/70 dark:bg-red-950/50 dark:border-red-900 p-2.5 flex flex-col gap-1.5">
+          <div className="text-xs font-bold text-red-800 dark:text-red-300">⏸️ Esteiras e disparo pausados até amanhã</div>
+          <div className="text-[11px]">{status.global.motivo}</div>
+          <Button size="sm" variant="outline" className="h-8 self-start" onClick={() => onRetomar("global")}>
+            <RotateCcw className="w-3.5 h-3.5 mr-1" /> Retomar mesmo assim
+          </Button>
+        </div>
+      )}
       <Numeros o={o} cfg={cfg} />
       <Motivo o={o} cfg={cfg} status={status} retomar={onRetomar} />
+      {status && <LimiteDoDia status={status} onMudou={onMudou} />}
+    </div>
+  );
+}
+
+/** Linha do limite do dia (soma de ignorados de todas as esteiras + disparo), com o limite editável. */
+function LimiteDoDia({ status, onMudou }: { status: TravaStatus; onMudou?: () => void }) {
+  const [limite, setLimite] = useState(String(status.limiteDia));
+  useEffect(() => setLimite(String(status.limiteDia)), [status.limiteDia]);
+  const salvar = async () => {
+    const n = parseInt(limite);
+    if (!Number.isFinite(n) || n === status.limiteDia) return;
+    await travaLimiteDia(n);
+    avisarTravaMudou();
+    onMudou?.();
+  };
+  const ign = status.ignoradosHoje;
+  const pct = Math.min(100, Math.round((ign / Math.max(1, status.limiteDia)) * 100));
+  return (
+    <div className="grid gap-1 pt-1 border-t">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span>
+          Ignorados hoje, somando todas as esteiras e o disparo: <b className="text-foreground">{ign}</b> de <b className="text-foreground">{status.limiteDia}</b>
+        </span>
+        <label className="flex items-center gap-1.5">
+          limite do dia
+          <Input type="number" min={3} max={500} className="h-7 w-16 text-xs" value={limite} onChange={(e) => setLimite(e.target.value)} onBlur={salvar} onKeyDown={(e) => e.key === "Enter" && salvar()} />
+        </label>
+      </div>
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden" aria-hidden="true">
+        <div className={`h-full ${pct >= 100 ? "bg-red-500" : pct >= 70 ? "bg-amber-500" : "bg-success"}`} style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

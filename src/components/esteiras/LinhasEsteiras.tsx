@@ -51,9 +51,10 @@ interface Props {
   selecionada: ParadaSelecionada;
   onSelecionar: (s: ParadaSelecionada) => void;
   renderPainel: (esteira: Esteira, idx: number, leadsDaParada: LeadNaLinha[]) => ReactNode;
+  renderExtra?: (esteira: Esteira) => ReactNode; // ex.: quadrinho da trava de engajamento desta esteira
 }
 
-export function LinhasEsteiras({ esteiras, passosDe, leads, fimDeHoje, selecionada, onSelecionar, renderPainel }: Props) {
+export function LinhasEsteiras({ esteiras, passosDe, leads, fimDeHoje, selecionada, onSelecionar, renderPainel, renderExtra }: Props) {
   const [busca, setBusca] = useState("");
   const [fechadas, setFechadas] = useState<Set<string> | null>(lerFechadas);
 
@@ -251,6 +252,8 @@ export function LinhasEsteiras({ esteiras, passosDe, leads, fimDeHoje, seleciona
                 </div>
               </div>
             )}
+
+            {aberta && renderExtra && <div className="px-2 pb-2">{renderExtra(e)}</div>}
 
             {aberta && sel !== null && (
               <div className="border-t mx-2 mt-1 pt-3 pb-2">{renderPainel(e, sel, porParada.get(`${e.id}:${sel}`) || [])}</div>

@@ -1,5 +1,5 @@
 import { EntradaAutomatica } from "@/components/esteiras/EntradaAutomatica";
-import { TravaConfigEsteira, TravaPainel, TravaQuadroEsteira, avisarTravaMudou, useTravaStatus } from "@/components/esteiras/TravaQuadro";
+import { TravaConfigEsteira, TravaQuadroEsteira, avisarTravaMudou, useTravaStatus } from "@/components/esteiras/TravaQuadro";
 import { travaAlarme, travaPode, travaRegistrar, travaResposta, travaRetomar } from "@/lib/trava";
 import { chamadosHojeNoWhatsApp, respondeuNoWhatsAppAberto, varrerRespostas } from "@/lib/varrerRespostas";
 import { getTempoEnvio, novoLote, pausaDeLoteMin, proximoIntervaloEsteira, setTempoEnvio, TEMPO_MINIMO_MIN, variarAutomatico, type TempoEnvio } from "@/lib/variacao";
@@ -1456,15 +1456,6 @@ export function EsteirasModule({ initialEsteiraId }: { initialEsteiraId?: string
               />
             </>
           )}
-          <TravaQuadroEsteira
-            esteiraId={e.id}
-            nome={e.nome}
-            status={travaSt.status}
-            onRetomar={async (alvo) => {
-              await travaRetomar(alvo);
-              travaSt.atualizar();
-            }}
-          />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
               variant="ghost"
@@ -1774,9 +1765,6 @@ export function EsteirasModule({ initialEsteiraId }: { initialEsteiraId?: string
                 )}
                 </div>
               </div>
-
-              {/* Trava de engajamento */}
-              <TravaPainel esteiras={esteiras.map((x) => ({ id: x.id, nome: x.nome }))} />
 
               {/* Piloto automático */}
               <div className={`rounded-2xl border p-4 flex flex-col gap-3 ${piloto.ativo ? "border-success/40 bg-success/[0.06]" : "bg-card"}`}>
@@ -2148,6 +2136,18 @@ export function EsteirasModule({ initialEsteiraId }: { initialEsteiraId?: string
                   if (p) setEsteiraSel(p.esteiraId);
                 }}
                 renderPainel={renderPainelParada}
+                renderExtra={(e) => (
+                  <TravaQuadroEsteira
+                    esteiraId={e.id}
+                    nome={e.nome}
+                    status={travaSt.status}
+                    onMudou={travaSt.atualizar}
+                    onRetomar={async (alvo) => {
+                      await travaRetomar(alvo);
+                      travaSt.atualizar();
+                    }}
+                  />
+                )}
               />
             </>
           )}
