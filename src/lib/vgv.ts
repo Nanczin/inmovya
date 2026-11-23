@@ -24,6 +24,25 @@ export const vendasProporcionais = (vgv: number, metas: Pick<Metas, "mesVendas">
   return Math.round((vgv / meta) * (Number(metas.mesVendas) || 0) * 10) / 10;
 };
 
+/**
+ * Meta de vendas: conta o MELHOR entre a quantidade de vendas e o VGV.
+ * Bateu a quantidade OU o VGV do mês = meta batida (um compensa o outro).
+ * valor = o maior dos dois; por = qual deles está valendo.
+ */
+export const vendasNaMeta = (qtd: number, vgv: number, metas: Pick<Metas, "mesVendas"> & { mesVgv?: number }) => {
+  const q = Number(qtd) || 0;
+  const prop = vendasProporcionais(vgv, metas);
+  if (prop === null || q >= prop) return { valor: q, por: "qtd" as const, qtd: q, prop };
+  return { valor: prop, por: "vgv" as const, qtd: q, prop };
+};
+
+/** Texto curto: "1 venda · VGV R$ 600 mil de R$ 1,5 mi (vale 1,2)" */
+export const textoVendasNaMeta = (r: ReturnType<typeof vendasNaMeta>, vgv: number, mesVgv?: number) => {
+  const vendas = `${r.qtd.toLocaleString("pt-BR")} ${r.qtd === 1 ? "venda" : "vendas"}`;
+  if (r.prop === null) return vendas;
+  return `${vendas} · VGV ${reais(vgv)} de ${reais(Number(mesVgv) || 0)} (vale ${r.prop.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}) · conta o maior`;
+};
+
 /** "R$ 1,25 mi", "R$ 850 mil", "R$ 900" */
 export const reais = (v: number) => {
   const n = Number(v) || 0;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { reais, vendasProporcionais, vgvDoMes, vgvPorDiaDe } from "@/lib/vgv";
+import { textoVendasNaMeta, vendasNaMeta, vgvDoMes, vgvPorDiaDe } from "@/lib/vgv";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
@@ -90,7 +90,7 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
       };
       // vendas: com meta de VGV, contam proporcional ao valor vendido
       const vgvMes = vgvDoMes(vgvPorDiaDe(metas), kHoje.slice(0, 7));
-      const vendasVgv = vendasProporcionais(vgvMes, metas);
+      const vendasMeta = vendasNaMeta(soma.vendas, vgvMes, metas); // quantidade OU VGV: vale o maior
 
       if (!vivo) return;
       setLinhas([
@@ -102,9 +102,13 @@ export function MetasDoDia({ onAbrirArena }: { onAbrirArena: () => void }) {
         { icone: "🤝", nome: "Negociações", feito: soma.negociacoes, alvo: metas.mesNegociacoes, obs: porDia(soma.negociacoes, metas.mesNegociacoes) },
         { icone: "🏠", nome: "Visitas", feito: soma.visitas, alvo: metas.mesVisitas, obs: porDia(soma.visitas, metas.mesVisitas) },
         { icone: "📄", nome: "Documentos", feito: soma.documentacoes, alvo: metas.mesDocumentacoes, obs: porDia(soma.documentacoes, metas.mesDocumentacoes) },
-        vendasVgv !== null
-          ? { icone: "🏆", nome: "Vendas", feito: vendasVgv, alvo: metas.mesVendas, obs: `VGV ${reais(vgvMes)} de ${reais(metas.mesVgv)} · ${porDia(vendasVgv, metas.mesVendas)}` }
-          : { icone: "🏆", nome: "Vendas", feito: soma.vendas, alvo: metas.mesVendas, obs: porDia(soma.vendas, metas.mesVendas) },
+        {
+          icone: "🏆",
+          nome: "Vendas",
+          feito: vendasMeta.valor,
+          alvo: metas.mesVendas,
+          obs: vendasMeta.prop === null ? porDia(soma.vendas, metas.mesVendas) : `${textoVendasNaMeta(vendasMeta, vgvMes, metas.mesVgv)} · ${porDia(vendasMeta.valor, metas.mesVendas)}`,
+        },
       ]);
       window.setTimeout(() => vivo && setAberto(true), 600);
     };

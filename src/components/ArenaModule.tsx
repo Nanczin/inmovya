@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as EventoMouse } from "react";
-import { reais, vendasProporcionais, vgvDoMes, vgvPorDiaDe } from "@/lib/vgv";
+import { reais, vendasNaMeta, vgvDoMes, vgvPorDiaDe } from "@/lib/vgv";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -608,7 +608,9 @@ export function ArenaModule() {
           {metasMes.map(({ m, alvo }) => {
             // vendas com meta de VGV: conta proporcional ao valor vendido
             const vgvMesAtual = m === "vendas" ? vgvDoMes(vgvPorDiaDe(metas), kHoje.slice(0, 7)) : 0;
-            const porVgv = m === "vendas" ? vendasProporcionais(vgvMesAtual, metas) : null;
+            // vendas: quantidade OU VGV — vale o maior (bater um dos dois = meta batida)
+            const vm = m === "vendas" ? vendasNaMeta(mes[m], vgvMesAtual, metas) : null;
+            const porVgv = vm && vm.prop !== null ? vm.valor : null;
             const v = porVgv !== null ? porVgv : mes[m];
             const pct = Math.min(100, (v / Math.max(1, alvo)) * 100);
             const falta = Math.max(0, alvo - v);
@@ -628,9 +630,9 @@ export function ArenaModule() {
                   <Barra pct={pct} className={v >= alvo ? "bg-success" : noRitmo ? "bg-primary" : "bg-warning"} />
                 </div>
                 <div className="text-xs mt-1.5 text-muted-foreground">
-                  {porVgv !== null ? (
+                  {porVgv !== null && vm ? (
                     <>
-                      VGV: <b className="text-foreground">{reais(vgvMesAtual)}</b> de {reais(metas.mesVgv)}
+                      {vm.qtd} {vm.qtd === 1 ? "venda" : "vendas"} · VGV <b className="text-foreground">{reais(vgvMesAtual)}</b> de {reais(metas.mesVgv)} · conta {vm.por === "vgv" ? "o VGV" : "a quantidade"}
                     </>
                   ) : (
                     <>

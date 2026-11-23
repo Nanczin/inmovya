@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Minus, Plus, PenLine, ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { carregarMetas } from "@/components/arena/DefinirMetasDialog";
 import type { Metas } from "@/components/ArenaModule";
-import { lerReais, reais, salvarVgvDoDia, somarVgv, vendasProporcionais, vgvDoMes, vgvPorDiaDe, type VgvPorDia } from "@/lib/vgv";
+import { lerReais, reais, salvarVgvDoDia, somarVgv, vendasNaMeta, vendasProporcionais, vgvDoMes, vgvPorDiaDe, type VgvPorDia } from "@/lib/vgv";
 
 // Registros feitos à mão no dia a dia (ficam na tabela powerbi_funnel_metrics, uma linha por dia: "dia:AAAA-MM-DD")
 type Campo = "interacoes" | "negociacoes" | "visitas" | "documentacoes" | "vendas";
@@ -99,7 +99,10 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
   // meta do mês corrente, proporcional ao VGV
   const mesAtual = chave(new Date()).slice(0, 7);
   const vgvMes = vgvDoMes(vgvPorDia, mesAtual);
-  const vendasPorVgv = metas ? vendasProporcionais(vgvMes, metas) : null;
+  const vendasQtdMes = Object.entries(porDia).reduce((t, [k, v]) => (k.startsWith(mesAtual) ? t + (Number(v.vendas) || 0) : t), 0);
+  // quantidade OU VGV: vale o maior (bater um dos dois = meta batida)
+  const vendasMeta = metas ? vendasNaMeta(vendasQtdMes, vgvMes, metas) : null;
+  const vendasPorVgv = vendasMeta && vendasMeta.prop !== null ? vendasMeta.valor : null;
 
   const abrir = (k = chave(new Date())) => {
     setDia(k);
@@ -252,7 +255,7 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
           {atual.vendas > 0 && <div className="text-xs text-muted-foreground mt-0.5">ticket médio {reais(vgvAtual / atual.vendas)}</div>}
         </div>
         <div className="rounded-xl border p-3">
-          <div className="text-xs font-semibold text-muted-foreground">Meta de vendas do mês {vendasPorVgv !== null ? "(pelo VGV)" : ""}</div>
+          <div className="text-xs font-semibold text-muted-foreground">Meta de vendas do mês {vendasPorVgv !== null ? "(quantidade ou VGV, vale o maior)" : ""}</div>
           {metas && vendasPorVgv !== null ? (
             <>
               <div className="flex items-baseline gap-1 mt-0.5">
@@ -260,10 +263,11 @@ export function RegistrosComerciais({ inicio, fim, inicioAnt, fimAnt, corAtual, 
                 <span className="text-muted-foreground">/ {metas.mesVendas} vendas</span>
               </div>
               <div className="h-2 mt-1.5 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (vgvMes / Math.max(1, metas.mesVgv)) * 100)}%`, background: corVerde }} />
+                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (vendasPorVgv / Math.max(1, metas.mesVendas)) * 100)}%`, background: corVerde }} />
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                {reais(vgvMes)} de {reais(metas.mesVgv)} · cada {reais(metas.mesVgv / Math.max(1, metas.mesVendas))} = 1 venda
+                Quantidade: <b className="text-foreground">{vendasMeta!.qtd}</b> de {metas.mesVendas} · VGV: <b className="text-foreground">{reais(vgvMes)}</b> de {reais(metas.mesVgv)}
+                {vendasPorVgv >= metas.mesVendas ? " · meta batida ✓" : ` · contando ${vendasMeta!.por === "vgv" ? "o VGV" : "a quantidade"}`}
               </div>
             </>
           ) : (
