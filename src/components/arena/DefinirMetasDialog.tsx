@@ -124,10 +124,10 @@ export function DefinirMetasDialog({ open, onOpenChange, onSalvo }: { open: bool
                 <span className="block text-xs font-normal text-muted-foreground">
                   {m.mesVgv > 0 && m.mesVendas > 0 ? (
                     <>
-                      a meta de vendas anda pelo VGV: cada <b className="text-foreground">{reais(m.mesVgv / m.mesVendas)}</b> vendidos = 1 venda
+                      vendas contam por quantidade <b className="text-foreground">ou</b> VGV, o que for maior: cada <b className="text-foreground">{reais(m.mesVgv / m.mesVendas)}</b> vendidos = 1 venda. Bater um dos dois = meta batida
                     </>
                   ) : (
-                    "deixe 0 para contar vendas por quantidade"
+                    "preencha para a venda contar também pelo valor (um compensa o outro); 0 = só quantidade"
                   )}
                 </span>
               </span>
