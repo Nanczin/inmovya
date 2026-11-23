@@ -1,5 +1,5 @@
 // Trava de Engajamento na tela das Esteiras:
-// - TravaPainel: resumo do dia (todas as esteiras + disparo), limite de ignorados, Retomar e "Testar travas".
+// - TravaPainel: resumo do dia (todas as esteiras + disparo), limite de ignorados, e Retomar.
 // - TravaQuadroEsteira: o quadrinho de uma esteira (Enviados | Responderam | Ignoraram | Taxa | 🟢🟡🔴).
 // - TravaConfigEsteira: os números da trava desta esteira (fica junto das pausas, nas Configurações da esteira).
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FlaskConical, Play, RotateCcw, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Play, RotateCcw, ShieldCheck, ShieldAlert } from "lucide-react";
 import {
   getTravaEsteira,
   origemEsteira,
@@ -16,10 +15,8 @@ import {
   travaLimiteDia,
   travaRetomar,
   travaStatus,
-  travaTeste,
   type TravaCfg,
   type TravaOrigem,
-  type TravaPode,
   type TravaStatus,
 } from "@/lib/trava";
 
@@ -166,7 +163,6 @@ export function TravaConfigEsteira({ esteiraId, nome }: { esteiraId: string; nom
 export function TravaPainel({ esteiras }: { esteiras: { id: string; nome: string }[] }) {
   const { status, semExtensao, atualizar } = useTravaStatus();
   const [limite, setLimite] = useState<string>("");
-  const [testeAberto, setTesteAberto] = useState(false);
   useEffect(() => {
     if (status && limite === "") setLimite(String(status.limiteDia));
   }, [status, limite]);
@@ -203,9 +199,6 @@ export function TravaPainel({ esteiras }: { esteiras: { id: string; nome: string
           <div className="text-sm font-extrabold">Trava de engajamento</div>
           <div className="text-xs text-muted-foreground">Freia as esteiras e o disparo quando muita gente ignora as mensagens. O 1º contato de lead novo não entra na conta.</div>
         </div>
-        <Button variant="outline" className="h-9 px-3 text-sm" onClick={() => setTesteAberto(true)}>
-          <FlaskConical className="w-4 h-4 mr-1.5" /> Testar travas
-        </Button>
       </div>
 
       {status?.alarme && (
@@ -266,143 +259,6 @@ export function TravaPainel({ esteiras }: { esteiras: { id: string; nome: string
           )}
         </div>
       </div>
-
-      <TesteTravas aberto={testeAberto} onFechar={() => setTesteAberto(false)} />
-    </div>
-  );
-}
-
-// ---------------- Modo de teste ----------------
-// Usa um registro separado: não envia nada no WhatsApp e não mexe nos números de verdade.
-function TesteTravas({ aberto, onFechar }: { aberto: boolean; onFechar: () => void }) {
-  const [st, setSt] = useState<(TravaStatus & { simulados?: number; depois?: TravaPode; primeiroContato?: TravaPode }) | null>(null);
-  const [ocupado, setOcupado] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
-
-  const rodar = async (dados: Parameters<typeof travaTeste>[0], titulo: string) => {
-    setOcupado(true);
-    const r = await travaTeste(dados);
-    setOcupado(false);
-    if (!r) {
-      setLog((l) => [`❌ ${titulo}: a extensão não respondeu (precisa da versão 1.29).`, ...l]);
-      return;
-    }
-    setSt(r);
-    const d = r.depois;
-    let res = "";
-    if (d) res = d.pode ? (d.fator && d.fator > 1 ? "→ 🟡 continua, mas com intervalo DOBRADO" : "→ 🟢 continua normal") : `→ 🔴 BLOQUEADO: ${d.motivo}`;
-    if (r.primeiroContato) res += ` · 1º contato: ${r.primeiroContato.pode ? "liberado ✅" : "bloqueado ⛔"}`;
-    setLog((l) => [`${titulo}${r.simulados != null ? ` (${r.simulados} envios simulados)` : ""} ${res}`.trim(), ...l].slice(0, 12));
-  };
-  useEffect(() => {
-    if (aberto) rodar({ op: "zerar" }, "🧹 Teste zerado");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aberto]);
-
-  const o = st?.origens?.["teste-esteira"];
-  const od = st?.origens?.["teste-disparo"];
-  const botao = (rotulo: string, dados: Parameters<typeof travaTeste>[0], titulo = rotulo, variante: "outline" | "default" = "outline") => (
-    <Button variant={variante} className="h-auto min-h-9 py-1.5 px-3 text-xs justify-start text-left whitespace-normal" disabled={ocupado} onClick={() => rodar(dados, titulo)}>
-      {rotulo}
-    </Button>
-  );
-
-  return (
-    <Dialog open={aberto} onOpenChange={(v) => !v && onFechar()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FlaskConical className="w-5 h-5 text-primary" /> Testar travas (simulação)
-          </DialogTitle>
-          <DialogDescription>Nada é enviado no WhatsApp e os seus números de verdade não mudam. Siga a ordem: 1, 2 e 3.</DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <div className="text-sm font-bold">1 · Termômetro (uma esteira de teste)</div>
-            <div className="grid sm:grid-cols-3 gap-2">
-              {botao("Simular 10 envios — 5 respondem (50%)", { op: "envios", origem: "teste-esteira", qtd: 10, responder: 50 }, "10 envios, 50% responderam")}
-              {botao("Simular 10 envios — 3 respondem (30%)", { op: "envios", origem: "teste-esteira", qtd: 10, responder: 30 }, "10 envios, 30% responderam")}
-              {botao("Simular 10 envios — 1 responde (10%)", { op: "envios", origem: "teste-esteira", qtd: 10, responder: 10 }, "10 envios, 10% responderam")}
-            </div>
-            <span className="text-[11px] text-muted-foreground">
-              Cada clique recomeça a esteira de teste, simula 10 envios (com mais de 1 h) e mede. 50% = 🟢 normal · 30% = 🟡 intervalo dobrado · 10% = 🔴 pausa até amanhã.
-            </span>
-            {o && (
-              <TravaQuadroEsteiraTeste o={o} />
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <div className="text-sm font-bold">2 · Limite do dia (soma de todas)</div>
-            {botao(`Simular envios em 2 esteiras até somar ${st?.limiteDia ?? 15} ignorados`, { op: "limite" }, "Limite do dia")}
-            {st && (
-              <div className="text-xs">
-                Ignorados hoje (teste): <b>{st.ignoradosHoje}</b> de <b>{st.limiteDia}</b>
-                {od ? ` · disparo de teste: ${od.numeros.enviados} enviados` : ""}
-              </div>
-            )}
-          </div>
-
-          <div className="grid gap-2">
-            <div className="text-sm font-bold">3 · Alarme (pausa tudo, só volta clicando em Retomar)</div>
-            <div className="grid sm:grid-cols-3 gap-2">
-              {botao("Simular aviso do WhatsApp", { op: "aviso" }, "Aviso do WhatsApp")}
-              {botao("Simular 5 mensagens com 1 tracinho", { op: "tracinho" }, "5 com 1 tracinho")}
-              {botao("Simular erro de envio", { op: "erro" }, "Erro de envio")}
-            </div>
-            {botao("Tentar enviar agora (esteira e 1º contato)", { op: "tentar", origem: "teste-esteira" }, "Tentativa de envio")}
-          </div>
-
-          {st && (st.alarme || st.global || Object.values(st.origens || {}).some((x) => x.pausa)) && (
-            <div className="rounded-xl border border-red-300 bg-red-50/70 dark:bg-red-950/40 dark:border-red-900 p-3 grid gap-1.5 text-xs">
-              {st.alarme && <div className="font-semibold">⚠️ {st.alarme.motivo}</div>}
-              {st.global && <div className="font-semibold">⏸️ {st.global.motivo}</div>}
-              {Object.entries(st.origens || {})
-                .filter(([, x]) => x.pausa)
-                .map(([k, x]) => (
-                  <div key={k}>
-                    ⏸️ <b>{x.nome}</b>: {x.pausa?.motivo}
-                  </div>
-                ))}
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button
-                  size="sm"
-                  className="h-8 bg-success hover:bg-success/90 text-success-foreground"
-                  disabled={ocupado}
-                  onClick={async () => {
-                    await travaRetomar("tudo", true);
-                    rodar({ op: "status" }, "▶️ Retomado (teste)");
-                  }}
-                >
-                  <Play className="w-3.5 h-3.5 mr-1" /> Retomar
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-bold">O que aconteceu</div>
-            <Button size="sm" variant="ghost" className="h-8" disabled={ocupado} onClick={() => { setLog([]); rodar({ op: "zerar" }, "🧹 Teste zerado"); }}>
-              <RotateCcw className="w-3.5 h-3.5 mr-1" /> Zerar
-            </Button>
-          </div>
-          <div className="rounded-lg border bg-muted/40 p-2 text-xs grid gap-1 min-h-12">
-            {log.length ? log.map((l, i) => <div key={i}>{l}</div>) : <span className="text-muted-foreground">Clique em um dos botões acima.</span>}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function TravaQuadroEsteiraTeste({ o }: { o: TravaOrigem }) {
-  return (
-    <div className={`rounded-xl border p-3 flex flex-col gap-2 ${o.pausa ? "border-red-300 bg-red-50/60 dark:border-red-900 dark:bg-red-950/30" : "bg-card"}`}>
-      <div className="text-xs font-bold">{o.nome}</div>
-      <Numeros o={o} cfg={o.cfg} />
-      {o.pausa && <div className="text-xs font-semibold text-red-700 dark:text-red-400">⏸️ {o.pausa.motivo}</div>}
-      {!o.pausa && o.status === "amarelo" && <div className="text-[11px] text-amber-700 dark:text-amber-400">🟡 Intervalo entre envios dobrado.</div>}
     </div>
   );
 }
