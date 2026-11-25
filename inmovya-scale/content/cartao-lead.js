@@ -106,6 +106,7 @@
     try { logo = chrome.runtime.getURL('icons/inmovya-logo.png'); } catch (_) { /* recarregada */ }
     b.innerHTML = `${logo ? `<img src="${logo}" alt="">` : ''}<span>Inmovya</span><span class="st"></span>`;
     b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); st.aberto ? fechar() : abrir(); });
+    for (const tipo of ['mousedown', 'pointerdown', 'mouseup', 'pointerup']) b.addEventListener(tipo, e => e.stopPropagation());
     // antes dos ícones da direita do cabeçalho
     const filhos = Array.from(h.children);
     const direita = filhos[filhos.length - 1];
@@ -123,11 +124,28 @@
     s.textContent = `· ${r.status || 'sem etapa'}${r.esteira ? ` · ${r.esteira.length > 16 ? r.esteira.slice(0, 15) + '…' : r.esteira} D${r.passo}` : ''}`;
   }
 
+  // o botão redondo do Inmovya Scale fica "flutuando" sobre o topo do WhatsApp: afasta o nosso botão para a esquerda
+  function desviarDoBotaoDoScale() {
+    const b = document.getElementById('is-cartao-btn');
+    if (!b) return;
+    const t = document.getElementById('is-toggle-button');
+    const vis = t && !t.classList.contains('is-hidden') && getComputedStyle(t).display !== 'none';
+    const atual = parseFloat(b.style.marginRight) || 0;
+    if (!vis) { if (atual) b.style.marginRight = ''; return; }
+    const rb = b.getBoundingClientRect();
+    const rt = t.getBoundingClientRect();
+    const direitaSemMargem = rb.right + atual; // onde o botão ficaria sem o desvio
+    const encosta = direitaSemMargem > rt.left - 8 && rb.left + atual < rt.right + 8 && rb.bottom > rt.top && rb.top < rt.bottom;
+    const precisa = encosta ? Math.ceil(direitaSemMargem - rt.left + 10) : 0;
+    if (Math.abs(precisa - atual) > 1) b.style.marginRight = precisa ? `${precisa}px` : '';
+  }
+
   // troca de conversa: atualiza o botão (e o cartão, se aberto)
   let ultimaConversa = '';
   let timerResumo = null;
   async function vigiar() {
     if (!garantirBotao()) { if (st.aberto) fechar(); ultimaConversa = ''; return; }
+    desviarDoBotaoDoScale();
     const a = await loja('ativa', {}, 4000);
     const c = a?.dados;
     const chave = c?.chatId || '';
