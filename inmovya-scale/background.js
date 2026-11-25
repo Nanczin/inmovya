@@ -591,6 +591,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     setTimeout(() => chrome.runtime.reload(), 300);
     return false;
   }
+  // Cartão do lead (WhatsApp → Inmovya): repassa o pedido para uma aba do Inmovya logada.
+  // Sem aba do Inmovya aberta, abre uma em segundo plano (sem tirar você do WhatsApp).
+  if (request?.action === 'inmovya_op') {
+    (async () => {
+      const pedir = (tabId) => new Promise(res => chrome.tabs.sendMessage(tabId, { action: 'inmovya_op_aba', op: request.op, dados: request.dados }, x => res(chrome.runtime.lastError ? null : x)));
+      const pronta = (tabId) => new Promise(res => chrome.tabs.sendMessage(tabId, { action: 'inmovya_ponte_pronta' }, x => res(!chrome.runtime.lastError && !!x?.ok)));
+      let abas = await chrome.tabs.query({ url: 'https://inmovya-main.vercel.app/*' });
+      // prefere uma aba onde a ponte já está pronta (logada)
+      for (const a of abas) if (await pronta(a.id)) { const r = await pedir(a.id); if (r) return r; }
+      if (!abas.length) {
+        const nova = await chrome.tabs.create({ url: 'https://inmovya-main.vercel.app/', active: false });
+        abas = [nova];
+      }
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        for (const a of abas) if (await pronta(a.id)) { const r = await pedir(a.id); if (r) return r; }
+      }
+      return { ok: false, erro: 'Abra o Inmovya neste Chrome e faça login (o cartão usa o seu login de lá).' };
+    })().then(r => {
+      // "abrir ficha" com esteira rodando na aba: abre outra aba do Inmovya
+      if (r?.ok && r.dados?.abrirEmNovaAba) chrome.tabs.create({ url: `https://inmovya-main.vercel.app${r.dados.abrirEmNovaAba}`, active: true });
+      else if (r?.ok && request.op === 'abrir') chrome.tabs.query({ url: 'https://inmovya-main.vercel.app/*' }).then(t => t[0] && chrome.tabs.update(t[0].id, { active: true }).then(() => chrome.windows.update(t[0].windowId, { focused: true })));
+      sendResponse(r);
+    }).catch(e => sendResponse({ ok: false, erro: e?.message }));
+    return true;
+  }
+
   // Agenda do Inmovya: abre a conversa do lead na aba do WhatsApp Web e traz a aba para a frente.
   // Se uma esteira/disparo estiver enviando, não mexe (para não atrapalhar o envio).
   if (request?.action === 'abrir_conversa') {

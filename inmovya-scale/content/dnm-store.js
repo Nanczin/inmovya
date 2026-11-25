@@ -271,6 +271,27 @@
     }
     return res;
   }
+  // Cartão do lead: etiquetas desta conversa e todas as etiquetas do WhatsApp
+  function etiquetasConversa(chatId) {
+    const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);
+    const todas = lista(colecoes().Label).map(l => ({ id: String(pegar(l, 'id')), nome: String(pegar(l, 'name') || '').trim(), cor: pegar(l, 'hexColor') || null })).filter(l => l.nome);
+    const ativas = chat ? (pegar(chat, 'labels') || []).map(String) : [];
+    return { todas, ativas, nomeConversa: chat ? nomeDoChat(chat) : '' };
+  }
+  async function mudarEtiquetas(chatId, adicionar, remover) {
+    const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);
+    if (!chat) return { ok: false, erro: 'conversa não encontrada' };
+    const L = colecoes().Label;
+    if (!L || typeof L.addOrRemoveLabels !== 'function') return { ok: false, erro: 'este WhatsApp não deixa mudar etiquetas por aqui' };
+    const tem = (pegar(chat, 'labels') || []).map(String);
+    const ops = [];
+    for (const n of adicionar || []) { const e = etiquetaPeloNome(n); if (e && !tem.includes(String(pegar(e, 'id')))) ops.push({ id: String(pegar(e, 'id')), type: 'add' }); }
+    for (const n of remover || []) { const e = etiquetaPeloNome(n); if (e && tem.includes(String(pegar(e, 'id')))) ops.push({ id: String(pegar(e, 'id')), type: 'remove' }); }
+    if (!ops.length) return { ok: true, ativas: tem };
+    try { await L.addOrRemoveLabels(ops, [chat]); } catch (err) { return { ok: false, erro: String(err && err.message || err) }; }
+    await espera(400);
+    return { ok: true, ativas: (pegar(chat, 'labels') || []).map(String) };
+  }
   async function adicionarEtiqueta(chatId, nome) {
     const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);
     if (!chat) return { ok: false, erro: 'conversa não encontrada' };
@@ -306,6 +327,8 @@
       else if (op === 'acks') resposta = { ok: true, dados: acks(args.itens) };
       else if (op === 'ativa') resposta = { ok: true, dados: conversaAtiva() };
       else if (op === 'acharConversa') resposta = { ok: true, dados: acharConversa(args.telefone) };
+      else if (op === 'etiquetasConversa') resposta = { ok: true, dados: etiquetasConversa(args.chatId) };
+      else if (op === 'mudarEtiquetas') resposta = { ok: true, dados: await mudarEtiquetas(args.chatId, args.adicionar, args.remover) };
       else if (op === 'adicionarEtiqueta') resposta = { ok: true, dados: await adicionarEtiqueta(args.chatId, args.nome) };
       else if (op === 'garantirEtiqueta') resposta = { ok: true, dados: await garantirEtiqueta(args.nome, args.limite) };
       else resposta = { ok: false, erro: 'operação desconhecida' };

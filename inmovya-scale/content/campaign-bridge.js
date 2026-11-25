@@ -63,6 +63,25 @@
     });
   });
 
+  // Cartão do lead no WhatsApp: o background pede, a página do Inmovya (PonteScale) faz com o seu login
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.action === 'inmovya_ponte_pronta') { sendResponse({ ok: !!window.__inmovyaPonteOk }); return; }
+    if (msg?.action !== 'inmovya_op_aba') return;
+    const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const fim = setTimeout(() => { window.removeEventListener('INMOVYA_SCALE_RESPOSTA', ouvir); sendResponse({ ok: false, erro: 'o Inmovya não respondeu (faça login nele e deixe a aba aberta)' }); }, 20000);
+    function ouvir(ev) {
+      const d = ev.detail || {};
+      if (d.token !== token) return;
+      clearTimeout(fim);
+      window.removeEventListener('INMOVYA_SCALE_RESPOSTA', ouvir);
+      sendResponse(d);
+    }
+    window.addEventListener('INMOVYA_SCALE_RESPOSTA', ouvir);
+    window.dispatchEvent(new CustomEvent('INMOVYA_SCALE_PEDIDO', { detail: { token, op: msg.op, dados: msg.dados } }));
+    return true;
+  });
+  window.addEventListener('INMOVYA_SCALE_PRONTA', () => { window.__inmovyaPonteOk = true; });
+
   // Agenda: abrir a conversa de um lead no WhatsApp Web que já está aberto (sem abrir outra aba)
   window.addEventListener('INMOVYA_ABRIR_CONVERSA', event => {
     const detail = event.detail || {};

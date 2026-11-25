@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { PonteScale } from "@/components/PonteScale";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -151,6 +152,7 @@ const Index = () => {
 
   return (
     <SidebarProvider>
+      <PonteScale />
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar
           activeModule={activeModule}
