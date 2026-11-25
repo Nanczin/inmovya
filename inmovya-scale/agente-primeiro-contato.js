@@ -206,14 +206,18 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     }
     // etiquetas que existem no seu WhatsApp (para escolher na tela)
     let existentes = null;
+    let motivo = '';
     try {
       const abas = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+      if (!abas.length) motivo = 'sem_whatsapp';
       for (const aba of abas) {
-        const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'trava_wa', op: 'etiquetas', args: {} }, x => res(chrome.runtime.lastError ? null : x)));
-        if (r?.ok && Array.isArray(r.dados)) { existentes = r.dados.map(l => ({ nome: l.nome, cor: l.cor || null })); break; }
+        const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'trava_wa', op: 'etiquetas', args: {} }, x => res(chrome.runtime.lastError ? { semResposta: true } : x)));
+        if (r?.ok && Array.isArray(r.dados)) { existentes = r.dados.map(l => ({ nome: l.nome, cor: l.cor || null })); motivo = ''; break; }
+        // aba aberta antes de recarregar a extensão: precisa de F5 para a extensão voltar a funcionar nela
+        motivo = r?.semResposta ? 'whatsapp_sem_f5' : 'whatsapp_carregando';
       }
     } catch (_) { /* sem WhatsApp aberto */ }
-    return { ok: true, cfg: await agenteEtiquetasCfg(), existentes };
+    return { ok: true, cfg: await agenteEtiquetasCfg(), existentes, motivo };
   })().then(sendResponse).catch(e => sendResponse({ ok: false, error: e?.message }));
   return true;
 });

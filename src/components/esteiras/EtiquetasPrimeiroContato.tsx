@@ -11,14 +11,14 @@ type Existente = { nome: string; cor: string | null };
 const NAO_ETIQUETA = new Set(["nao lidas", "não lidas", "favoritos", "grupos", "unread", "favourites", "favorites", "groups"]);
 
 const falar = (cfg?: Cfg) =>
-  new Promise<{ cfg: Cfg; existentes: Existente[] | null } | null>((resolve) => {
+  new Promise<{ cfg: Cfg; existentes: Existente[] | null; motivo?: string } | null>((resolve) => {
     const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
     const ouvir = (ev: Event) => {
       const d = (ev as CustomEvent).detail;
       if (d?.token !== token) return;
       window.clearTimeout(t);
       window.removeEventListener("INMOVYA_ETIQUETAS_1C_RESULT", ouvir);
-      resolve(d?.ok ? { cfg: d.cfg, existentes: d.existentes } : null);
+      resolve(d?.ok ? { cfg: d.cfg, existentes: d.existentes, motivo: d.motivo || "" } : null);
     };
     const t = window.setTimeout(() => {
       window.removeEventListener("INMOVYA_ETIQUETAS_1C_RESULT", ouvir);
@@ -29,7 +29,7 @@ const falar = (cfg?: Cfg) =>
   });
 
 // estado compartilhado entre as linhas (lê uma vez)
-let estado: { cfg: Cfg | null; existentes: Existente[] | null; semExtensao: boolean } = { cfg: null, existentes: null, semExtensao: false };
+let estado: { cfg: Cfg | null; existentes: Existente[] | null; semExtensao: boolean; motivo: string } = { cfg: null, existentes: null, semExtensao: false, motivo: "" };
 let carregando: Promise<void> | null = null;
 const ouvintes = new Set<() => void>();
 const avisar = () => ouvintes.forEach((f) => f());
@@ -37,7 +37,7 @@ function carregar() {
   if (!carregando)
     carregando = falar().then((r) => {
       estado = r
-        ? { cfg: r.cfg, existentes: r.existentes ? r.existentes.filter((e) => !NAO_ETIQUETA.has(e.nome.trim().toLowerCase())) : null, semExtensao: false }
+        ? { cfg: r.cfg, existentes: r.existentes ? r.existentes.filter((e) => !NAO_ETIQUETA.has(e.nome.trim().toLowerCase())) : null, semExtensao: false, motivo: r.motivo || "" }
         : { ...estado, semExtensao: true };
       carregando = null;
       avisar();
@@ -63,8 +63,9 @@ export function EtiquetaDaOrigem({ origem, className = "" }: { origem: OrigemEti
       ouvintes.delete(f);
     };
   }, []);
-  const { cfg, existentes, semExtensao } = estado;
-  if (!cfg) return semExtensao ? null : null;
+  const { cfg, existentes, semExtensao, motivo } = estado;
+  if (!cfg) return null;
+  void semExtensao;
   const escolhidas = cfg[origem] || [];
   const opcoes = (existentes || []).filter((e) => !escolhidas.some((x) => x.toLowerCase() === e.nome.toLowerCase()));
   const existe = (nome: string) => !existentes || existentes.some((e) => e.nome.toLowerCase() === nome.toLowerCase());
@@ -103,9 +104,18 @@ export function EtiquetaDaOrigem({ origem, className = "" }: { origem: OrigemEti
             ))}
           </select>
         )
-      ) : (
-        <button type="button" onClick={() => carregar()} className="text-[11px] text-primary hover:underline" title="Abra o WhatsApp Web e clique para listar as suas etiquetas">
-          + (abrir lista)
+      ) : origem !== "bitrix" ? null : (
+        <button
+          type="button"
+          onClick={() => carregar()}
+          className="text-[11px] text-amber-700 dark:text-amber-400 hover:underline"
+          title="Depois de resolver, clique aqui para listar as suas etiquetas"
+        >
+          {motivo === "whatsapp_sem_f5"
+            ? "aperte F5 na aba do WhatsApp e clique aqui"
+            : motivo === "sem_whatsapp"
+              ? "abra o WhatsApp Web e clique aqui"
+              : "WhatsApp carregando… clique aqui"}
         </button>
       )}
     </span>
