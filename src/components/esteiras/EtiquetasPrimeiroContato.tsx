@@ -2,6 +2,7 @@
 // Aparece em linha, junto das opções de "Quais leads". A escolha fica na extensão Inmovya Scale deste Chrome.
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 export type OrigemEtiqueta = "bitrix" | "meta" | "midrah" | "outros" | "todos";
 type Cfg = Record<OrigemEtiqueta, string[]>;
@@ -40,9 +41,21 @@ function carregar() {
         ? { cfg: r.cfg, existentes: r.existentes ? r.existentes.filter((e) => !NAO_ETIQUETA.has(e.nome.trim().toLowerCase())) : null, semExtensao: false, motivo: r.motivo || "" }
         : { ...estado, semExtensao: true };
       carregando = null;
+      if (r?.cfg) guardarNoBanco(r.cfg);
       avisar();
     });
   return carregando;
+}
+// também guarda no banco, para o 1º contato na nuvem (quando o PC está desligado) usar as mesmas etiquetas
+async function guardarNoBanco(cfg: Cfg) {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) await supabase.from("agente_config").update({ etiquetas_origem: cfg } as any).eq("user_id", user.id);
+  } catch {
+    /* coluna ainda não criada: tudo bem */
+  }
 }
 async function gravar(novo: Cfg) {
   estado = { ...estado, cfg: novo };
@@ -50,6 +63,7 @@ async function gravar(novo: Cfg) {
   const r = await falar(novo);
   if (r) estado = { ...estado, cfg: r.cfg };
   avisar();
+  guardarNoBanco(r ? r.cfg : novo);
 }
 
 /** Linha pequena: "etiqueta: [Bitrix ×] [+]" para uma origem. */
