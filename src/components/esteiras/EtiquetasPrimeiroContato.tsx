@@ -1,18 +1,12 @@
-// 1º contato: quais etiquetas do WhatsApp o lead novo recebe, por origem (pode ser mais de uma).
-// A escolha fica na extensão Inmovya Scale deste Chrome (é ela quem etiqueta depois de enviar).
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, Tag, X } from "lucide-react";
+// 1º contato: qual etiqueta do WhatsApp o lead recebe, conforme a ORIGEM (Bitrix, Meta Ads, Midrah, cadastro à mão).
+// Aparece em linha, junto das opções de "Quais leads". A escolha fica na extensão Inmovya Scale deste Chrome.
+import { useEffect, useState } from "react";
+import { Tag, X } from "lucide-react";
 
-type Cfg = { bitrix: string[]; meta: string[]; midrah: string[]; outros: string[]; todos: string[] };
+export type OrigemEtiqueta = "bitrix" | "meta" | "midrah" | "outros" | "todos";
+type Cfg = Record<OrigemEtiqueta, string[]>;
 type Existente = { nome: string; cor: string | null };
 
-const LINHAS: { k: keyof Cfg; nome: string }[] = [
-  { k: "bitrix", nome: "Bitrix" },
-  { k: "meta", nome: "Meta Ads" },
-  { k: "midrah", nome: "Midrah" },
-  { k: "outros", nome: "Cadastro à mão" },
-  { k: "todos", nome: "Todos" },
-];
 // filtros do próprio WhatsApp que aparecem junto das etiquetas (não são etiquetas de verdade)
 const NAO_ETIQUETA = new Set(["nao lidas", "não lidas", "favoritos", "grupos", "unread", "favourites", "favorites", "groups"]);
 
@@ -34,105 +28,86 @@ const falar = (cfg?: Cfg) =>
     window.dispatchEvent(new CustomEvent("INMOVYA_ETIQUETAS_1C", { detail: { token, cfg: cfg || null } }));
   });
 
-export function EtiquetasPrimeiroContato({ mostrarMidrah = true, mostrarOutros = true }: { mostrarMidrah?: boolean; mostrarOutros?: boolean }) {
-  const [cfg, setCfg] = useState<Cfg | null>(null);
-  const [existentes, setExistentes] = useState<Existente[] | null>(null);
-  const [semExtensao, setSemExtensao] = useState(false);
-  const [salvando, setSalvando] = useState(false);
-  const [salvo, setSalvo] = useState(false);
+// estado compartilhado entre as linhas (lê uma vez)
+let estado: { cfg: Cfg | null; existentes: Existente[] | null; semExtensao: boolean } = { cfg: null, existentes: null, semExtensao: false };
+let carregando: Promise<void> | null = null;
+const ouvintes = new Set<() => void>();
+const avisar = () => ouvintes.forEach((f) => f());
+function carregar() {
+  if (!carregando)
+    carregando = falar().then((r) => {
+      estado = r
+        ? { cfg: r.cfg, existentes: r.existentes ? r.existentes.filter((e) => !NAO_ETIQUETA.has(e.nome.trim().toLowerCase())) : null, semExtensao: false }
+        : { ...estado, semExtensao: true };
+      carregando = null;
+      avisar();
+    });
+  return carregando;
+}
+async function gravar(novo: Cfg) {
+  estado = { ...estado, cfg: novo };
+  avisar();
+  const r = await falar(novo);
+  if (r) estado = { ...estado, cfg: r.cfg };
+  avisar();
+}
 
-  const ler = useCallback(async () => {
-    const r = await falar();
-    setSemExtensao(!r);
-    if (r) {
-      setCfg(r.cfg);
-      setExistentes(r.existentes ? r.existentes.filter((e) => !NAO_ETIQUETA.has(e.nome.trim().toLowerCase())) : null);
-    }
-  }, []);
+/** Linha pequena: "etiqueta: [Bitrix ×] [+]" para uma origem. */
+export function EtiquetaDaOrigem({ origem, className = "" }: { origem: OrigemEtiqueta; className?: string }) {
+  const [, setN] = useState(0);
   useEffect(() => {
-    ler();
-  }, [ler]);
-
-  const gravar = async (novo: Cfg) => {
-    setCfg(novo);
-    setSalvando(true);
-    setSalvo(false);
-    const r = await falar(novo);
-    setSalvando(false);
-    if (r) {
-      setCfg(r.cfg);
-      setSalvo(true);
-      window.setTimeout(() => setSalvo(false), 2000);
-    } else setSemExtensao(true);
-  };
-  const tirar = (k: keyof Cfg, nome: string) => cfg && gravar({ ...cfg, [k]: cfg[k].filter((x) => x.toLowerCase() !== nome.toLowerCase()) });
-  const por = (k: keyof Cfg, nome: string) => {
-    const n = nome.trim();
-    if (!cfg || !n || cfg[k].some((x) => x.toLowerCase() === n.toLowerCase())) return;
-    gravar({ ...cfg, [k]: [...cfg[k], n] });
-  };
+    const f = () => setN((n) => n + 1);
+    ouvintes.add(f);
+    if (!estado.cfg && !carregando) carregar();
+    return () => {
+      ouvintes.delete(f);
+    };
+  }, []);
+  const { cfg, existentes, semExtensao } = estado;
+  if (!cfg) return semExtensao ? null : null;
+  const escolhidas = cfg[origem] || [];
+  const opcoes = (existentes || []).filter((e) => !escolhidas.some((x) => x.toLowerCase() === e.nome.toLowerCase()));
   const existe = (nome: string) => !existentes || existentes.some((e) => e.nome.toLowerCase() === nome.toLowerCase());
-
-  const linhas = LINHAS.filter((l) => (l.k !== "midrah" || mostrarMidrah) && (l.k !== "outros" || mostrarOutros));
-
+  const tirar = (nome: string) => gravar({ ...cfg, [origem]: escolhidas.filter((x) => x.toLowerCase() !== nome.toLowerCase()) });
+  const por = (nome: string) => nome && gravar({ ...cfg, [origem]: [...escolhidas, nome] });
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium flex items-center gap-1.5">
-          <Tag className="w-3.5 h-3.5 text-primary" aria-hidden="true" /> Etiqueta no WhatsApp
-        </span>
-        <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          {salvando ? <Loader2 className="w-3 h-3 animate-spin" /> : salvo ? <span className="text-success font-semibold">salvo ✓</span> : null}
-          <button type="button" onClick={ler} title="Ler as etiquetas do WhatsApp de novo" className="p-1 rounded hover:bg-muted">
-            <RefreshCw className="w-3.5 h-3.5" />
+    <span className={`inline-flex flex-wrap items-center gap-1 text-xs ${className}`}>
+      <Tag className="w-3 h-3 text-muted-foreground" aria-hidden="true" />
+      <span className="text-muted-foreground">etiqueta:</span>
+      {escolhidas.length === 0 && <span className="text-muted-foreground italic">nenhuma</span>}
+      {escolhidas.map((e) => (
+        <span
+          key={e}
+          className={`inline-flex items-center gap-0.5 rounded-full pl-1.5 pr-0.5 h-5 font-semibold ${existe(e) ? "bg-primary/10 text-primary" : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"}`}
+          title={existe(e) ? "" : "Esta etiqueta não existe no seu WhatsApp"}
+        >
+          {e}
+          <button type="button" onClick={() => tirar(e)} aria-label={`Tirar ${e}`} className="rounded-full p-0.5 hover:bg-black/10">
+            <X className="w-2.5 h-2.5" />
           </button>
         </span>
-      </div>
-      {semExtensao && !cfg ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">Recarregue o Inmovya Scale (1.32) em chrome://extensions e atualize esta página.</p>
-      ) : !cfg ? (
-        <p className="text-xs text-muted-foreground">Lendo…</p>
+      ))}
+      {existentes ? (
+        opcoes.length > 0 && (
+          <select
+            value=""
+            onChange={(ev) => por(ev.target.value)}
+            aria-label="Adicionar etiqueta"
+            className="h-5 rounded-full border border-dashed bg-transparent px-1.5 text-[11px] text-muted-foreground cursor-pointer max-w-[110px]"
+          >
+            <option value="">+</option>
+            {opcoes.map((o) => (
+              <option key={o.nome} value={o.nome}>
+                {o.nome}
+              </option>
+            ))}
+          </select>
+        )
       ) : (
-        <div className="rounded-md border divide-y">
-          {linhas.map(({ k, nome }) => {
-            const escolhidas = cfg[k];
-            const opcoes = (existentes || []).filter((e) => !escolhidas.some((x) => x.toLowerCase() === e.nome.toLowerCase()));
-            return (
-              <div key={k} className="flex items-center gap-2 px-2.5 py-1.5 min-h-10">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground">{nome}</span>
-                <div className="flex-1 flex flex-wrap items-center gap-1">
-                  {escolhidas.map((e) => (
-                    <span
-                      key={e}
-                      className={`inline-flex items-center gap-1 rounded-full pl-2 pr-1 h-6 text-xs font-semibold ${existe(e) ? "bg-primary/10 text-primary" : "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"}`}
-                      title={existe(e) ? "" : "Esta etiqueta não existe no seu WhatsApp"}
-                    >
-                      {e}
-                      <button type="button" onClick={() => tirar(k, e)} aria-label={`Tirar ${e}`} className="rounded-full p-0.5 hover:bg-black/10">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                  <select
-                    value=""
-                    onChange={(ev) => por(k, ev.target.value)}
-                    aria-label={`Adicionar etiqueta para ${nome}`}
-                    className="h-6 rounded-full border border-dashed bg-transparent px-2 text-xs text-muted-foreground cursor-pointer max-w-[130px]"
-                  >
-                    <option value="">+ etiqueta</option>
-                    {opcoes.map((o) => (
-                      <option key={o.nome} value={o.nome}>
-                        {o.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <button type="button" onClick={() => carregar()} className="text-[11px] text-primary hover:underline" title="Abra o WhatsApp Web e clique para listar as suas etiquetas">
+          + (abrir lista)
+        </button>
       )}
-      {cfg && !existentes && <p className="text-[11px] text-muted-foreground">Abra o WhatsApp Web e clique em ↻ para listar as suas etiquetas.</p>}
-    </div>
+    </span>
   );
 }

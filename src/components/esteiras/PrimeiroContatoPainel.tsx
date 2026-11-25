@@ -1,4 +1,4 @@
-import { EtiquetasPrimeiroContato } from "@/components/esteiras/EtiquetasPrimeiroContato";
+import { EtiquetaDaOrigem } from "@/components/esteiras/EtiquetasPrimeiroContato";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -261,7 +261,7 @@ export function PrimeiroContatoPainel() {
           </div>
           <div>
             Depois de enviar, <b>salva o contato</b> no WhatsApp com o nome do lead e marca as <b>etiquetas que você escolher</b> para cada origem
-            (campo “Etiqueta no WhatsApp”, abaixo do seu nome). No Inmovya o lead já fica com a tag da origem.
+            (escolha em “Quais leads”, ao lado de cada origem). No Inmovya o lead já fica com a tag da origem.
           </div>
           <div>
             Nunca manda duas vezes: o banco reserva cada lead para um envio só, confere se o mesmo número já recebeu e, antes de enviar, a extensão lê a
@@ -400,9 +400,6 @@ export function PrimeiroContatoPainel() {
         <div className="space-y-1.5">
           <Label htmlFor="pc-nome">Seu nome (vai no {"{{meu_nome}}"})</Label>
           <Input id="pc-nome" value={cfg.meuNome} placeholder="Ex.: Estevão" onChange={(e) => mudar({ meuNome: e.target.value })} />
-          <div className="pt-2">
-            <EtiquetasPrimeiroContato mostrarMidrah={!!cfg.incluirMidrah} mostrarOutros={cfg.quais === "todos"} />
-          </div>
         </div>
 
         <div className="space-y-2">
@@ -412,10 +409,19 @@ export function PrimeiroContatoPainel() {
               <input type="radio" className="h-4 w-4" checked={cfg.quais === "captura"} onChange={() => mudar({ quais: "captura" })} />
               Só da captura automática (Meta Ads, Bitrix, formulários)
             </label>
+            <div className="pl-6 grid gap-0.5 pb-1">
+              <span className="flex flex-wrap items-center gap-x-1.5"><span className="text-xs w-16">Bitrix</span><EtiquetaDaOrigem origem="bitrix" /></span>
+              <span className="flex flex-wrap items-center gap-x-1.5"><span className="text-xs w-16">Meta Ads</span><EtiquetaDaOrigem origem="meta" /></span>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="radio" className="h-4 w-4" checked={cfg.quais === "todos"} onChange={() => mudar({ quais: "todos" })} />
               Todos os leads novos (inclusive cadastrados à mão)
             </label>
+            {cfg.quais === "todos" && (
+              <div className="pl-6 pb-1">
+                <span className="flex flex-wrap items-center gap-x-1.5"><span className="text-xs w-16">À mão</span><EtiquetaDaOrigem origem="outros" /></span>
+              </div>
+            )}
             <label className="flex items-start gap-2 cursor-pointer pt-1">
               <input type="checkbox" className="h-4 w-4 mt-0.5" checked={!!cfg.incluirMidrah} onChange={(e) => mudar({ incluirMidrah: e.target.checked })} />
               <span>
@@ -423,6 +429,11 @@ export function PrimeiroContatoPainel() {
                 <span className="block text-xs text-muted-foreground">Ligue quando o envio do próprio Midrah estiver falhando. Vale para os leads do Midrah que chegarem a partir de agora.</span>
               </span>
             </label>
+            {cfg.incluirMidrah && (
+              <div className="pl-6">
+                <EtiquetaDaOrigem origem="midrah" />
+              </div>
+            )}
           </div>
         </div>
 
