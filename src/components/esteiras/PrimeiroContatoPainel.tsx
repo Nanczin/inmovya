@@ -261,7 +261,7 @@ export function PrimeiroContatoPainel() {
           </div>
           <div>
             Depois de enviar, <b>salva o contato</b> no WhatsApp com o nome do lead e marca as <b>etiquetas que você escolher</b> para cada origem
-            (quadro “Etiquetas que o lead recebe no WhatsApp”, abaixo). No Inmovya o lead já fica com a tag da origem.
+            (campo “Etiqueta no WhatsApp”, abaixo do seu nome). No Inmovya o lead já fica com a tag da origem.
           </div>
           <div>
             Nunca manda duas vezes: o banco reserva cada lead para um envio só, confere se o mesmo número já recebeu e, antes de enviar, a extensão lê a
@@ -400,6 +400,9 @@ export function PrimeiroContatoPainel() {
         <div className="space-y-1.5">
           <Label htmlFor="pc-nome">Seu nome (vai no {"{{meu_nome}}"})</Label>
           <Input id="pc-nome" value={cfg.meuNome} placeholder="Ex.: Estevão" onChange={(e) => mudar({ meuNome: e.target.value })} />
+          <div className="pt-2">
+            <EtiquetasPrimeiroContato mostrarMidrah={!!cfg.incluirMidrah} mostrarOutros={cfg.quais === "todos"} />
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -495,8 +498,6 @@ export function PrimeiroContatoPainel() {
           </div>
         )}
       </div>
-
-      <EtiquetasPrimeiroContato />
 
       {/* Teste */}
       <div className="rounded-lg border bg-white p-4 space-y-2">
