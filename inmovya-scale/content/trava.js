@@ -24,7 +24,7 @@
   });
   chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
     if (msg?.action !== 'trava_wa') return;
-    if (!['acks', 'respondeuDesde'].includes(msg.op)) return;
+    if (!['acks', 'respondeuDesde', 'etiquetas'].includes(msg.op)) return;
     loja(msg.op, msg.args || {}).then(r => sendResponse(r.ok ? { ok: true, dados: r.dados || [] } : { ok: false, error: r.erro || 'erro' }));
     return true;
   });

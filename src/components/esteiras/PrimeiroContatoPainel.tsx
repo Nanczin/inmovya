@@ -1,3 +1,4 @@
+import { EtiquetasPrimeiroContato } from "@/components/esteiras/EtiquetasPrimeiroContato";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -259,8 +260,8 @@ export function PrimeiroContatoPainel() {
             (até 3 dias).
           </div>
           <div>
-            Depois de enviar, <b>salva o contato</b> no WhatsApp com o nome do lead e marca a <b>etiqueta da origem</b>: Bitrix → “Bitrix”, Meta Ads →
-            “Meta Ads” (as etiquetas precisam existir no seu WhatsApp Business). No Inmovya o lead já fica com a tag da mesma origem.
+            Depois de enviar, <b>salva o contato</b> no WhatsApp com o nome do lead e marca as <b>etiquetas que você escolher</b> para cada origem
+            (quadro “Etiquetas que o lead recebe no WhatsApp”, abaixo). No Inmovya o lead já fica com a tag da origem.
           </div>
           <div>
             Nunca manda duas vezes: o banco reserva cada lead para um envio só, confere se o mesmo número já recebeu e, antes de enviar, a extensão lê a
@@ -494,6 +495,8 @@ export function PrimeiroContatoPainel() {
           </div>
         )}
       </div>
+
+      <EtiquetasPrimeiroContato />
 
       {/* Teste */}
       <div className="rounded-lg border bg-white p-4 space-y-2">

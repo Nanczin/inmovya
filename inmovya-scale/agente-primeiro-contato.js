@@ -170,21 +170,59 @@ function agenteTelefone(t) {
 // ---------- Depois do envio: salvar o contato e marcar a etiqueta da origem ----------
 // Bitrix (tag Bitrix ou origem roleta) → etiqueta "Bitrix"; Meta Ads → etiqueta "Meta Ads"; Midrah → etiqueta "Midrah".
 // No Inmovya o lead já tem a tag da origem (a captura automática põe), que é de onde sai a etiqueta.
-function agenteEtiquetaDaOrigem(lead) {
+// De onde veio o lead: bitrix | meta | midrah | outros
+function agenteOrigemDoLead(lead) {
   const tags = (lead.tags || []).map(t => String(t).toLowerCase());
   const origem = String(lead.origem || '').toLowerCase();
-  if (tags.includes('bitrix') || tags.includes('roleta') || origem === 'roleta') return 'Bitrix';
-  if (tags.includes('meta ads') || origem === 'facebook' || origem === 'instagram') return 'Meta Ads';
-  if (tags.includes('midrah') || origem === 'midrah') return 'Midrah';
-  return null;
+  if (tags.includes('bitrix') || tags.includes('roleta') || origem === 'roleta') return 'bitrix';
+  if (tags.includes('meta ads') || origem === 'facebook' || origem === 'instagram') return 'meta';
+  if (tags.includes('midrah') || origem === 'midrah') return 'midrah';
+  return 'outros';
 }
+// Quais etiquetas do WhatsApp o lead recebe, por origem. Você escolhe no Inmovya (Esteiras → 1º contato);
+// fica guardado neste Chrome. Pode ser mais de uma; "todos" vale para qualquer origem.
+const AGENTE_ETIQUETAS_PADRAO = { bitrix: ['Bitrix'], meta: ['Meta Ads'], midrah: ['Midrah'], outros: [], todos: [] };
+async function agenteEtiquetasCfg() {
+  const { agenteEtiquetas } = await chrome.storage.local.get('agenteEtiquetas');
+  const c = agenteEtiquetas && typeof agenteEtiquetas === 'object' ? agenteEtiquetas : {};
+  const lista = v => (Array.isArray(v) ? v.map(x => String(x).trim()).filter(Boolean) : null);
+  const out = {};
+  for (const k of Object.keys(AGENTE_ETIQUETAS_PADRAO)) out[k] = lista(c[k]) ?? AGENTE_ETIQUETAS_PADRAO[k];
+  return out;
+}
+async function agenteEtiquetasDoLead(lead) {
+  const cfg = await agenteEtiquetasCfg();
+  const nomes = [...(cfg[agenteOrigemDoLead(lead)] || []), ...(cfg.todos || [])];
+  const vistos = new Set();
+  return nomes.filter(n => { const k = n.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; });
+}
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request?.action !== 'agente_etiquetas_cfg') return;
+  (async () => {
+    if (request.cfg && typeof request.cfg === 'object') {
+      const limpo = {};
+      for (const k of Object.keys(AGENTE_ETIQUETAS_PADRAO)) limpo[k] = Array.isArray(request.cfg[k]) ? request.cfg[k].map(x => String(x).trim()).filter(Boolean).slice(0, 10) : AGENTE_ETIQUETAS_PADRAO[k];
+      await chrome.storage.local.set({ agenteEtiquetas: limpo });
+    }
+    // etiquetas que existem no seu WhatsApp (para escolher na tela)
+    let existentes = null;
+    try {
+      const abas = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+      for (const aba of abas) {
+        const r = await new Promise(res => chrome.tabs.sendMessage(aba.id, { action: 'trava_wa', op: 'etiquetas', args: {} }, x => res(chrome.runtime.lastError ? null : x)));
+        if (r?.ok && Array.isArray(r.dados)) { existentes = r.dados.map(l => ({ nome: l.nome, cor: l.cor || null })); break; }
+      }
+    } catch (_) { /* sem WhatsApp aberto */ }
+    return { ok: true, cfg: await agenteEtiquetasCfg(), existentes };
+  })().then(sendResponse).catch(e => sendResponse({ ok: false, error: e?.message }));
+  return true;
+});
 
 /** Devolve um aviso para a tela do Inmovya quando algo não deu certo (ou null). Nunca desfaz o envio.
- *  Etiqueta: só a da origem (Bitrix / Meta Ads / Midrah). A etiqueta de PROJETO é posta pela fila de
+ *  Etiquetas: as que você escolheu para a origem do lead (padrão: Bitrix / Meta Ads / Midrah). A etiqueta de PROJETO é posta pela fila de
  *  "etiquetas de projeto" (etqProjetoRodada, mais abaixo), igual para todos os leads. */
 async function agenteSalvarEEtiquetar(tel, lead, opcoes = {}) {
-  const origem = opcoes.semOrigem ? null : agenteEtiquetaDaOrigem(lead);
-  const etiquetas = [origem].filter(Boolean);
+  const etiquetas = opcoes.semOrigem ? [] : await agenteEtiquetasDoLead(lead);
   const salvar = opcoes.semSalvar ? '' : (lead.nome || '');
   if (!etiquetas.length && !salvar) return null; // nada a fazer no WhatsApp
   try {

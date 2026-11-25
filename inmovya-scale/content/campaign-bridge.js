@@ -82,6 +82,20 @@
   });
   window.addEventListener('INMOVYA_SCALE_PRONTA', () => { window.__inmovyaPonteOk = true; });
 
+  // 1º contato: quais etiquetas do WhatsApp o lead recebe (por origem) — ler/gravar
+  window.addEventListener('INMOVYA_ETIQUETAS_1C', event => {
+    const detail = event.detail || {};
+    const responder = (dados) => window.dispatchEvent(new CustomEvent('INMOVYA_ETIQUETAS_1C_RESULT', { detail: { token: detail.token, ...dados } }));
+    try {
+      chrome.runtime.sendMessage({ action: 'agente_etiquetas_cfg', cfg: detail.cfg || null }, response => {
+        const error = chrome.runtime.lastError?.message;
+        responder(error ? { ok: false, error } : response || { ok: false });
+      });
+    } catch (e) {
+      responder({ ok: false, error: 'extensão recarregada: atualize a página' });
+    }
+  });
+
   // Agenda: abrir a conversa de um lead no WhatsApp Web que já está aberto (sem abrir outra aba)
   window.addEventListener('INMOVYA_ABRIR_CONVERSA', event => {
     const detail = event.detail || {};
