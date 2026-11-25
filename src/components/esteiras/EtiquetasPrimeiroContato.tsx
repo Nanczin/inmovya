@@ -1,7 +1,7 @@
 // 1º contato: qual etiqueta do WhatsApp o lead recebe, conforme a ORIGEM (Bitrix, Meta Ads, Midrah, cadastro à mão).
 // Aparece em linha, junto das opções de "Quais leads". A escolha fica na extensão Inmovya Scale deste Chrome.
 import { useEffect, useState } from "react";
-import { Tag, X } from "lucide-react";
+import { X } from "lucide-react";
 
 export type OrigemEtiqueta = "bitrix" | "meta" | "midrah" | "outros" | "todos";
 type Cfg = Record<OrigemEtiqueta, string[]>;
@@ -73,9 +73,7 @@ export function EtiquetaDaOrigem({ origem, className = "" }: { origem: OrigemEti
   const por = (nome: string) => nome && gravar({ ...cfg, [origem]: [...escolhidas, nome] });
   return (
     <span className={`inline-flex flex-wrap items-center gap-1 text-xs ${className}`}>
-      <Tag className="w-3 h-3 text-muted-foreground" aria-hidden="true" />
-      <span className="text-muted-foreground">etiqueta:</span>
-      {escolhidas.length === 0 && <span className="text-muted-foreground italic">nenhuma</span>}
+      {escolhidas.length === 0 && <span className="text-muted-foreground">nenhuma</span>}
       {escolhidas.map((e) => (
         <span
           key={e}

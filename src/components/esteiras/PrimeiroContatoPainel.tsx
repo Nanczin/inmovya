@@ -409,19 +409,10 @@ export function PrimeiroContatoPainel() {
               <input type="radio" className="h-4 w-4" checked={cfg.quais === "captura"} onChange={() => mudar({ quais: "captura" })} />
               Só da captura automática (Meta Ads, Bitrix, formulários)
             </label>
-            <div className="pl-6 grid gap-0.5 pb-1">
-              <span className="flex flex-wrap items-center gap-x-1.5"><span className="text-xs w-16">Bitrix</span><EtiquetaDaOrigem origem="bitrix" /></span>
-              <span className="flex flex-wrap items-center gap-x-1.5"><span className="text-xs w-16">Meta Ads</span><EtiquetaDaOrigem origem="meta" /></span>
-            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="radio" className="h-4 w-4" checked={cfg.quais === "todos"} onChange={() => mudar({ quais: "todos" })} />
               Todos os leads novos (inclusive cadastrados à mão)
             </label>
-            {cfg.quais === "todos" && (
-              <div className="pl-6 pb-1">
-                <span className="flex flex-wrap items-center gap-x-1.5"><span className="text-xs w-16">À mão</span><EtiquetaDaOrigem origem="outros" /></span>
-              </div>
-            )}
             <label className="flex items-start gap-2 cursor-pointer pt-1">
               <input type="checkbox" className="h-4 w-4 mt-0.5" checked={!!cfg.incluirMidrah} onChange={(e) => mudar({ incluirMidrah: e.target.checked })} />
               <span>
@@ -429,11 +420,25 @@ export function PrimeiroContatoPainel() {
                 <span className="block text-xs text-muted-foreground">Ligue quando o envio do próprio Midrah estiver falhando. Vale para os leads do Midrah que chegarem a partir de agora.</span>
               </span>
             </label>
-            {cfg.incluirMidrah && (
-              <div className="pl-6">
-                <EtiquetaDaOrigem origem="midrah" />
-              </div>
-            )}
+          </div>
+          {/* etiqueta do WhatsApp por origem: uma lista só, no mesmo formato */}
+          <div className="pt-2 mt-1 border-t space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Etiqueta que o lead recebe no WhatsApp</span>
+            <div className="grid gap-1">
+              {(
+                [
+                  ["bitrix", "Bitrix"],
+                  ["meta", "Meta Ads"],
+                  ["outros", cfg.quais === "todos" ? "Formulários e à mão" : "Formulários"],
+                  ...(cfg.incluirMidrah ? [["midrah", "Midrah"]] : []),
+                ] as ["bitrix" | "meta" | "outros" | "midrah", string][]
+              ).map(([k, nome]) => (
+                <div key={k} className="flex items-center gap-2 min-h-6">
+                  <span className="text-xs w-32 shrink-0">{nome}</span>
+                  <EtiquetaDaOrigem origem={k} />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
