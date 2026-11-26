@@ -31,6 +31,8 @@ public class InmovyaJanela {
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder sb, int max);
+  public static string Titulo(IntPtr h) { var sb = new System.Text.StringBuilder(256); GetWindowText(h, sb, 256); return sb.ToString(); }
 }
 "@
 $AE = [System.Windows.Automation.AutomationElement]
@@ -67,7 +69,11 @@ while ((Get-Date) -lt $fim) {
           # deixa a chamada comecar e minimiza o Vincular ao Celular (volta para o Inmovya)
           Start-Sleep -Milliseconds 1500
           if ($h -eq [IntPtr]::Zero) { $h = [InmovyaJanela]::FindWindow($null, $titulo) }
-          if ($h -eq [IntPtr]::Zero) { $h = [InmovyaJanela]::GetForegroundWindow() }
+          if ($h -eq [IntPtr]::Zero) {
+            # só minimiza a janela da frente se ela for mesmo o Vincular ao Celular (nunca o Chrome)
+            $f = [InmovyaJanela]::GetForegroundWindow(); $tf = [InmovyaJanela]::Titulo($f)
+            if ($tf -like '*Vincular ao Celular*' -or $tf -like '*Phone Link*' -or $tf -like '*Vincular ao Telefone*') { $h = $f } else { Anotar "janela da frente nao e o Vincular ao Celular: '$tf'" }
+          }
           if ($h -ne [IntPtr]::Zero) {
             $ok = [InmovyaJanela]::ShowWindow($h, 6)
             Anotar "minimizei o Vincular ao Celular (janela $h, '$titulo', resultado $ok)"
