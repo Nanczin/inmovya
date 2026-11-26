@@ -21,6 +21,15 @@ Start-Process "tel:$num"
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class InmovyaJanela {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+"@
 $AE = [System.Windows.Automation.AutomationElement]
 $TS = [System.Windows.Automation.TreeScope]
 $botaoCond = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
@@ -43,11 +52,16 @@ while ((Get-Date) -lt $fim) {
       $ehLigar = ($nomes -contains $n) -or ($n -match '^(Ligar|Chamar|Call)\s+(N.mero|number)')
       if ($ehLigar -and $b.Current.IsEnabled) {
         try {
-          $p = $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-          $p.Invoke()
-          Anotar "apertei o botao '$n'"
+          # traz o Vincular ao Celular para frente, seleciona o botao verde e aperta Enter
+          $h = [IntPtr]$j.Current.NativeWindowHandle
+          if ($h -ne [IntPtr]::Zero) { [InmovyaJanela]::ShowWindow($h, 9) | Out-Null; [InmovyaJanela]::SetForegroundWindow($h) | Out-Null }
+          Start-Sleep -Milliseconds 250
+          $b.SetFocus()
+          Start-Sleep -Milliseconds 200
+          [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+          Anotar "selecionei e apertei Enter no botao '$n'"
           exit
-        } catch { Anotar "nao consegui apertar '$n'" }
+        } catch { Anotar "nao consegui apertar '$n': $($_.Exception.Message)" }
       }
     }
   }
