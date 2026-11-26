@@ -86,13 +86,15 @@ const classificacoes = [
   "Número não existe"
 ];
 
-// Botões de atalho da oferta ativa (a ordem define a tecla 1, 2, 3, 4)
-const ATALHOS_CLASSIFICACAO = [
-  { classificacao: "Caixa Postal/Cliente Não Atendeu", rotulo: "Não atendeu", cor: "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-200" },
-  { classificacao: "Cliente Interessado", rotulo: "Interessado", cor: "border-green-300 bg-green-50 text-green-900 hover:bg-green-100 dark:bg-green-950 dark:text-green-200" },
-  { classificacao: "Deny List", rotulo: "Não quer contato", cor: "border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:bg-red-950 dark:text-red-200" },
-  { classificacao: "Número não existe", rotulo: "Número não existe", cor: "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200" },
-];
+// Botões de atalho da oferta ativa: as mesmas classificações da lista (a ordem define a tecla 1, 2, 3…)
+const corDoAtalho = (c: string) =>
+  c === "Cliente Interessado" || c === "Interessado e Interação Efetiva"
+    ? "border-green-300 bg-green-50 text-green-900 hover:bg-green-100 dark:bg-green-950 dark:text-green-200"
+    : c === "Caixa Postal/Cliente Não Atendeu"
+      ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-200"
+      : c === "Deny List"
+        ? "border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:bg-red-950 dark:text-red-200"
+        : "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200";
 
 const interessesCliente = [
   "Tem Interesse",
@@ -1151,10 +1153,10 @@ export function LigacoesModule() {
       const alvo = e.target as HTMLElement | null;
       if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const i = ["1", "2", "3", "4"].indexOf(e.key);
-      if (i < 0) return;
+      const i = Number(e.key) - 1;
+      if (!/^[1-9]$/.test(e.key) || !classificacoes[i]) return;
       e.preventDefault();
-      classificarESeguir(ATALHOS_CLASSIFICACAO[i].classificacao);
+      classificarESeguir(classificacoes[i]);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1717,19 +1719,20 @@ export function LigacoesModule() {
 
               {/* Atalhos: classificar e seguir para o próximo número */}
               <div className="space-y-1.5 pt-4">
-                <p className="text-xs font-medium text-muted-foreground">Classificar e seguir (ou aperte 1, 2, 3, 4):</p>
+                <p className="text-xs font-medium text-muted-foreground">Classificar e seguir (ou aperte o número no teclado):</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {ATALHOS_CLASSIFICACAO.map((a, i) => (
+                  {classificacoes.map((c, i) => (
                     <Button
-                      key={a.classificacao}
+                      key={c}
                       type="button"
                       variant="outline"
                       disabled={salvandoAtalho}
-                      className={`h-11 justify-start gap-2 font-semibold ${a.cor}`}
-                      onClick={() => classificarESeguir(a.classificacao)}
+                      title={c}
+                      className={`h-auto min-h-11 py-2 justify-start gap-2 font-semibold whitespace-normal text-left leading-tight ${corDoAtalho(c)}`}
+                      onClick={() => classificarESeguir(c)}
                     >
                       <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded border border-current text-[11px] opacity-70">{i + 1}</span>
-                      <span className="truncate">{a.rotulo}</span>
+                      <span>{c}</span>
                     </Button>
                   ))}
                 </div>
