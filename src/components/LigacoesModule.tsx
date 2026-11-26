@@ -1373,10 +1373,10 @@ export function LigacoesModule() {
             </DialogDescription>
           </DialogHeader>
           {contatoSelecionado && (
-            <div className="space-y-3 sm:space-y-6 animate-fade-in">
-              {/* Header with Campaign Name and Progress */}
-              <div className="flex flex-col sm:flex-row justify-between items-center border-b border-border pb-4 gap-4">
-                <h2 className="text-base sm:text-lg font-semibold text-muted-foreground uppercase tracking-wider">
+            <div className="space-y-3 sm:space-y-4 animate-fade-in">
+              {/* Header with Campaign Name and Progress (faixa fina) */}
+              <div className="flex flex-col sm:flex-row justify-between items-center border-b border-border pb-2 gap-2 sm:pr-8">
+                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider truncate">
                   {listas.find(l => l.id === mailingSelecionado)?.nome || 'CAMPANHA OFICIAL'}
                 </h2>
                 
