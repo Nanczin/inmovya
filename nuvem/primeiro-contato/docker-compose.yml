@@ -22,8 +22,6 @@ services:
     image: atendai/evolution-api:v2.2.3
     restart: always
     depends_on: [postgres, redis]
-    ports:
-      - "8080:8080"   # painel para escanear o QR Code: http://IP-DO-SERVIDOR:8080/manager
     environment:
       SERVER_URL: http://localhost:8080
       AUTHENTICATION_API_KEY: ${EVO_KEY}
@@ -54,16 +52,17 @@ services:
     depends_on: [evolution]
     working_dir: /app
     command: ["node", "worker.mjs"]
+    ports:
+      - "8081:8081"   # página secreta do QR Code: http://IP-DO-SERVIDOR:8081/<QR_PATH>
     environment:
       TZ: America/Sao_Paulo
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_ANON: ${SUPABASE_ANON}
-      AGENTE_TOKEN: ${AGENTE_TOKEN}
       EVO_URL: http://evolution:8080
       EVO_KEY: ${EVO_KEY}
       EVO_INSTANCIA: inmovya
+      QR_PATH: ${QR_PATH}
     volumes:
       - ./worker.mjs:/app/worker.mjs:ro
+      - ./data:/data
 
 volumes:
   pgdata:

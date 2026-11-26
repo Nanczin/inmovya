@@ -8,10 +8,21 @@
 //   2) 1º contato: um lead por vez, intervalo sorteado de 2 a 5 min, a SUA mensagem com spintax,
 //      e as etiquetas do WhatsApp que você escolheu para a origem.
 //
-// Variáveis (arquivo .env): SUPABASE_URL, SUPABASE_ANON, AGENTE_TOKEN, EVO_URL, EVO_KEY, EVO_INSTANCIA
+// Variáveis: EVO_URL, EVO_KEY, EVO_INSTANCIA, QR_PATH. A "chave da nuvem" (banco + token do agente) você cola
+// na página secreta do QR Code (botão "Copiar chave da nuvem" no Inmovya); fica salva em /data/chave.json.
 
+import fs from 'node:fs';
 const ENV = process.env;
-const SUPABASE_URL = (ENV.SUPABASE_URL || '').replace(/\/+$/, '');
+const ARQ_CHAVE = '/data/chave.json';
+let CHAVE = null; // { u: url do banco, a: chave pública, t: token do agente }
+try { CHAVE = JSON.parse(fs.readFileSync(ARQ_CHAVE, 'utf8')); } catch { CHAVE = null; }
+function salvarChave(texto) {
+  const j = JSON.parse(Buffer.from(String(texto).trim(), 'base64').toString('utf8'));
+  if (!/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(j.u || '') || !j.a || !j.t || String(j.t).length < 32) throw new Error('chave inválida');
+  fs.mkdirSync('/data', { recursive: true });
+  fs.writeFileSync(ARQ_CHAVE, JSON.stringify(j), { mode: 0o600 });
+  CHAVE = j;
+}
 const EVO_URL = (ENV.EVO_URL || 'http://evolution:8080').replace(/\/+$/, '');
 const INST = ENV.EVO_INSTANCIA || 'inmovya';
 const INTERVALO_MIN = 2 * 60 * 1000;
@@ -20,16 +31,15 @@ const sortear = (a, b) => Math.round(a + Math.random() * (b - a));
 const dormir = ms => new Promise(r => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }), ...a);
 
-for (const k of ['SUPABASE_URL', 'SUPABASE_ANON', 'AGENTE_TOKEN', 'EVO_KEY']) {
-  if (!ENV[k]) { console.error(`Falta a variável ${k} no .env`); process.exit(1); }
-}
+if (!ENV.EVO_KEY) { console.error('Falta a variável EVO_KEY'); process.exit(1); }
 
 // ---------- banco (mesmas funções da extensão, com o token do agente) ----------
 async function rpc(nome, args) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${nome}`, {
+  if (!CHAVE) throw new Error('falta colar a chave da nuvem');
+  const r = await fetch(`${CHAVE.u}/rest/v1/rpc/${nome}`, {
     method: 'POST',
-    headers: { apikey: ENV.SUPABASE_ANON, Authorization: `Bearer ${ENV.SUPABASE_ANON}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_token: ENV.AGENTE_TOKEN, ...args }),
+    headers: { apikey: CHAVE.a, Authorization: `Bearer ${CHAVE.a}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_token: CHAVE.t, ...args }),
   });
   const t = await r.text();
   let j = null;
@@ -221,7 +231,7 @@ async function atender(lead, cfg, cfgEtq) {
 
 let rodando = false;
 async function rodada() {
-  if (rodando) return;
+  if (rodando || !CHAVE) return;
   rodando = true;
   try {
     const d = await rpc('agente_pendentes_nuvem', {});
@@ -243,6 +253,56 @@ async function rodada() {
     rodando = false;
   }
 }
+
+// ---------- conexão com o WhatsApp: cria a instância e mostra o QR Code numa página secreta ----------
+import http from 'node:http';
+async function garantirInstancia() {
+  for (let i = 0; i < 30; i++) {
+    try {
+      const lista = await evo('GET', '/instance/fetchInstances');
+      const tem = (Array.isArray(lista) ? lista : []).some(x => (x.name || x.instance?.instanceName) === INST);
+      if (!tem) {
+        await evo('POST', '/instance/create', { instanceName: INST, integration: 'WHATSAPP-BAILEYS', qrcode: true });
+        log('instância criada:', INST);
+      }
+      return;
+    } catch (err) {
+      await dormir(5000); // a Evolution ainda está subindo
+    }
+  }
+}
+const QR_PATH = ENV.QR_PATH ? `/${ENV.QR_PATH.replace(/^\/+/, '')}` : '';
+if (QR_PATH) {
+  http.createServer(async (req, res) => {
+    if (!req.url || !req.url.startsWith(QR_PATH)) { res.writeHead(404); return res.end(); }
+    let corpo = '';
+    let msgChave = '';
+    if (req.method === 'POST') {
+      // recebe a chave colada no formulário
+      let dados = '';
+      for await (const pedaco of req) { dados += pedaco; if (dados.length > 5000) break; }
+      try { salvarChave(new URLSearchParams(dados).get('chave') || ''); msgChave = '✅ Chave salva.'; rodada(); }
+      catch { msgChave = '❌ Chave inválida. No Inmovya: Esteiras → 1º contato → "Copiar chave da nuvem", e cole aqui.'; }
+    }
+    const formChave = `<form method="post" style="margin:16px auto;max-width:420px"><p><b>1.</b> No Inmovya: Esteiras → 1º contato → <b>Copiar chave da nuvem</b>. Cole aqui:</p><textarea name="chave" rows="3" style="width:100%" required></textarea><br><button style="margin-top:8px;padding:8px 16px">Salvar chave</button></form>`;
+    try {
+      if (!CHAVE) corpo = `<h1>Ligar o 1º contato na nuvem</h1>${msgChave ? `<p>${msgChave}</p>` : ''}${formChave}`;
+      else if (await conectado()) corpo = '<h1>✅ WhatsApp conectado à nuvem</h1><p>Pode fechar esta página. O 1º contato na nuvem só age quando o seu computador estiver desligado.</p>';
+      else {
+        const r = await evo('GET', `/instance/connect/${INST}`);
+        const img = r?.base64 || (r?.code ? null : null);
+        corpo = img
+          ? `${msgChave ? `<p>${msgChave}</p>` : ''}<h1>Escaneie com o WhatsApp do celular</h1><p>WhatsApp → ⋮ (ou Configurações) → <b>Dispositivos conectados</b> → <b>Conectar dispositivo</b>.</p><img src="${img}" style="width:300px;height:300px"><p>O código troca sozinho a cada 20 segundos.</p>`
+          : '<h1>Gerando o QR Code…</h1><p>Aguarde alguns segundos.</p>';
+      }
+    } catch (err) {
+      corpo = `<h1>Ainda iniciando…</h1><p>${String(err.message).replace(/[<>&]/g, '')}</p>`;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">${CHAVE ? '<meta http-equiv="refresh" content="20">' : ''}<title>Inmovya Nuvem</title><body style="font-family:system-ui,sans-serif;text-align:center;padding:24px;color:#0b1f4d">${corpo}</body>`);
+  }).listen(8081, () => log('página do QR Code pronta na porta 8081'));
+}
+await garantirInstancia();
 
 log(`Inmovya 1º contato na nuvem: instância "${INST}". Conferindo a cada minuto (só age com o PC desligado).`);
 rodada();
