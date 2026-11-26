@@ -30,7 +30,7 @@ fi
 # ---------- servidor ----------
 INST=$(achar compute instance list -c "$T" --display-name inmovya-nuvem --lifecycle-state RUNNING)
 if [ -z "$INST" ]; then
-  [ -f ~/.ssh/inmovya ] || ssh-keygen -t ed25519 -N "" -f ~/.ssh/inmovya -q
+  [ -f ~/.ssh/inmovya ] || ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/inmovya -q
   QR=$(openssl rand -hex 10)
   echo "$QR" > ~/.inmovya_qr
   W64=$(gzip -9c worker.mjs | base64 -w0)
