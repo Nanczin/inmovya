@@ -1147,6 +1147,22 @@ export function LigacoesModule() {
       return false;
     }
   });
+  // ajudante do Windows (inmovya-ligar:) que aperta o botão "Ligar" do Vincular ao Celular
+  const [usarAjudante, setUsarAjudante] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("oa_ajudante") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const alternarAjudante = (v: boolean) => {
+    setUsarAjudante(v);
+    try {
+      localStorage.setItem("oa_ajudante", v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
   const ultimoDiscado = useRef<string | null>(null);
   const telDoContato = (c: any) => {
     if (!c) return "";
@@ -1163,7 +1179,7 @@ export function LigacoesModule() {
     }
     ultimoDiscado.current = c?.id || null;
     const a = document.createElement("a");
-    a.href = `tel:${tel}`;
+    a.href = usarAjudante ? `inmovya-ligar:${tel}` : `tel:${tel}`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
@@ -1712,6 +1728,10 @@ export function LigacoesModule() {
                           📞 Ligar automático
                         </label>
                       </div>
+                      <label className="flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none -mt-1" title="Precisa do ajudante instalado no Windows (pasta ligar-automatico)">
+                        <input type="checkbox" className="accent-green-600" checked={usarAjudante} onChange={(e) => alternarAjudante(e.target.checked)} />
+                        Apertar "Ligar" sozinho no Vincular ao Celular (ajudante do Windows)
+                      </label>
                       <p className="text-[11px] text-muted-foreground -mt-1">Um clique salva e já abre o próximo número (ou aperte o número no teclado). Cliente Interessado abre o quadro para completar.</p>
                       <div className="grid grid-cols-2 gap-2">
                         {classificacoes.map((c, i) => (
