@@ -806,7 +806,8 @@ export function LigacoesModule() {
 
       // Registrar uma única ocorrência para a métrica unificada de interações.
       // A classificação combinada é mantida apenas para compatibilidade com registros antigos.
-      try {
+      // "Número não existe" NÃO conta como ligação: não registra nada nas estatísticas
+      if (finalClassificacao !== "Número não existe") try {
         // Deny List NÃO conta como interação (fica registrada apenas como ligação realizada)
         const classificacaoInteracao = finalClassificacao === "Cliente Interessado" ||
           finalClassificacao === "Interessado e Interação Efetiva";
