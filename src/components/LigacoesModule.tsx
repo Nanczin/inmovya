@@ -86,6 +86,14 @@ const classificacoes = [
   "Número não existe"
 ];
 
+// Botões de atalho da oferta ativa (a ordem define a tecla 1, 2, 3, 4)
+const ATALHOS_CLASSIFICACAO = [
+  { classificacao: "Caixa Postal/Cliente Não Atendeu", rotulo: "Não atendeu", cor: "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-200" },
+  { classificacao: "Cliente Interessado", rotulo: "Interessado", cor: "border-green-300 bg-green-50 text-green-900 hover:bg-green-100 dark:bg-green-950 dark:text-green-200" },
+  { classificacao: "Deny List", rotulo: "Não quer contato", cor: "border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:bg-red-950 dark:text-red-200" },
+  { classificacao: "Número não existe", rotulo: "Número não existe", cor: "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200" },
+];
+
 const interessesCliente = [
   "Tem Interesse",
   "Já Comprou",
@@ -743,12 +751,14 @@ export function LigacoesModule() {
       };
 
       let finalClassificacao = forcedClassification || classificacaoSelecionada || contatoSelecionado.dados_extras?.classificacao;
+      // classificação escolhida agora (pelo atalho ou pela lista)
+      const sel = forcedClassification || classificacaoSelecionada;
 
-      if (classificacaoSelecionada === "Cliente Interessado" || classificacaoSelecionada === "Interessado e Interação Efetiva") {
+      if (sel === "Cliente Interessado" || sel === "Interessado e Interação Efetiva") {
         interesseAutomatico = "Tem Interesse";
-      } else if (classificacaoSelecionada === "Deny List" || classificacaoSelecionada === "Número não existe") {
+      } else if (sel === "Deny List" || sel === "Número não existe") {
         interesseAutomatico = "Não Quer Mais Contato";
-      } else if (classificacaoSelecionada === "Caixa Postal/Cliente Não Atendeu") {
+      } else if (sel === "Caixa Postal/Cliente Não Atendeu") {
         interesseAutomatico = ""; // Não define interesse para permitir retorno à oferta ativa
 
         // Lógica de contador de tentativas
@@ -851,7 +861,7 @@ export function LigacoesModule() {
         if (!leadExistente) {
           console.log('Criando novo lead para:', contatoSelecionado.nome);
           // Criar novo lead
-          const observacoesLead = `Lead criado automaticamente através de oferta ativa. Classificação: ${classificacaoSelecionada || 'N/A'}${descricaoCliente ? `\n\nDescrição do interesse: ${descricaoCliente}` : ''}`;
+          const observacoesLead = `Lead criado automaticamente através de oferta ativa. Classificação: ${sel || 'N/A'}${descricaoCliente ? `\n\nDescrição do interesse: ${descricaoCliente}` : ''}`;
 
           const { data: novoLead, error: leadError } = await supabase
             .from('leads')
@@ -1123,6 +1133,32 @@ export function LigacoesModule() {
       });
     }
   };
+
+  // Atalhos: um clique (ou tecla 1-4) classifica a ligação e já abre o próximo número
+  const [salvandoAtalho, setSalvandoAtalho] = useState(false);
+  const classificarESeguir = async (classificacao: string) => {
+    if (!contatoSelecionado || salvandoAtalho) return;
+    setSalvandoAtalho(true);
+    try {
+      await salvarInteresseEClassificacao(true, classificacao);
+    } finally {
+      setSalvandoAtalho(false);
+    }
+  };
+  useEffect(() => {
+    if (!showClientData || !contatoSelecionado) return;
+    const onKey = (e: KeyboardEvent) => {
+      const alvo = e.target as HTMLElement | null;
+      if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const i = ["1", "2", "3", "4"].indexOf(e.key);
+      if (i < 0) return;
+      e.preventDefault();
+      classificarESeguir(ATALHOS_CLASSIFICACAO[i].classificacao);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const handleSalvarEProximo = async () => {
     if (!contatoSelecionado) return;
@@ -1679,8 +1715,28 @@ export function LigacoesModule() {
                 </div>
               </div>
 
+              {/* Atalhos: classificar e seguir para o próximo número */}
+              <div className="space-y-1.5 pt-4">
+                <p className="text-xs font-medium text-muted-foreground">Classificar e seguir (ou aperte 1, 2, 3, 4):</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {ATALHOS_CLASSIFICACAO.map((a, i) => (
+                    <Button
+                      key={a.classificacao}
+                      type="button"
+                      variant="outline"
+                      disabled={salvandoAtalho}
+                      className={`h-11 justify-start gap-2 font-semibold ${a.cor}`}
+                      onClick={() => classificarESeguir(a.classificacao)}
+                    >
+                      <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded border border-current text-[11px] opacity-70">{i + 1}</span>
+                      <span className="truncate">{a.rotulo}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
               {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <Button
                   variant="outline"
                   size="lg"
