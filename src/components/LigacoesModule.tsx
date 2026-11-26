@@ -1476,7 +1476,7 @@ export function LigacoesModule() {
                   {/* Contact Information */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-muted/20 rounded-lg border border-border/30">
                     {/* Telefone */}
-                    <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start md:col-span-3 lg:col-span-1">
+                    <div className="flex flex-wrap items-center gap-2 justify-center md:justify-start md:col-span-3">
                       <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
                       {isEditingContact ? (
                         <Input 
