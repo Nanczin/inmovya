@@ -1139,7 +1139,7 @@ export function LigacoesModule() {
   };
 
   // Atalhos: um clique (ou tecla 1-4) classifica a ligação e já abre o próximo número
-  // Ligar pelo Vincular ao Celular (link tel:) — botão "Ligar", tecla L e modo automático
+  // Ligar pelo Vincular ao Celular (link tel:) — botão "Ligar", tecla Q e modo automático
   const [ligarAuto, setLigarAuto] = useState<boolean>(() => {
     try {
       return localStorage.getItem("oa_ligar_auto") === "1";
@@ -1208,7 +1208,7 @@ export function LigacoesModule() {
       const alvo = e.target as HTMLElement | null;
       if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === "l" || e.key === "L") {
+      if (e.key === "q" || e.key === "Q") {
         e.preventDefault();
         ligarAgora();
         return;
@@ -1495,9 +1495,9 @@ export function LigacoesModule() {
                             size="sm"
                             className="h-7 px-2.5 rounded-full bg-success hover:bg-success/90 text-success-foreground text-xs font-bold"
                             onClick={() => ligarAgora()}
-                            title="Ligar pelo Vincular ao Celular (tecla L)"
+                            title="Ligar pelo Vincular ao Celular (tecla Q)"
                           >
-                            <Phone className="w-3.5 h-3.5 mr-1" /> Ligar <span className="ml-1 opacity-70">L</span>
+                            <Phone className="w-3.5 h-3.5 mr-1" /> Ligar <span className="ml-1 opacity-70">Q</span>
                           </Button>
                         </>
                       )}
