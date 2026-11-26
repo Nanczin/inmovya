@@ -61,6 +61,9 @@ while ((Get-Date) -lt $fim) {
           Start-Sleep -Milliseconds 200
           [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
           Anotar "selecionei e apertei Enter no botao '$n'"
+          # deixa a chamada comecar e minimiza o Vincular ao Celular (volta para o Inmovya)
+          Start-Sleep -Milliseconds 1500
+          if ($h -ne [IntPtr]::Zero) { [InmovyaJanela]::ShowWindow($h, 6) | Out-Null; Anotar "minimizei o Vincular ao Celular" }
           exit
         } catch { Anotar "nao consegui apertar '$n': $($_.Exception.Message)" }
       }
