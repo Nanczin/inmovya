@@ -28,6 +28,7 @@ using System.Runtime.InteropServices;
 public class InmovyaJanela {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
 }
 "@
 $AE = [System.Windows.Automation.AutomationElement]
@@ -54,7 +55,7 @@ while ((Get-Date) -lt $fim) {
         try {
           # traz o Vincular ao Celular para frente, seleciona o botao verde e aperta Enter
           $h = [IntPtr]$j.Current.NativeWindowHandle
-          if ($h -ne [IntPtr]::Zero) { [InmovyaJanela]::ShowWindow($h, 9) | Out-Null; [InmovyaJanela]::SetForegroundWindow($h) | Out-Null }
+          if ($h -ne [IntPtr]::Zero) { if ([InmovyaJanela]::IsIconic($h)) { [InmovyaJanela]::ShowWindow($h, 9) | Out-Null }; [InmovyaJanela]::SetForegroundWindow($h) | Out-Null }
           Start-Sleep -Milliseconds 250
           $b.SetFocus()
           Start-Sleep -Milliseconds 200
