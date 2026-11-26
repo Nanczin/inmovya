@@ -88,7 +88,7 @@
   }
 
   // ---------- estado ----------
-  const st = { chatId: '', telefone: '', nomeWA: '', dados: null, lead: null, etq: null, aviso: null, ocupado: false, aberto: false };
+  const st = { chatId: '', telefone: '', nomeWA: '', dados: null, lead: null, etq: null, aviso: null, ocupado: false, aberto: false, tarefas: null };
   const resumoCache = new Map(); // telefone → { em, r }
 
   // ---------- botão no topo da conversa ----------
@@ -240,7 +240,9 @@
       if (feito) { avisar(`Sincronizado com as etiquetas do WhatsApp: ${feito}.`); resumoCache.delete(st.telefone); }
     } catch (err) { avisar(err?.message || String(err), true); }
     sincroniaFeita.set(st.telefone, Date.now());
+    st.tarefas = null;
     desenhar();
+    if (st.lead) { await carregarTarefas(); if (st.aberto && st.chatId === c.chatId) desenhar(); }
   }
 
   function desenharErro(msg) {
@@ -287,6 +289,7 @@
         <div class="chips">${ETAPAS_RAPIDAS.map(x => `<button type="button" class="chip${x === 'Fechado' ? ' verde' : ''}${norm(l.status) === norm(x) ? ' on' : ''}" data-etapa="${esc(x)}" ${st.ocupado ? 'disabled' : ''}>${esc(x)}</button>`).join('')}</div>
         <select data-campo="etapaOutra" aria-label="Outra etapa"><option value="">Outra etapa…${!ETAPAS_RAPIDAS.some(x => norm(x) === norm(l.status)) && l.status ? ` (agora: ${esc(l.status)})` : ''}</option>${(d.etapas || []).filter(x => !ETAPAS_RAPIDAS.some(y => norm(y) === norm(x.valor))).map(x => `<option value="${esc(x.valor)}" ${norm(x.valor) === norm(l.status) ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select>
       </div>
+      ${htmlTarefas()}
       <div class="sec"><div class="rot">Esteira</div>
         ${est ? `<div class="caixa"><div class="linha"><b style="flex:1">${esc(est.nome)}</b><span class="mini">D${passo}${est.passos ? ` de ${est.passos}` : ''}</span></div>
           <div class="linha"><button type="button" class="btn leve" data-a="tirarEsteira" ${st.ocupado ? 'disabled' : ''}>Tirar da esteira</button></div></div>` : '<div class="mini">Não está em nenhuma esteira.</div>'}
@@ -307,6 +310,69 @@
     </div>
     <div class="rodape"><button type="button" class="btn" data-a="abrirFicha">Abrir ficha no Inmovya</button><span class="mini">${st.ocupado ? 'Salvando…' : ''}</span></div>`;
   }
+
+  // ---------- agendar tarefa (vai para a Agenda do Inmovya) ----------
+  const pad = n => String(n).padStart(2, '0');
+  const paraInput = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function sugestaoDeHora(chave) {
+    const d = new Date();
+    d.setSeconds(0, 0);
+    const em = (dias, h, m = 0) => { const x = new Date(d); x.setDate(x.getDate() + dias); x.setHours(h, m, 0, 0); return x; };
+    if (chave === 'hoje') return d.getHours() < 18 ? em(0, 18) : em(0, d.getHours() + 1);
+    if (chave === 'amanha9') return em(1, 9);
+    if (chave === 'amanha14') return em(1, 14);
+    if (chave === '2dias') return em(2, 10);
+    if (chave === 'semana') return em(7, 10);
+    return em(1, 9);
+  }
+  const ATALHOS_HORA = [['hoje', 'Hoje'], ['amanha9', 'Amanhã 9h'], ['amanha14', 'Amanhã 14h'], ['2dias', 'Em 2 dias'], ['semana', 'Em 1 semana']];
+  const quandoTxt = iso => {
+    const d = new Date(iso);
+    return `${d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).replace('.', '')} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  function htmlTarefas() {
+    const lista = st.tarefas || [];
+    const agora = Date.now();
+    const itens = lista.map(t => {
+      const atrasada = new Date(t.due_date).getTime() < agora;
+      return `<div class="linha" style="justify-content:space-between"><span class="mini" style="color:${atrasada ? '#dc2626' : 'inherit'}">📅 <b>${esc(quandoTxt(t.due_date))}</b> · ${esc(t.title)}${atrasada ? ' (atrasada)' : ''}</span>
+        <button type="button" class="btn leve" style="padding:3px 8px" data-feita="${esc(t.id)}" title="Marcar como feita" ${st.ocupado ? 'disabled' : ''}>✓</button></div>`;
+    }).join('');
+    const sugest = paraInput(sugestaoDeHora('amanha9'));
+    return `<div class="sec"><div class="rot">Agendar tarefa</div>
+      ${st.tarefas === null ? '<div class="mini">Carregando tarefas…</div>' : itens || '<div class="mini">Nenhuma tarefa pendente para este lead.</div>'}
+      <div class="caixa">
+        <input data-campo="tarefaTitulo" value="Retornar contato" placeholder="O que fazer (ex.: ligar, mandar proposta)">
+        <div class="chips">${ATALHOS_HORA.map(([k, n]) => `<button type="button" class="chip" data-hora="${k}">${n}</button>`).join('')}</div>
+        <div class="linha"><input type="datetime-local" data-campo="tarefaQuando" value="${sugest}"><button type="button" class="btn verde" data-a="agendar" ${st.ocupado ? 'disabled' : ''}>Agendar</button></div>
+        <div class="mini">Vai para a Agenda do Inmovya, com o "Ir para" abrindo o WhatsApp deste lead.</div>
+      </div>
+    </div>`;
+  }
+  async function carregarTarefas() {
+    if (!st.lead) { st.tarefas = []; return; }
+    const r = await inmovya('tarefas', { id: st.lead.id });
+    st.tarefas = r?.ok ? r.dados?.tarefas || [] : [];
+  }
+  const agendarTarefa = () => {
+    // lê os campos antes de redesenhar o cartão (o redesenho volta os campos ao padrão)
+    const el = document.getElementById('is-cartao');
+    const titulo = (el?.querySelector('[data-campo="tarefaTitulo"]')?.value || '').trim();
+    const v = el?.querySelector('[data-campo="tarefaQuando"]')?.value || '';
+    return fazer(async () => {
+    const quando = v ? new Date(v) : null;
+    if (!titulo) throw new Error('Escreva o que é para fazer.');
+    if (!quando || isNaN(quando.getTime())) throw new Error('Escolha a data e a hora.');
+    const d = await op('tarefa', { id: st.lead.id, titulo, quando: quando.toISOString() });
+    st.tarefas = d?.tarefas || st.tarefas;
+    avisar(`Tarefa agendada para ${quandoTxt(quando.toISOString())}: ${titulo}.`);
+    });
+  };
+  const concluirTarefa = id => fazer(async () => {
+    const d = await op('tarefaFeita', { id: st.lead.id, tarefaId: id });
+    st.tarefas = d?.tarefas || (st.tarefas || []).filter(t => t.id !== id);
+    avisar('Tarefa marcada como feita.');
+  });
 
   function htmlEtiquetas() {
     if (!st.etq) return `<div class="sec"><div class="rot">Etiquetas do WhatsApp</div><div class="mini">Não consegui ler as etiquetas desta conversa.</div></div>`;
@@ -489,6 +555,14 @@
     if (a === 'fechar') return fechar();
     if (a === 'recarregar') return abrir();
     if (a === 'cadastrar') return cadastrar();
+    if (a === 'agendar') return agendarTarefa();
+    if (b.dataset.feita) return concluirTarefa(b.dataset.feita);
+    if (b.dataset.hora) {
+      const inp = document.querySelector('#is-cartao [data-campo="tarefaQuando"]');
+      if (inp) inp.value = paraInput(sugestaoDeHora(b.dataset.hora));
+      document.querySelectorAll('#is-cartao [data-hora]').forEach(x => x.classList.toggle('on', x === b));
+      return;
+    }
     if (a === 'tirarEsteira') return colocarEsteira(null);
     if (a === 'addTag') return adicionarTag(document.querySelector('#is-cartao [data-nova-tag]')?.value);
     if (a === 'salvarObs') {

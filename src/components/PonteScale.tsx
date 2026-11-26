@@ -60,6 +60,18 @@ async function todasAsTags() {
   return Array.from(s).sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
+async function tarefasDoLead(leadId: string) {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("id, title, due_date, status")
+    .eq("lead_id", leadId)
+    .neq("status", "completed")
+    .order("due_date", { ascending: true })
+    .limit(5);
+  if (error) throw error;
+  return data || [];
+}
+
 async function lerLead(id: string) {
   const { data, error } = await supabase.from("leads").select(CAMPOS).eq("id", id).maybeSingle();
   if (error) throw error;
@@ -120,6 +132,37 @@ async function atender(op: string, d: any, irPara: (url: string) => void) {
         .single();
       if (error) throw error;
       return { lead: data };
+    }
+    case "tarefas": {
+      // próximos compromissos pendentes deste lead (Agenda)
+      return { tarefas: await tarefasDoLead(d.id) };
+    }
+    case "tarefa": {
+      // agenda um compromisso para o lead (aparece na Agenda; "Ir para" = WhatsApp do lead)
+      const user = await usuario();
+      const quando = new Date(String(d.quando || ""));
+      if (isNaN(quando.getTime())) throw new Error("Data ou hora inválida.");
+      const titulo = String(d.titulo || "").trim();
+      if (!titulo) throw new Error("Escreva o que é para fazer.");
+      const dados = { user_id: user.id, lead_id: d.id, title: titulo, description: String(d.descricao || ""), due_date: quando.toISOString(), status: "pending" };
+      let { data, error } = await supabase.from("tasks").insert({ ...dados, acao_tipo: "whatsapp", acao_alvo: d.id } as any).select("id").single();
+      if (error && /acao_tipo|acao_alvo/i.test(String(error.message || ""))) ({ data, error } = await supabase.from("tasks").insert(dados).select("id").single());
+      if (error) throw error;
+      const dataTxt = quando.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      await supabase.from("lead_timeline").insert({
+        lead_id: d.id,
+        type: "note",
+        title: `Lembrete Agendado: ${titulo}`,
+        description: `Para ${dataTxt} (agendado pelo WhatsApp).`,
+        author: "Usuário",
+        metadata: { task_date: quando.toISOString(), task_id: (data as any)?.id },
+      } as any);
+      return { tarefas: await tarefasDoLead(d.id) };
+    }
+    case "tarefaFeita": {
+      const { error } = await supabase.from("tasks").update({ status: "completed" }).eq("id", d.tarefaId);
+      if (error) throw error;
+      return { tarefas: await tarefasDoLead(d.id) };
     }
     case "abrir": {
       // com uma esteira rodando nesta aba, não troca de tela (abre outra aba do Inmovya)
