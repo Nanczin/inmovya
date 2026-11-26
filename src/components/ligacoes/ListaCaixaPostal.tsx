@@ -92,7 +92,7 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
       }
       if (!escolhidos.length) throw new Error("nenhum contato de caixa postal com telefone válido");
 
-      const { data: lista, error: e1 } = await supabase
+      const { data: novaLista, error: e1 } = await supabase
         .from("listas_contatos")
         .insert({
           user_id: user.id,
@@ -119,7 +119,7 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
         nome: dados.nome,
         telefone: dados.telefone,
         email: dados.email,
-        lista_id: (lista as any).id,
+        lista_id: (novaLista as any).id,
         status: "ativo",
         dados_extras: {
           tentativas_caixa_postal: orig.dados_extras?.tentativas_caixa_postal || 0,
@@ -137,16 +137,16 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
         for (let x = fila.shift(); x; x = fila.shift()) {
           await supabase
             .from("contatos")
-            .update({ dados_extras: { ...(x.orig.dados_extras || {}), classificacao: MOVIDO, movido_para_lista: (lista as any).id } })
+            .update({ dados_extras: { ...(x.orig.dados_extras || {}), classificacao: MOVIDO, movido_para_lista: (novaLista as any).id } })
             .eq("id", x.orig.id);
         }
       };
       await Promise.all(Array.from({ length: 8 }, trabalhar));
 
-      toast({ title: "Lista de caixa postal criada", description: `${escolhidos.length} contato(s) em "${(lista as any).nome}".` });
+      toast({ title: "Lista de caixa postal criada", description: `${escolhidos.length} contato(s) em "${(novaLista as any).nome}".` });
       setAberto(false);
       await contar();
-      onCriada((lista as any).id);
+      onCriada((novaLista as any).id);
     } catch (e: any) {
       toast({ title: "Não consegui gerar a lista", description: e?.message || String(e), variant: "destructive" });
     } finally {
