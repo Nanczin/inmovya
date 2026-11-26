@@ -17,7 +17,7 @@ type Extrair = (contato: any, lista?: any) => { nome: string; telefone: string; 
 const digitos = (t?: string | null) => String(t || "").replace(/\D/g, "");
 
 // Por mailing: só os contatos daquela lista (lista)
-export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: any; listas: any[]; extrair: Extrair; onCriada: (listaId: string) => void }) {
+export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: any; listas: any[]; extrair: Extrair; onCriada: (listaId: string, nome?: string) => void }) {
   const { toast } = useToast();
   const [total, setTotal] = useState<number | null>(null); // de hoje
   const [totalGeral, setTotalGeral] = useState<number>(0); // todos os dias
@@ -146,7 +146,7 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
       toast({ title: "Lista de caixa postal criada", description: `${escolhidos.length} contato(s) em "${(novaLista as any).nome}".` });
       setAberto(false);
       await contar();
-      onCriada((novaLista as any).id);
+      onCriada((novaLista as any).id, (novaLista as any).nome);
     } catch (e: any) {
       toast({ title: "Não consegui gerar a lista", description: e?.message || String(e), variant: "destructive" });
     } finally {

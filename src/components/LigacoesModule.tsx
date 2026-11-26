@@ -577,8 +577,8 @@ export function LigacoesModule() {
     });
   };
 
-  const handleDownloadLista = async (lista: Lista, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDownloadLista = async (lista: Lista, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     try {
       toast({ title: "Preparando download", description: "Buscando contatos..." });
       const { data: contatosData, error } = await supabase
@@ -1350,9 +1350,11 @@ export function LigacoesModule() {
                   lista={lista}
                   listas={listas}
                   extrair={extractDataFromImportedFormat}
-                  onCriada={async (id) => {
+                  onCriada={async (id, nome) => {
                     await carregarDados();
                     handleSelecionarLista(id);
+                    // já baixa a planilha da lista nova
+                    await handleDownloadLista({ id, nome: nome || "caixa_postal" } as Lista);
                   }}
                 />
               </div>
