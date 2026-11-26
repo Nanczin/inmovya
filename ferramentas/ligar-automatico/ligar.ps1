@@ -29,6 +29,8 @@ public class InmovyaJanela {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string cls, string title);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 }
 "@
 $AE = [System.Windows.Automation.AutomationElement]
@@ -55,6 +57,7 @@ while ((Get-Date) -lt $fim) {
         try {
           # traz o Vincular ao Celular para frente, seleciona o botao verde e aperta Enter
           $h = [IntPtr]$j.Current.NativeWindowHandle
+          if ($h -eq [IntPtr]::Zero) { $h = [InmovyaJanela]::FindWindow($null, $titulo) }
           if ($h -ne [IntPtr]::Zero) { if ([InmovyaJanela]::IsIconic($h)) { [InmovyaJanela]::ShowWindow($h, 9) | Out-Null }; [InmovyaJanela]::SetForegroundWindow($h) | Out-Null }
           Start-Sleep -Milliseconds 250
           $b.SetFocus()
@@ -63,7 +66,12 @@ while ((Get-Date) -lt $fim) {
           Anotar "selecionei e apertei Enter no botao '$n'"
           # deixa a chamada comecar e minimiza o Vincular ao Celular (volta para o Inmovya)
           Start-Sleep -Milliseconds 1500
-          if ($h -ne [IntPtr]::Zero) { [InmovyaJanela]::ShowWindow($h, 6) | Out-Null; Anotar "minimizei o Vincular ao Celular" }
+          if ($h -eq [IntPtr]::Zero) { $h = [InmovyaJanela]::FindWindow($null, $titulo) }
+          if ($h -eq [IntPtr]::Zero) { $h = [InmovyaJanela]::GetForegroundWindow() }
+          if ($h -ne [IntPtr]::Zero) {
+            $ok = [InmovyaJanela]::ShowWindow($h, 6)
+            Anotar "minimizei o Vincular ao Celular (janela $h, '$titulo', resultado $ok)"
+          } else { Anotar "nao achei a janela para minimizar ('$titulo')" }
           exit
         } catch { Anotar "nao consegui apertar '$n': $($_.Exception.Message)" }
       }
