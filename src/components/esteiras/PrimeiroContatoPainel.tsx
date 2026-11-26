@@ -1,5 +1,4 @@
 import { EtiquetaDaOrigem } from "@/components/esteiras/EtiquetasPrimeiroContato";
-import { chaveDaNuvem } from "@/lib/primeiroContato";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -299,37 +298,6 @@ export function PrimeiroContatoPainel() {
             <span className="text-muted-foreground">· {enviadosHoje} enviado(s) hoje</span>
             <Button variant="ghost" size="sm" className="h-7 px-2" disabled={conferindo} onClick={conferirAgora}>
               {conferindo ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />} Conferir agora
-            </Button>
-          </div>
-        )}
-        {cfg.ativo && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>
-              ☁️ Nuvem (quando o PC está desligado):{" "}
-              {sinal?.ultimoSinalNuvem && Date.now() - new Date(sinal.ultimoSinalNuvem).getTime() < 5 * 60_000 ? (
-                <b className="text-green-700 dark:text-green-400">ligada · conferiu às {hora(sinal.ultimoSinalNuvem)}</b>
-              ) : sinal?.ultimoSinalNuvem ? (
-                <b className="text-amber-700">sem sinal desde {hora(sinal.ultimoSinalNuvem)}</b>
-              ) : (
-                <b>não configurada</b>
-              )}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2"
-              onClick={async () => {
-                const k = chaveDaNuvem();
-                if (!k) return toast({ title: "Salve a configuração primeiro", variant: "destructive" });
-                try {
-                  await navigator.clipboard.writeText(k);
-                  toast({ title: "Chave da nuvem copiada", description: "Cole na página da nuvem (Ctrl+V). Não envie para ninguém." });
-                } catch {
-                  toast({ title: "Não consegui copiar", variant: "destructive" });
-                }
-              }}
-            >
-              Copiar chave da nuvem
             </Button>
           </div>
         )}

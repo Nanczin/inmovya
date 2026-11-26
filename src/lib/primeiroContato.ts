@@ -44,7 +44,6 @@ export interface SinalAgente {
   ultimoSinal: string | null; // última vez que a extensão conferiu
   aviso: string | null;
   temToken: boolean;
-  ultimoSinalNuvem?: string | null; // última vez que o servidor da nuvem conferiu (1º contato com o PC desligado)
 }
 
 export const INSTRUCOES_PADRAO =
@@ -114,13 +113,7 @@ export async function carregarConfigAgente(): Promise<{ cfg: ConfigPrimeiroConta
         incluirMidrah: !!r.incluir_midrah,
       }
     : { ...PADRAO, ...configAntiga(), meuNome: getMeuNome() };
-  return { cfg, sinal: { ultimoSinal: r?.ultimo_sinal || null, aviso: r?.aviso || null, temToken: !!r?.token, ultimoSinalNuvem: r?.ultimo_sinal_nuvem || null } };
-}
-
-/** "Chave da nuvem": endereço do banco + token do agente, num texto só, para colar no servidor da nuvem. */
-export function chaveDaNuvem(): string | null {
-  if (!tokenAtual) return null;
-  return btoa(JSON.stringify({ u: SUPABASE_URL, a: SUPABASE_PUBLISHABLE_KEY, t: tokenAtual }));
+  return { cfg, sinal: { ultimoSinal: r?.ultimo_sinal || null, aviso: r?.aviso || null, temToken: !!r?.token } };
 }
 
 const novoToken = () => (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, "");
