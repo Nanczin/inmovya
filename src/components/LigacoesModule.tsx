@@ -1142,6 +1142,11 @@ export function LigacoesModule() {
   const [salvandoAtalho, setSalvandoAtalho] = useState(false);
   const classificarESeguir = async (classificacao: string) => {
     if (!contatoSelecionado || salvandoAtalho) return;
+    // Cliente Interessado: só marca e abre o quadro (etiqueta, etapa); salva pelos botões de baixo
+    if (classificacao === "Cliente Interessado" || classificacao === "Interessado e Interação Efetiva") {
+      setClassificacaoSelecionada(classificacao);
+      return;
+    }
     setSalvandoAtalho(true);
     try {
       await salvarInteresseEClassificacao(true, classificacao);
@@ -1641,7 +1646,7 @@ export function LigacoesModule() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label className="text-sm font-medium">Classificar e seguir</Label>
-                      <p className="text-[11px] text-muted-foreground -mt-1">Um clique salva e já abre o próximo número (ou aperte o número no teclado).</p>
+                      <p className="text-[11px] text-muted-foreground -mt-1">Um clique salva e já abre o próximo número (ou aperte o número no teclado). Cliente Interessado abre o quadro para completar.</p>
                       <div className="grid grid-cols-2 gap-2">
                         {classificacoes.map((c, i) => (
                           <Button
@@ -1650,7 +1655,7 @@ export function LigacoesModule() {
                             variant="outline"
                             disabled={salvandoAtalho}
                             title={c}
-                            className={`h-auto min-h-11 py-2 px-2 justify-start gap-2 text-xs font-semibold whitespace-normal text-left leading-tight ${corDoAtalho(c)}`}
+                            className={`h-auto min-h-11 py-2 px-2 justify-start gap-2 text-xs font-semibold whitespace-normal text-left leading-tight ${corDoAtalho(c)} ${classificacaoSelecionada === c && (c === "Cliente Interessado" || c === "Interessado e Interação Efetiva") ? "ring-2 ring-green-500 ring-offset-1" : ""}`}
                             onClick={() => classificarESeguir(c)}
                           >
                             <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded border border-current text-[11px] opacity-70">{i + 1}</span>
@@ -1661,9 +1666,9 @@ export function LigacoesModule() {
                     </div>
 
                     {/* Etiqueta e etapa - usadas quando a ligação vira Cliente Interessado (preencha antes de clicar) */}
-                    {true && (
+                    {(classificacaoSelecionada === "Cliente Interessado" || classificacaoSelecionada === "Interessado e Interação Efetiva") && (
                       <div className="space-y-4 pt-2 border-t border-border mt-2">
-                        <p className="text-[11px] text-muted-foreground">Se for <b>Cliente Interessado</b>, preencha antes de clicar:</p>
+                        <p className="text-[11px] text-muted-foreground"><b>Cliente Interessado:</b> preencha se quiser e clique em salvar lá embaixo.</p>
                         <div className="space-y-2">
                           <Label htmlFor="etiqueta-interessado" className="text-sm font-medium">Etiqueta (opcional)</Label>
                           <Input
@@ -1715,15 +1720,24 @@ export function LigacoesModule() {
                 </div>
               </div>
 
-              {/* Sair sem classificar (os atalhos acima já salvam e seguem) */}
-              <div className="flex justify-end pt-4">
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
                 <Button
                   variant="outline"
-                  className="rounded-full bg-muted hover:bg-muted/80"
+                  size="lg"
+                  className="flex-1 rounded-full bg-muted hover:bg-muted/80 transition-all duration-300 hover-scale"
                   onClick={() => salvarInteresseEClassificacao(false)}
                 >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  Salvar notas e sair da oferta
+                  SALVAR E SAIR DA OFERTA
+                </Button>
+                <Button
+                  size="lg"
+                  className="flex-1 rounded-full bg-success hover:bg-success/90 text-success-foreground transition-all duration-300 hover-scale"
+                  onClick={handleSalvarEProximo}
+                >
+                  <Phone className="w-4 h-4 mr-2" />
+                  SALVAR E SOLICITAR NOVA OFERTA
                 </Button>
               </div>
             </div>
