@@ -1,6 +1,6 @@
 import { ListaCaixaPostal } from "@/components/ligacoes/ListaCaixaPostal";
 import { MetaOfertaAtiva } from "@/components/ligacoes/MetaOfertaAtiva";
-import { useState, useEffect, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { Switch } from "@/components/ui/switch";
 import { DefinirMetasDialog, carregarMetas } from "@/components/arena/DefinirMetasDialog";
 import { anexosDoTemplate, anexosComLink, ehLocal, liberarAnexosTemplate } from "@/lib/templateAnexos";
@@ -1139,6 +1139,54 @@ export function LigacoesModule() {
   };
 
   // Atalhos: um clique (ou tecla 1-4) classifica a ligação e já abre o próximo número
+  // Ligar pelo Vincular ao Celular (link tel:) — botão "Ligar", tecla L e modo automático
+  const [ligarAuto, setLigarAuto] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("oa_ligar_auto") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const ultimoDiscado = useRef<string | null>(null);
+  const telDoContato = (c: any) => {
+    if (!c) return "";
+    let d = String(extractDataFromImportedFormat(c, listas.find((l) => l.id === listaSelecionada)).telefone || "").replace(/\D/g, "").replace(/^0+/, "");
+    if (!d) return "";
+    if (d.length <= 11) d = `55${d}`;
+    return `+${d}`;
+  };
+  const ligarAgora = (c: any = contatoSelecionado) => {
+    const tel = telDoContato(c);
+    if (!tel) {
+      toast({ title: "Sem telefone", description: "Este contato não tem um número para ligar.", variant: "destructive" });
+      return;
+    }
+    ultimoDiscado.current = c?.id || null;
+    const a = document.createElement("a");
+    a.href = `tel:${tel}`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  const alternarLigarAuto = (v: boolean) => {
+    setLigarAuto(v);
+    try {
+      localStorage.setItem("oa_ligar_auto", v ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    if (v && contatoSelecionado && ultimoDiscado.current !== contatoSelecionado.id) ligarAgora();
+  };
+  // modo automático: cada número novo que aparece na oferta já é discado
+  useEffect(() => {
+    if (!ligarAuto || !showClientData || !contatoSelecionado?.id) return;
+    if (ultimoDiscado.current === contatoSelecionado.id) return;
+    const t = window.setTimeout(() => ligarAgora(contatoSelecionado), 1200);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ligarAuto, showClientData, contatoSelecionado?.id]);
+
   const [salvandoAtalho, setSalvandoAtalho] = useState(false);
   const classificarESeguir = async (classificacao: string) => {
     if (!contatoSelecionado || salvandoAtalho) return;
@@ -1160,6 +1208,11 @@ export function LigacoesModule() {
       const alvo = e.target as HTMLElement | null;
       if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "l" || e.key === "L") {
+        e.preventDefault();
+        ligarAgora();
+        return;
+      }
       const i = Number(e.key) - 1;
       if (!/^[1-9]$/.test(e.key) || !classificacoes[i]) return;
       e.preventDefault();
@@ -1433,9 +1486,20 @@ export function LigacoesModule() {
                           placeholder="Telefone"
                         />
                       ) : (
-                        <span className="text-sm font-mono">
-                          {formatPhoneNumber(extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).telefone)}
-                        </span>
+                        <>
+                          <span className="text-sm font-mono">
+                            {formatPhoneNumber(extractDataFromImportedFormat(contatoSelecionado, listas.find(l => l.id === listaSelecionada)).telefone)}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 px-2.5 rounded-full bg-success hover:bg-success/90 text-success-foreground text-xs font-bold"
+                            onClick={() => ligarAgora()}
+                            title="Ligar pelo Vincular ao Celular (tecla L)"
+                          >
+                            <Phone className="w-3.5 h-3.5 mr-1" /> Ligar <span className="ml-1 opacity-70">L</span>
+                          </Button>
+                        </>
                       )}
                     </div>
 
@@ -1641,7 +1705,13 @@ export function LigacoesModule() {
 
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">Classificar e seguir</Label>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-sm font-medium">Classificar e seguir</Label>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none" title="Ao seguir para o próximo número, já liga pelo Vincular ao Celular">
+                          <Switch checked={ligarAuto} onCheckedChange={alternarLigarAuto} />
+                          📞 Ligar automático
+                        </label>
+                      </div>
                       <p className="text-[11px] text-muted-foreground -mt-1">Um clique salva e já abre o próximo número (ou aperte o número no teclado). Cliente Interessado abre o quadro para completar.</p>
                       <div className="grid grid-cols-2 gap-2">
                         {classificacoes.map((c, i) => (
