@@ -46,6 +46,8 @@
       #is-cartao-btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;margin:0 6px;border-radius:999px;border:1px solid var(--inmovya-border,#d1d7db);
         background:var(--inmovya-background,#fff);color:var(--inmovya-text,#111b21);font:600 12.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;cursor:pointer;white-space:nowrap;flex-shrink:0;max-width:240px}
       #is-cartao-btn:hover{border-color:#1e3a8a}
+      #is-cartao-btn.sinc{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.25);transition:box-shadow .3s}
+      #is-cartao-btn.sinc .st::after{content:' · ✓ sincronizado';color:#16a34a;font-weight:600}
       #is-cartao-btn img{width:16px;height:16px;border-radius:4px}
       #is-cartao-btn .st{font-weight:700;color:#1e40af;overflow:hidden;text-overflow:ellipsis}
       body.dark #is-cartao-btn .st{color:#93c5fd}
@@ -124,6 +126,14 @@
     s.textContent = `· ${r.status || 'sem etapa'}${r.esteira ? ` · ${r.esteira.length > 16 ? r.esteira.slice(0, 15) + '…' : r.esteira} D${r.passo}` : ''}`;
   }
 
+  function piscarSincronia(texto) {
+    const b = document.getElementById('is-cartao-btn');
+    if (!b) return;
+    b.title = `Sincronizado com as etiquetas do WhatsApp: ${texto}`;
+    b.classList.add('sinc');
+    setTimeout(() => { b.classList.remove('sinc'); b.title = 'Inmovya: etapa, esteira, etiquetas e tags deste lead'; }, 6000);
+  }
+
   // o botão redondo do Inmovya Scale fica "flutuando" sobre o topo do WhatsApp: afasta o nosso botão para a esquerda
   function desviarDoBotaoDoScale() {
     const b = document.getElementById('is-cartao-btn');
@@ -161,6 +171,14 @@
       if (cache && Date.now() - cache.em < 60000) return mostrarResumo(cache.r);
       const r = await inmovya('resumo', { telefone: k });
       if (r?.ok) { resumoCache.set(k, { em: Date.now(), r: r.dados }); if (ultimaConversa === chave) mostrarResumo(r.dados); }
+      if (r?.ok && r.dados?.existe && !st.aberto) {
+        const feito = await sincronizarConversa(c.chatId, k, chave);
+        if (feito && ultimaConversa === chave) {
+          const r2 = await inmovya('resumo', { telefone: k });
+          if (r2?.ok) { resumoCache.set(k, { em: Date.now(), r: r2.dados }); mostrarResumo(r2.dados); }
+          piscarSincronia(feito);
+        }
+      }
     }, 700);
   }
   setInterval(vigiar, 1200);
@@ -217,6 +235,11 @@
     if (!r?.ok) return desenharErro(r?.erro || 'Não consegui falar com o Inmovya.');
     st.dados = r.dados;
     st.lead = (r.dados.leads || [])[0] || null;
+    try {
+      const feito = await sincronizarCartao();
+      if (feito) { avisar(`Sincronizado com as etiquetas do WhatsApp: ${feito}.`); resumoCache.delete(st.telefone); }
+    } catch (err) { avisar(err?.message || String(err), true); }
+    sincroniaFeita.set(st.telefone, Date.now());
     desenhar();
   }
 
@@ -317,6 +340,82 @@
     const e = await loja('etiquetasConversa', { chatId: st.chatId }, 6000);
     if (e?.ok) st.etq = e.dados;
   }
+  // ---------- sincronização: o WhatsApp manda, o Inmovya acompanha ----------
+  // Regras (as mesmas da auditoria):
+  // - etiqueta de etapa (Fechado > 70% > 50% > 20%) = etapa do lead no Inmovya;
+  // - "Lead" (sem etiqueta de etapa) = etapa Nenhuma + tag disparo; "Nutrição" = tag nutrição;
+  // - Bitrix/Midrah sozinhas não mudam a etapa (prospecção);
+  // - as outras etiquetas (projeto e soltas: ZO, ZS, Doc, Meta Ads, Midrah, Tom Paraíso…) viram tag;
+  //   tag com nome de etiqueta do WhatsApp que saiu do contato é tirada. Tags que não são etiquetas (roleta, base…) ficam.
+  // - contato sem nenhuma etiqueta: não mexe em nada (nunca apaga lead).
+  const ORDEM_ETAPA = ['Fechado', '70%', '50%', '20%'];
+  const NAO_VIRA_TAG = ['20%', '50%', '70%', '75%', 'Fechado', 'Lead', 'Nutrição', 'Bitrix', 'Nao lidas', 'Favoritos', 'Grupos'].map(norm);
+  function planoDeSincronia(lead, etq) {
+    if (!lead || !etq || !Array.isArray(etq.todas) || !etq.todas.length) return null;
+    const ativas = etq.todas.filter(x => etq.ativas.includes(x.id)).map(x => x.nome);
+    if (!ativas.length) return null;
+    const tem = n => ativas.some(a => norm(a) === norm(n));
+    let status = null;
+    const etapa = ORDEM_ETAPA.find(tem) || (tem('75%') ? '70%' : null);
+    if (etapa) status = etapa;
+    else if (tem('Lead')) status = 'Nenhuma';
+    if (status && norm(status) === norm(lead.status)) status = null;
+
+    const atuais = Array.isArray(lead.tags) ? lead.tags.map(String) : [];
+    const temTag = t => atuais.some(x => norm(x) === norm(t));
+    const querTags = ativas.filter(a => !NAO_VIRA_TAG.includes(norm(a)));
+    if (tem('Lead')) querTags.push('disparo');
+    if (tem('Nutrição')) querTags.push('nutrição');
+    const nomesWA = etq.todas.map(x => norm(x.nome));
+    const tirar = atuais.filter(t => nomesWA.includes(norm(t)) && !NAO_VIRA_TAG.includes(norm(t)) && !querTags.some(q => norm(q) === norm(t)));
+    const por = querTags.filter(q => !temTag(q)).filter((q, i, arr) => arr.findIndex(x => norm(x) === norm(q)) === i);
+    if (!status && !por.length && !tirar.length) return null;
+    const tags = [...atuais.filter(t => !tirar.includes(t)), ...por];
+    return { status, por, tirar, tags };
+  }
+  const textoDoPlano = pl => [pl.status ? `etapa ${pl.status}` : '', pl.por.length ? `+ tag ${pl.por.join(', ')}` : '', pl.tirar.length ? `− tag ${pl.tirar.join(', ')}` : ''].filter(Boolean).join(' · ');
+  // aplica o plano no Inmovya (não mexe nas etiquetas do WhatsApp)
+  async function aplicarSincronia(lead, pl) {
+    if (pl.status) {
+      const r = await inmovya('etapa', { id: lead.id, status: pl.status });
+      if (!r?.ok) throw new Error(r?.erro || 'Não consegui sincronizar a etapa.');
+      if (r.dados?.lead) Object.assign(lead, r.dados.lead); else lead.status = pl.status;
+    }
+    if (pl.por.length || pl.tirar.length) {
+      const r = await inmovya('tags', { id: lead.id, tags: pl.tags });
+      if (!r?.ok) throw new Error(r?.erro || 'Não consegui sincronizar as tags.');
+      if (r.dados?.lead) Object.assign(lead, r.dados.lead); else lead.tags = pl.tags;
+    }
+  }
+  // dentro do cartão aberto
+  async function sincronizarCartao() {
+    const pl = planoDeSincronia(st.lead, st.etq);
+    if (!pl) return '';
+    await aplicarSincronia(st.lead, pl);
+    if (st.dados && pl.por.length) st.dados.tags = Array.from(new Set([...(st.dados.tags || []), ...pl.por])).sort();
+    return textoDoPlano(pl);
+  }
+  // ao abrir uma conversa (cartão fechado): confere e sincroniza em silêncio, no máximo 1x por minuto por contato
+  const sincroniaFeita = new Map();
+  async function sincronizarConversa(chatId, telefone, chave) {
+    const k = dig(telefone);
+    if (Date.now() - (sincroniaFeita.get(k) || 0) < 60000) return null;
+    sincroniaFeita.set(k, Date.now());
+    const [r, e] = await Promise.all([inmovya('lead', { telefone: k }), loja('etiquetasConversa', { chatId }, 6000)]);
+    if (!r?.ok || !e?.ok || ultimaConversa !== chave) return null;
+    const lead = (r.dados?.leads || [])[0];
+    const pl = planoDeSincronia(lead, e.dados);
+    if (!pl) return null;
+    try {
+      await aplicarSincronia(lead, pl);
+      resumoCache.delete(k);
+      return textoDoPlano(pl);
+    } catch (err) {
+      console.warn('[Inmovya cartão] sincronia', err);
+      return null;
+    }
+  }
+
   // etiqueta de etapa no WhatsApp: deixa só a da etapa nova (Perdido tira as de etapa)
   async function etiquetaDaEtapa(status) {
     if (!st.etq) return '';
@@ -366,7 +465,8 @@
     const r = await loja('mudarEtiquetas', { chatId: st.chatId, adicionar: ligada ? [] : [nome], remover: ligada ? [nome] : [] }, 10000);
     await lerEtiquetas();
     if (!r?.ok || r.dados?.ok === false) throw new Error(r?.dados?.erro || r?.erro || 'Não consegui mudar a etiqueta.');
-    avisar(ligada ? `Etiqueta ${nome} tirada.` : `Etiqueta ${nome} colocada.`);
+    const feito = st.lead ? await sincronizarCartao() : '';
+    avisar(`${ligada ? `Etiqueta ${nome} tirada` : `Etiqueta ${nome} colocada`}${feito ? ` · Inmovya: ${feito}` : ''}.`);
   });
   const cadastrar = () => fazer(async () => {
     const el = document.getElementById('is-cartao');
