@@ -1,4 +1,5 @@
 import { ListaCaixaPostal } from "@/components/ligacoes/ListaCaixaPostal";
+import { MetaOfertaAtiva } from "@/components/ligacoes/MetaOfertaAtiva";
 import { useState, useEffect, useSyncExternalStore } from "react";
 import { Switch } from "@/components/ui/switch";
 import { DefinirMetasDialog, carregarMetas } from "@/components/arena/DefinirMetasDialog";
@@ -1375,13 +1376,7 @@ export function LigacoesModule() {
                 </h2>
                 
                 {/* Progresso de Metas no Modal */}
-                <div className="flex flex-col gap-1 w-full sm:w-48 bg-muted/30 p-2 rounded-md">
-                  <div className="flex justify-between text-xs text-muted-foreground font-medium">
-                    <span>Meta Diária</span>
-                    <span>{ligacoesHojeComAjuste} / {metaLigacoes}</span>
-                  </div>
-                  <Progress value={Math.min((ligacoesHojeComAjuste / metaLigacoes) * 100, 100)} className="h-1.5" />
-                </div>
+                <MetaOfertaAtiva feito={ligacoesHojeComAjuste} alvo={metaLigacoes} />
               </div>
 
               {/* Customer Name and Classification Row */}
@@ -1645,28 +1640,30 @@ export function LigacoesModule() {
 
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">Classificação</Label>
-                      <Select value={classificacaoSelecionada} onValueChange={setClassificacaoSelecionada}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Selecione uma classificação" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background border shadow-lg z-50">
-                          {classificacoes.map((classificacao) => (
-                            <SelectItem
-                              key={classificacao}
-                              value={classificacao}
-                              className="hover:bg-accent hover:text-accent-foreground"
-                            >
-                              {classificacao}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-sm font-medium">Classificar e seguir</Label>
+                      <p className="text-[11px] text-muted-foreground -mt-1">Um clique salva e já abre o próximo número (ou aperte o número no teclado).</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {classificacoes.map((c, i) => (
+                          <Button
+                            key={c}
+                            type="button"
+                            variant="outline"
+                            disabled={salvandoAtalho}
+                            title={c}
+                            className={`h-auto min-h-11 py-2 px-2 justify-start gap-2 text-xs font-semibold whitespace-normal text-left leading-tight ${corDoAtalho(c)}`}
+                            onClick={() => classificarESeguir(c)}
+                          >
+                            <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded border border-current text-[11px] opacity-70">{i + 1}</span>
+                            <span>{c}</span>
+                          </Button>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Etiqueta e etapa - aparecem apenas quando o cliente tem interesse */}
-                    {(classificacaoSelecionada === "Cliente Interessado" || classificacaoSelecionada === "Interessado e Interação Efetiva") && (
+                    {/* Etiqueta e etapa - usadas quando a ligação vira Cliente Interessado (preencha antes de clicar) */}
+                    {true && (
                       <div className="space-y-4 pt-2 border-t border-border mt-2">
+                        <p className="text-[11px] text-muted-foreground">Se for <b>Cliente Interessado</b>, preencha antes de clicar:</p>
                         <div className="space-y-2">
                           <Label htmlFor="etiqueta-interessado" className="text-sm font-medium">Etiqueta (opcional)</Label>
                           <Input
@@ -1718,45 +1715,15 @@ export function LigacoesModule() {
                 </div>
               </div>
 
-              {/* Atalhos: classificar e seguir para o próximo número */}
-              <div className="space-y-1.5 pt-4">
-                <p className="text-xs font-medium text-muted-foreground">Classificar e seguir (ou aperte o número no teclado):</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {classificacoes.map((c, i) => (
-                    <Button
-                      key={c}
-                      type="button"
-                      variant="outline"
-                      disabled={salvandoAtalho}
-                      title={c}
-                      className={`h-auto min-h-11 py-2 justify-start gap-2 font-semibold whitespace-normal text-left leading-tight ${corDoAtalho(c)}`}
-                      onClick={() => classificarESeguir(c)}
-                    >
-                      <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded border border-current text-[11px] opacity-70">{i + 1}</span>
-                      <span>{c}</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              {/* Sair sem classificar (os atalhos acima já salvam e seguem) */}
+              <div className="flex justify-end pt-4">
                 <Button
                   variant="outline"
-                  size="lg"
-                  className="flex-1 rounded-full bg-muted hover:bg-muted/80 transition-all duration-300 hover-scale"
+                  className="rounded-full bg-muted hover:bg-muted/80"
                   onClick={() => salvarInteresseEClassificacao(false)}
                 >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  SALVAR E SAIR DA OFERTA
-                </Button>
-                <Button
-                  size="lg"
-                  className="flex-1 rounded-full bg-success hover:bg-success/90 text-success-foreground transition-all duration-300 hover-scale"
-                  onClick={handleSalvarEProximo}
-                >
-                  <Phone className="w-4 h-4 mr-2" />
-                  SALVAR E SOLICITAR NOVA OFERTA
+                  Salvar notas e sair da oferta
                 </Button>
               </div>
             </div>
