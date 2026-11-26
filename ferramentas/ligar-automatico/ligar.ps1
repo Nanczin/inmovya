@@ -8,6 +8,14 @@ function Anotar($t) { try { Add-Content -Path $log -Value ("{0:dd/MM HH:mm:ss}  
 
 $num = ($url -replace '^inmovya-ligar:', '') -replace '%2B', '+' -replace '[^\d\+]', ''
 if ($num.Length -lt 10) { Anotar "numero invalido: $url"; exit }
+# trava: se o mesmo numero foi pedido ha menos de 10 segundos, nao liga de novo (evita ligacao dupla)
+$trava = Join-Path $pasta 'ultima.txt'
+try {
+  $ult = Get-Content $trava -ErrorAction Stop
+  $p = $ult -split ';'
+  if ($p[0] -eq $num -and ((Get-Date) - [datetime]::Parse($p[1])).TotalSeconds -lt 10) { Anotar "ignorado (pedido repetido) $num"; exit }
+} catch {}
+Set-Content -Path $trava -Value ("{0};{1:o}" -f $num, (Get-Date))
 Anotar "ligando $num"
 Start-Process "tel:$num"
 
@@ -31,7 +39,9 @@ while ((Get-Date) -lt $fim) {
     foreach ($b in $botoes) {
       $n = ($b.Current.Name).Trim()
       if ($n) { $vistos[$n] = 1 }
-      if ($nomes -contains $n -and $b.Current.IsEnabled) {
+      # o botao verde se chama "Ligar Numero discado +55..." (ou so "Ligar"/"Call")
+      $ehLigar = ($nomes -contains $n) -or ($n -match '^(Ligar|Chamar|Call)\s+(N.mero|number)')
+      if ($ehLigar -and $b.Current.IsEnabled) {
         try {
           $p = $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
           $p.Invoke()

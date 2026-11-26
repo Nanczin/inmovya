@@ -1164,6 +1164,7 @@ export function LigacoesModule() {
     }
   };
   const ultimoDiscado = useRef<string | null>(null);
+  const ultimaDiscagem = useRef<{ tel: string; em: number }>({ tel: "", em: 0 });
   const telDoContato = (c: any) => {
     if (!c) return "";
     let d = String(extractDataFromImportedFormat(c, listas.find((l) => l.id === listaSelecionada)).telefone || "").replace(/\D/g, "").replace(/^0+/, "");
@@ -1177,6 +1178,10 @@ export function LigacoesModule() {
       toast({ title: "Sem telefone", description: "Este contato não tem um número para ligar.", variant: "destructive" });
       return;
     }
+    // evita discar duas vezes o mesmo número em sequência (ex.: atalho + modo automático juntos)
+    const agora = Date.now();
+    if (ultimaDiscagem.current.tel === tel && agora - ultimaDiscagem.current.em < 5000) return;
+    ultimaDiscagem.current = { tel, em: agora };
     ultimoDiscado.current = c?.id || null;
     const a = document.createElement("a");
     a.href = usarAjudante ? `inmovya-ligar:${tel}` : `tel:${tel}`;
