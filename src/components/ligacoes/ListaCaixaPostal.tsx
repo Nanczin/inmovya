@@ -1,6 +1,5 @@
-// Oferta Ativa: junta numa lista nova quem caiu na Caixa Postal / não atendeu, para ligar de novo de uma vez.
-// Os contatos saem da lista de origem (para não ligar duas vezes) e entram "zerados" na lista nova,
-// levando junto o número de tentativas de caixa postal (a regra das 8 tentativas continua valendo).
+// Oferta Ativa: baixa um arquivo (planilha .csv) com quem caiu na Caixa Postal / não atendeu, para fazer disparo.
+// Só lê: não cria lista e não mexe nos contatos — a oferta ativa segue o curso dela.
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -10,14 +9,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Loader2, PhoneMissed } from "lucide-react";
 
 export const CAIXA_POSTAL = "Caixa Postal/Cliente Não Atendeu";
-const MOVIDO = "Movido para lista de Caixa Postal";
 
 type Extrair = (contato: any, lista?: any) => { nome: string; telefone: string; email: string | null };
 
 const digitos = (t?: string | null) => String(t || "").replace(/\D/g, "");
 
 // Por mailing: só os contatos daquela lista (lista)
-export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: any; listas: any[]; extrair: Extrair; onCriada: (listaId: string, nome?: string) => void }) {
+export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: any; listas: any[]; extrair: Extrair; onCriada?: (listaId: string, nome?: string) => void }) {
   const { toast } = useToast();
   const [total, setTotal] = useState<number | null>(null); // de hoje
   const [totalGeral, setTotalGeral] = useState<number>(0); // todos os dias
@@ -64,11 +62,7 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
   const gerar = async () => {
     setGerando(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("faça login de novo");
-      // busca todos (em páginas de 1000)
+      // busca todos (em páginas de 1000) — só lê, não muda nada na oferta ativa
       const todos: any[] = [];
       for (let de = 0; ; de += 1000) {
         let q = supabase.from("contatos").select("*").eq("lista_id", lista.id).eq("dados_extras->>classificacao", CAIXA_POSTAL);
@@ -81,74 +75,37 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
       // menos tentativas primeiro; um contato por telefone
       todos.sort((a, b) => (a.dados_extras?.tentativas_caixa_postal || 0) - (b.dados_extras?.tentativas_caixa_postal || 0));
       const vistos = new Set<string>();
-      const escolhidos: { orig: any; dados: ReturnType<Extrair> }[] = [];
+      const linhas: string[][] = [];
       for (const c of todos) {
         const dados = extrair(c, listas.find((l) => l.id === c.lista_id));
-        const k = digitos(dados.telefone).slice(-9);
+        let tel = digitos(dados.telefone).replace(/^0+/, "");
+        const k = tel.slice(-9);
         if (k.length < 8 || vistos.has(k)) continue;
         vistos.add(k);
-        escolhidos.push({ orig: c, dados });
-        if (qtd > 0 && escolhidos.length >= qtd) break;
+        if (tel.length <= 11) tel = `55${tel}`; // formato do WhatsApp (55 + DDD + número)
+        const nomeC = String(dados.nome || "").trim();
+        linhas.push([nomeC, nomeC.split(/\s+/)[0] || "", tel, dados.email || "", String(c.dados_extras?.tentativas_caixa_postal || 0)]);
+        if (qtd > 0 && linhas.length >= qtd) break;
       }
-      if (!escolhidos.length) throw new Error("nenhum contato de caixa postal com telefone válido");
+      if (!linhas.length) throw new Error("nenhum contato de caixa postal com telefone válido");
 
-      const { data: novaLista, error: e1 } = await supabase
-        .from("listas_contatos")
-        .insert({
-          user_id: user.id,
-          nome: nome.trim() || `${lista.nome} — Caixa Postal ${new Date().toLocaleDateString("pt-BR")}`,
-          descricao: `Caixa postal / não atendeu do mailing "${lista.nome}" (${escolhidos.length} contato(s))`,
-          origem: "Caixa Postal",
-          total_contatos: escolhidos.length,
-          validados: escolhidos.length,
-          duplicados: 0,
-          invalidos: 0,
-          campanhas_ativas: 0,
-          taxa_entrega: 100,
-          status: "Ativa",
-          configuracoes: { tipo: "caixa_postal" },
-          metadados: { geradaEm: new Date().toISOString(), tipo: "caixa_postal", mailingOrigem: lista.id },
-        } as any)
-        .select()
-        .single();
-      if (e1) throw e1;
+      const cel = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+      const csv = [["Nome", "Primeiro nome", "Telefone", "Email", "Tentativas caixa postal"], ...linhas].map((l) => l.map(cel).join(";")).join("\r\n");
+      const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const arquivo = (nome.trim() || `${lista.nome} - Caixa Postal`).replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "_");
+      link.href = url;
+      link.download = `${arquivo}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
-      // contatos na lista nova, sem classificação (entram na fila de novo)
-      const novos = escolhidos.map(({ orig, dados }) => ({
-        user_id: user.id,
-        nome: dados.nome,
-        telefone: dados.telefone,
-        email: dados.email,
-        lista_id: (novaLista as any).id,
-        status: "ativo",
-        dados_extras: {
-          tentativas_caixa_postal: orig.dados_extras?.tentativas_caixa_postal || 0,
-          veio_da_lista: orig.lista_id,
-          contato_original: orig.id,
-        },
-      }));
-      for (let i = 0; i < novos.length; i += 500) {
-        const { error } = await supabase.from("contatos").insert(novos.slice(i, i + 500) as any);
-        if (error) throw error;
-      }
-      // na lista de origem, saem da fila (para não ligar duas vezes)
-      const fila = [...escolhidos];
-      const trabalhar = async () => {
-        for (let x = fila.shift(); x; x = fila.shift()) {
-          await supabase
-            .from("contatos")
-            .update({ dados_extras: { ...(x.orig.dados_extras || {}), classificacao: MOVIDO, movido_para_lista: (novaLista as any).id } })
-            .eq("id", x.orig.id);
-        }
-      };
-      await Promise.all(Array.from({ length: 8 }, trabalhar));
-
-      toast({ title: "Lista de caixa postal criada", description: `${escolhidos.length} contato(s) em "${(novaLista as any).nome}".` });
+      toast({ title: "Arquivo baixado", description: `${linhas.length} contato(s) para disparo. A oferta ativa continua igual.` });
       setAberto(false);
-      await contar();
-      onCriada((novaLista as any).id, (novaLista as any).nome);
     } catch (e: any) {
-      toast({ title: "Não consegui gerar a lista", description: e?.message || String(e), variant: "destructive" });
+      toast({ title: "Não consegui gerar o arquivo", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setGerando(false);
     }
@@ -168,21 +125,21 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
         title={`Hoje: ${total ?? 0} na caixa postal neste mailing (no total: ${totalGeral})`}
       >
         <PhoneMissed className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-        <span className="truncate">Gerar lista da caixa postal</span>
+        <span className="truncate">Arquivo da caixa postal (disparo)</span>
         <span className="ml-1.5 rounded-full bg-warning/20 text-foreground px-2 text-xs font-bold tabular-nums">{total ?? "…"} hoje</span>
       </Button>
       <Dialog open={aberto} onOpenChange={(v) => !gerando && setAberto(v)}>
         <DialogContent className="sm:max-w-[440px]" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle>Gerar lista da caixa postal</DialogTitle>
+            <DialogTitle>Arquivo da caixa postal para disparo</DialogTitle>
             <DialogDescription>
-              Hoje, <b>{total}</b> contato(s) do mailing <b>{lista.nome}</b> caíram na Caixa Postal/Não atenderam. Eles vão para uma lista nova, prontos para ligar de novo, e saem da lista de
-              origem para você não ligar duas vezes. As tentativas de caixa postal continuam contando.
+              Hoje, <b>{total}</b> contato(s) do mailing <b>{lista.nome}</b> caíram na Caixa Postal/Não atenderam. Baixe um arquivo (abre no Excel) com nome e telefone para fazer o disparo.
+              A oferta ativa não muda: eles continuam na fila para você ligar de novo.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
             <label className="grid gap-1 text-sm font-semibold">
-              Nome da lista
+              Nome do arquivo
               <Input value={nome} onChange={(e) => setNome(e.target.value)} />
             </label>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -219,7 +176,7 @@ export function ListaCaixaPostal({ lista, listas, extrair, onCriada }: { lista: 
             </Button>
             <Button onClick={gerar} disabled={gerando || !qtd}>
               {gerando ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
-              Gerar lista com {qtd || 0}
+              Baixar arquivo com {qtd || 0}
             </Button>
           </DialogFooter>
         </DialogContent>
