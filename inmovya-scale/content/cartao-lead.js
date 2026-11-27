@@ -286,7 +286,7 @@
     el.innerHTML = `${topo}<div class="corpo">${aviso}
       ${outras.length ? `<div class="aviso erro">Há ${outras.length + 1} leads com este telefone no Inmovya. Mostrando o mais recente.</div>` : ''}
       <div class="sec"><div class="rot">Etapa</div>
-        <div class="chips">${ETAPAS_RAPIDAS.map(x => `<button type="button" class="chip${x === 'Fechado' ? ' verde' : ''}${norm(l.status) === norm(x) ? ' on' : ''}" data-etapa="${esc(x)}" title="${norm(l.status) === norm(x) ? 'Clique de novo para desmarcar' : `Mudar para ${esc(x)}`}" ${st.ocupado ? 'disabled' : ''}>${esc(x)}</button>`).join('')}</div>
+        <div class="chips"><button type="button" class="chip" data-etapa="__tirar" title="Tira a etapa no Inmovya e a etiqueta de etapa (20/50/70/Fechado) do WhatsApp" ${st.ocupado ? 'disabled' : ''}>✕ Sem etapa</button>${ETAPAS_RAPIDAS.map(x => `<button type="button" class="chip${x === 'Fechado' ? ' verde' : ''}${norm(l.status) === norm(x) ? ' on' : ''}" data-etapa="${esc(x)}" title="${norm(l.status) === norm(x) ? 'Clique de novo para desmarcar' : `Mudar para ${esc(x)}`}" ${st.ocupado ? 'disabled' : ''}>${esc(x)}</button>`).join('')}</div>
         <select data-campo="etapaOutra" aria-label="Outra etapa"><option value="">Outra etapa…${!ETAPAS_RAPIDAS.some(x => norm(x) === norm(l.status)) && l.status ? ` (agora: ${esc(l.status)})` : ''}</option>${(d.etapas || []).filter(x => !ETAPAS_RAPIDAS.some(y => norm(y) === norm(x.valor))).map(x => `<option value="${esc(x.valor)}" ${norm(x.valor) === norm(l.status) ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select>
       </div>
       ${htmlTarefas()}
@@ -498,7 +498,8 @@
   }
   const mudarEtapa = status => fazer(async () => {
     // clicar na etapa que já está marcada = desmarcar (etapa Nenhuma e tira as etiquetas de etapa do WhatsApp)
-    if (st.lead && norm(st.lead.status) === norm(status)) {
+    if (status === '__tirar' || (st.lead && norm(st.lead.status) === norm(status))) {
+      if (status === '__tirar') status = st.lead?.status || 'a etapa';
       await op('etapa', { id: st.lead.id, status: 'Nenhuma' });
       let extra = '';
       if (st.etq) {
