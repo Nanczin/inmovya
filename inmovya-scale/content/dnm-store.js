@@ -288,9 +288,23 @@
     for (const n of adicionar || []) { const e = etiquetaPeloNome(n); if (e && !tem.includes(String(pegar(e, 'id')))) ops.push({ id: String(pegar(e, 'id')), type: 'add' }); }
     for (const n of remover || []) { const e = etiquetaPeloNome(n); if (e && tem.includes(String(pegar(e, 'id')))) ops.push({ id: String(pegar(e, 'id')), type: 'remove' }); }
     if (!ops.length) return { ok: true, ativas: tem };
-    try { await L.addOrRemoveLabels(ops, [chat]); } catch (err) { return { ok: false, erro: String(err && err.message || err) }; }
-    await espera(400);
-    return { ok: true, ativas: (pegar(chat, 'labels') || []).map(String) };
+    // tira primeiro e põe depois, uma operação por vez (algumas versões do WhatsApp aplicam só parte de um lote)
+    const ordem = [...ops.filter(o => o.type === 'remove'), ...ops.filter(o => o.type === 'add')];
+    const confere = () => {
+      const agora = (pegar(chat, 'labels') || []).map(String);
+      return ordem.every(o => (o.type === 'add') === agora.includes(o.id));
+    };
+    for (let tentativa = 0; tentativa < 2 && !confere(); tentativa++) {
+      for (const o of ordem) {
+        const agora = (pegar(chat, 'labels') || []).map(String);
+        if ((o.type === 'add') === agora.includes(o.id)) continue;
+        try { await L.addOrRemoveLabels([o], [chat]); } catch (err) { return { ok: false, erro: String(err && err.message || err) }; }
+        await espera(250);
+      }
+      for (let i = 0; i < 12 && !confere(); i++) await espera(250);
+    }
+    const ativas = (pegar(chat, 'labels') || []).map(String);
+    return confere() ? { ok: true, ativas } : { ok: false, erro: 'o WhatsApp não aplicou a troca de etiqueta', ativas };
   }
   async function adicionarEtiqueta(chatId, nome) {
     const chat = lista(colecoes().Chat).find(c => idTexto(c) === chatId);

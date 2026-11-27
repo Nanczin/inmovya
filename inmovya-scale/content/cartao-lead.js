@@ -286,7 +286,7 @@
     el.innerHTML = `${topo}<div class="corpo">${aviso}
       ${outras.length ? `<div class="aviso erro">Há ${outras.length + 1} leads com este telefone no Inmovya. Mostrando o mais recente.</div>` : ''}
       <div class="sec"><div class="rot">Etapa</div>
-        <div class="chips">${ETAPAS_RAPIDAS.map(x => `<button type="button" class="chip${x === 'Fechado' ? ' verde' : ''}${norm(l.status) === norm(x) ? ' on' : ''}" data-etapa="${esc(x)}" ${st.ocupado ? 'disabled' : ''}>${esc(x)}</button>`).join('')}</div>
+        <div class="chips">${ETAPAS_RAPIDAS.map(x => `<button type="button" class="chip${x === 'Fechado' ? ' verde' : ''}${norm(l.status) === norm(x) ? ' on' : ''}" data-etapa="${esc(x)}" title="${norm(l.status) === norm(x) ? 'Clique de novo para desmarcar' : `Mudar para ${esc(x)}`}" ${st.ocupado ? 'disabled' : ''}>${esc(x)}</button>`).join('')}</div>
         <select data-campo="etapaOutra" aria-label="Outra etapa"><option value="">Outra etapa…${!ETAPAS_RAPIDAS.some(x => norm(x) === norm(l.status)) && l.status ? ` (agora: ${esc(l.status)})` : ''}</option>${(d.etapas || []).filter(x => !ETAPAS_RAPIDAS.some(y => norm(y) === norm(x.valor))).map(x => `<option value="${esc(x.valor)}" ${norm(x.valor) === norm(l.status) ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select>
       </div>
       ${htmlTarefas()}
@@ -491,15 +491,28 @@
     if (!alvo && !ehPerdido) return '';
     const adicionar = alvo && existe(alvo) ? [alvo] : [];
     const remover = ETIQUETAS_DE_ETAPA.filter(x => norm(x) !== norm(alvo || '') && existe(x));
-    const r = await loja('mudarEtiquetas', { chatId: st.chatId, adicionar, remover }, 10000);
+    const r = await loja('mudarEtiquetas', { chatId: st.chatId, adicionar, remover }, 12000);
     await lerEtiquetas();
     if (!r?.ok || r.dados?.ok === false) return ' (a etiqueta do WhatsApp não mudou: mude manualmente)';
     return adicionar.length ? ` e etiqueta ${alvo} no WhatsApp` : ehPerdido ? ' e tirei as etiquetas de etapa do WhatsApp' : '';
   }
   const mudarEtapa = status => fazer(async () => {
+    // clicar na etapa que já está marcada = desmarcar (etapa Nenhuma e tira as etiquetas de etapa do WhatsApp)
+    if (st.lead && norm(st.lead.status) === norm(status)) {
+      await op('etapa', { id: st.lead.id, status: 'Nenhuma' });
+      let extra = '';
+      if (st.etq) {
+        const remover = ETIQUETAS_DE_ETAPA.filter(x => st.etq.todas.some(e => norm(e.nome) === norm(x)));
+        const r = await loja('mudarEtiquetas', { chatId: st.chatId, adicionar: [], remover }, 12000);
+        await lerEtiquetas();
+        extra = !r?.ok || r.dados?.ok === false ? ' (a etiqueta do WhatsApp não saiu: tire manualmente)' : ' e tirei a etiqueta de etapa do WhatsApp';
+      }
+      avisar(`Etapa ${status} desmarcada no Inmovya${extra}.`);
+      return;
+    }
     await op('etapa', { id: st.lead.id, status });
     const extra = await etiquetaDaEtapa(status);
-    avisar(`Etapa ${status} salva no Inmovya${extra}.`);
+    avisar(`Etapa ${status} salva no Inmovya${extra}.`, /não mudou/.test(extra));
   });
   const colocarEsteira = esteiraId => fazer(async () => {
     await op('esteira', { id: st.lead.id, esteiraId: esteiraId || null });
