@@ -18,13 +18,32 @@
   const INTERVALO_MS = 60 * 1000;
   const log = (...a) => console.log('[Inmovya • Midrah]', ...a);
 
+  // O Midrah já trocou o nome em que guarda o login (sb-<algo>-auth-token). Procura em todos e fica com o login
+  // mais novo emitido pelo projeto do Midrah (o antigo pode ter ficado vencido no navegador).
+  const lerJwt = t => {
+    try { return JSON.parse(atob(String(t).split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (_) { return null; }
+  };
   const sessao = () => {
-    try {
-      const s = JSON.parse(localStorage.getItem(CHAVE_SESSAO) || 'null');
-      return s && s.access_token ? s : null;
-    } catch (_) {
-      return null;
+    let melhor = null;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !/^sb-.+-auth-token$/.test(k)) continue;
+      try {
+        const s = JSON.parse(localStorage.getItem(k) || 'null');
+        if (!s?.access_token || !s.user?.id) continue;
+        const j = lerJwt(s.access_token);
+        if (!j || !String(j.iss || '').includes(PROJETO)) continue;
+        if (!melhor || (j.exp || 0) > (melhor.__exp || 0)) melhor = { ...s, __exp: j.exp || 0 };
+      } catch (_) { /* outra coisa guardada */ }
     }
+    if (!melhor) {
+      try {
+        const s = JSON.parse(localStorage.getItem(CHAVE_SESSAO) || 'null');
+        return s && s.access_token ? s : null;
+      } catch (_) { return null; }
+    }
+    if (melhor.__exp && melhor.__exp * 1000 < Date.now()) log('o login do Midrah está vencido: abra/atualize a aba do Midrah');
+    return melhor;
   };
 
   // chave pública do app (fica no código do site); guardada para não procurar toda vez
